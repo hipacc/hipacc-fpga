@@ -36,6 +36,7 @@
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Expr.h>
+#include "hipacc/DSL/ClassRepresentation.h"
 
 
 namespace clang {
@@ -48,6 +49,8 @@ FunctionDecl *createFunctionDecl(ASTContext &Ctx, DeclContext *DC, StringRef
 
 // creates a function call AST node
 CallExpr *createFunctionCall(ASTContext &Ctx, FunctionDecl *FD,
+    SmallVector<Expr *, 16> Expr);
+CXXMemberCallExpr *createMethodCall(ASTContext &Ctx, FunctionDecl *FD,
     SmallVector<Expr *, 16> Expr);
 DeclRefExpr *createDeclRefExpr(ASTContext &Ctx, ValueDecl *decl);
 
@@ -110,6 +113,17 @@ IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, uint64_t val);
 FloatingLiteral *createFloatingLiteral(ASTContext &Ctx, float val);
 FloatingLiteral *createFloatingLiteral(ASTContext &Ctx, double val);
 StringLiteral *createStringLiteral(ASTContext &Ctx, StringRef Name);
+CXXBoolLiteralExpr *createCXXBoolLiteral(ASTContext &Ctx, bool val);
+
+typedef struct {
+  std::string elementType;
+  size_t elementCount;
+  size_t elementWidth;
+} VectorTypeInfo;
+
+VectorTypeInfo createVectorTypeInfo(const VectorType *VT);
+std::string getStdIntFromBitWidth(int bitwidth);
+std::string createVivadoTypeStr(HipaccImage *Img);
 
 // create label/goto statements
 LabelDecl *createLabelDecl(ASTContext &Ctx, DeclContext *DC, StringRef Name);

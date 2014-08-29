@@ -37,11 +37,12 @@ using namespace hipacc;
 using namespace hipacc::Builtin;
 
 static hipacc::Builtin::Info BuiltinInfo[] = {
-  { "not a builtin function", 0, TARGET_C, (ID)0, (ID)0, (ID)0, 0 },
-  #define HIPACCBUILTIN(NAME, TYPE, CUDAID, OPENCLID, RSID) { #NAME, TYPE, TARGET_C, CUDAID, OPENCLID, RSID, 0 },
-  #define CUDABUILTIN(NAME, TYPE, CUDANAME) { #NAME, TYPE, TARGET_CUDA, (ID)0, (ID)0, (ID)0, 0 },
-  #define OPENCLBUILTIN(NAME, TYPE, OPENCLNAME) { #NAME, TYPE, TARGET_OpenCLCPU, (ID)0, (ID)0, (ID)0, 0 },
-  #define RSBUILTIN(NAME, TYPE, RSNAME) { #NAME, TYPE, TARGET_Renderscript, (ID)0, (ID)0, (ID)0, 0 },
+  { "not a builtin function", 0, TARGET_C, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
+  #define HIPACCBUILTIN(NAME, TYPE, CUDAID, OPENCLID, RSID) { #NAME, TYPE, TARGET_C, CUDAID, OPENCLID, RSID, HIPACCBI##NAME, 0 },
+  #define CUDABUILTIN(NAME, TYPE, CUDANAME) { #NAME, TYPE, TARGET_CUDA, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
+  #define OPENCLBUILTIN(NAME, TYPE, OPENCLNAME) { #NAME, TYPE, TARGET_OpenCLCPU, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
+  #define RSBUILTIN(NAME, TYPE, RSNAME) { #NAME, TYPE, TARGET_Renderscript, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
+  #define VIVADOBUILTIN(NAME, TYPE, VIVADONAME) { #NAME, TYPE, TARGET_Vivado, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
   #include "hipacc/Device/Builtins.def"
 };
 
@@ -325,7 +326,11 @@ void hipacc::Builtin::Context::InitializeBuiltins() {
   if (initialized) return;
 
   for (size_t i=1, e=LastBuiltin-FirstBuiltin; i!=e; ++i) {
-    BuiltinInfo[i].FD = CreateBuiltin(i);
+    //if (BuiltinInfo[i].builtin_target == TARGET_Vivado) {
+    //  BuiltinInfo[i].CMD = CreateBuiltinMethod(i);
+    //} else {
+      BuiltinInfo[i].FD = CreateBuiltin(i);
+    //}
   }
 
   initialized = true;
@@ -352,6 +357,9 @@ void hipacc::Builtin::Context::getBuiltinNames(TargetCode target,
           case TARGET_Filterscript:
             if (!getBuiltinFunction(BuiltinInfo[i].Renderscript)) continue;
             break;
+          case TARGET_Vivado:
+            if (!getBuiltinMethod(BuiltinInfo[i].Vivado)) continue;
+            break;
         }
         break;
       case TARGET_CUDA:
@@ -368,6 +376,9 @@ void hipacc::Builtin::Context::getBuiltinNames(TargetCode target,
       case TARGET_Filterscript:
         if (target == TARGET_Renderscript ||
             target == TARGET_Filterscript) break;
+        continue;
+      case TARGET_Vivado:
+        if (target == TARGET_Vivado) break;
         continue;
     }
     Names.push_back(BuiltinInfo[i].Name);
@@ -409,6 +420,39 @@ FunctionDecl *hipacc::Builtin::Context::CreateBuiltin(QualType R, const char
 }
 
 
+//CXXMethodDecl *hipacc::Builtin::Context::CreateBuiltinMethod(unsigned int bid) {
+//  return CreateBuiltinMethod(getBuiltinType(bid), BuiltinInfo[bid].Name);
+//}
+//CXXMethodDecl *hipacc::Builtin::Context::CreateBuiltinMethod(QualType R, const char
+//    *Name) {
+//  // create function name identifier
+//  IdentifierInfo &Info = Ctx.Idents.get(Name);
+//  DeclarationName DecName(&Info);
+//
+//  // TODO
+//  CXXMethodDecl *New = NULL;//CXXMethodDecl::Create(Ctx, NULL /* TODO */,
+//      //SourceLocation(), DecName.getSourceLocation(), DecName, R, nullptr, SC_None);
+//
+//  //New->setImplicit();
+//
+//  //// create Decl objects for each parameter, adding them to the FunctionDecl.
+//  //if (const FunctionProtoType *FT = dyn_cast<FunctionProtoType>(R)) {
+//  //  SmallVector<ParmVarDecl *, 16> Params;
+//  //  for (size_t i=0, e=FT->getNumArgs(); i!=e; ++i) {
+//  //    ParmVarDecl *parm = ParmVarDecl::Create(Ctx, New, SourceLocation(),
+//  //        SourceLocation(), 0, FT->getArgType(i), /*TInfo=*/0, SC_None, 0);
+//  //    parm->setScopeInfo(0, i);
+//  //    Params.push_back(parm);
+//  //  }
+//  //  New->setParams(Params);
+//  //}
+//
+//  //Ctx.getTranslationUnitDecl()->addDecl(New);
+//
+//  return New;
+//}
+
+
 FunctionDecl *hipacc::Builtin::Context::getBuiltinFunction(StringRef Name,
     QualType QT, TargetCode target) const {
   QT = QT.getDesugaredType(Ctx);
@@ -429,6 +473,8 @@ FunctionDecl *hipacc::Builtin::Context::getBuiltinFunction(StringRef Name,
             case TARGET_Renderscript:
             case TARGET_Filterscript:
               return getBuiltinFunction(BuiltinInfo[i].Renderscript);
+            case TARGET_Vivado:
+              return getBuiltinFunction(BuiltinInfo[i].Vivado);
           }
           break;
         case TARGET_CUDA:
@@ -443,12 +489,51 @@ FunctionDecl *hipacc::Builtin::Context::getBuiltinFunction(StringRef Name,
         case TARGET_Filterscript:
           if (target == TARGET_Renderscript ||
               target == TARGET_Filterscript) return BuiltinInfo[i].FD;
+        case TARGET_Vivado:
+          if (target == TARGET_Vivado) return BuiltinInfo[i].FD;
       }
     }
   }
 
   return nullptr;
 }
+
+
+//CXXMethodDecl *hipacc::Builtin::Context::getBuiltinMethod(StringRef Name,
+//    QualType QT, TargetCode target) const {
+//  QT = QT.getDesugaredType(Ctx);
+//
+//  for (size_t i=1, e=LastBuiltin-FirstBuiltin; i!=e; ++i) {
+//    if (BuiltinInfo[i].Name == Name && BuiltinInfo[i].FD->getResultType() == QT) {
+//      switch (BuiltinInfo[i].builtin_target) {
+//        case TARGET_C:
+//        case TARGET_CUDA:
+//        case TARGET_OpenCLACC:
+//        case TARGET_OpenCLCPU:
+//        case TARGET_OpenCLGPU:
+//        case TARGET_Renderscript:
+//        case TARGET_Filterscript:
+//          switch (target) {
+//            case TARGET_C:
+//            case TARGET_CUDA:
+//            case TARGET_OpenCLACC:
+//            case TARGET_OpenCLCPU:
+//            case TARGET_OpenCLGPU:
+//            case TARGET_Renderscript:
+//            case TARGET_Filterscript:
+//            case TARGET_Vivado:
+//              return nullptr;
+//              //return getBuiltinMethod(BuiltinInfo[i].Vivado);
+//          }
+//          break;
+//        case TARGET_Vivado:
+//          if (target == TARGET_Vivado) return BuiltinInfo[i].CMD;
+//      }
+//    }
+//  }
+//
+//  return nullptr;
+//}
 
 // vim: set ts=2 sw=2 sts=2 et ai:
 

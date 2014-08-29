@@ -34,6 +34,7 @@
 
 #include <cassert>
 #include <vector>
+#include <algorithm>
 #if defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L
 #include <functional>
 #endif // defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L

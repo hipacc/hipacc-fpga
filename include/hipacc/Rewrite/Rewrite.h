@@ -47,6 +47,7 @@
 
 #include "hipacc/Config/config.h"
 #include "hipacc/Analysis/KernelStatistics.h"
+#include "hipacc/Analysis/HostDataDeps.h"
 #ifdef USE_POLLY
 #include "hipacc/Analysis/Polly.h"
 #endif

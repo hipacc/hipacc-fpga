@@ -60,7 +60,8 @@ enum TargetCode {
   TARGET_OpenCLGPU       = 0x8,
   TARGET_Renderscript    = 0x10,
   TARGET_Filterscript    = 0x20,
-  TARGET_C               = 0x40
+  TARGET_C               = 0x40,
+  TARGET_Vivado          = 0x80
 };
 
 class CompilerOptions {
@@ -160,6 +161,10 @@ class CompilerOptions {
       if (target_code & TARGET_C) return true;
       return false;
     }
+    bool emitVivado() {
+      if (target_code & TARGET_Vivado) return true;
+      return false;
+    }
 
     TargetCode getTargetCode() { return target_code; }
     TargetDevice getTargetDevice() { return target_device; }
@@ -247,6 +252,7 @@ class CompilerOptions {
     std::string getTargetPrefix() {
       switch (target_code) {
         case TARGET_C:
+        case TARGET_Vivado:
           return "cc";
         case TARGET_CUDA:
           return "cu";
@@ -284,6 +290,7 @@ class CompilerOptions {
           llvm::errs() << "Filterscript";
           break;
         case TARGET_C:
+        case TARGET_Vivado:
           llvm::errs() << "C/C++";
           break;
       }

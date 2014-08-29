@@ -80,6 +80,7 @@ void printUsage() {
     << "  -emit-opencl-gpu        Emit OpenCL code for GPU devices\n"
     << "  -emit-renderscript      Emit Renderscript code for Android\n"
     << "  -emit-filterscript      Emit Filterscript code for Android\n"
+    << "  -emit-vivado            Emit C++ code for Vivado HLS\n"
     << "  -emit-padding <n>       Emit CUDA/OpenCL/Renderscript image padding, using alignment of <n> bytes for GPU devices\n"
     << "  -target <n>             Generate code for GPUs with code name <n>.\n"
     << "                          Code names for CUDA/OpenCL on NVIDIA devices are:\n"
@@ -162,6 +163,10 @@ int main(int argc, char *argv[]) {
     if (StringRef(argv[i]) == "-emit-filterscript") {
       compilerOptions.setTargetCode(TARGET_Filterscript);
       compilerOptions.setPixelsPerThread(1);
+      continue;
+    }
+    if (StringRef(argv[i]) == "-emit-vivado") {
+      compilerOptions.setTargetCode(TARGET_Vivado);
       continue;
     }
     if (StringRef(argv[i]) == "-emit-padding") {

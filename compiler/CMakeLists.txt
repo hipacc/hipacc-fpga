@@ -32,6 +32,7 @@ ENDIF(USE_POLLY)
 
 LIST(APPEND HIPACC_USED_LIBS
     KernelStatistics
+    HostDataDeps
     Builtins
     ASTNode)
 

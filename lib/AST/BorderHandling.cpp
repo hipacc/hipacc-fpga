@@ -264,6 +264,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
 
     switch (compilerOptions.getTargetCode()) {
       case TARGET_C:
+      case TARGET_Vivado:
           RHS = accessMem2DAt(LHS, idx_x, idx_y);
           break;
       case TARGET_CUDA:
@@ -353,6 +354,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
     // get data
     switch (compilerOptions.getTargetCode()) {
       case TARGET_C:
+      case TARGET_Vivado:
           result = accessMem2DAt(LHS, idx_x, idx_y);
           break;
       case TARGET_CUDA:

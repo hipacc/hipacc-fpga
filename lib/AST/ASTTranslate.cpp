@@ -201,7 +201,7 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
   tileVars.local_id_y = createDeclRefExpr(Ctx, gid_y);
   tileVars.block_id_x = createDeclRefExpr(Ctx, gid_x);
   tileVars.block_id_y = createDeclRefExpr(Ctx, gid_y);
-  tileVars.local_size_x = getStrideDecl(Kernel->getIterationSpace()->getAccessor());
+  tileVars.local_size_x = createIntegerLiteral(Ctx, 0);//getStrideDecl(Kernel->getIterationSpace()->getAccessor());
   tileVars.local_size_y = createIntegerLiteral(Ctx, 0);
 
   // check if we need border handling
@@ -225,39 +225,50 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
     }
   }
 
+  if (compilerOptions.emitVivado()) {
+    // retValRef: Variable storing output value to return from kernel
+    VarDecl *output = createVarDecl(Ctx, kernelDecl, "VivadoDummyOutputVal",
+        Kernel->getIterationSpace()->getImage()->getType());
+    retValRef = createDeclRefExpr(Ctx, output);
+  }
+
   // convert the function body to kernel syntax
   Stmt *clonedStmt = Clone(S);
   assert(isa<CompoundStmt>(clonedStmt) && "CompoundStmt for kernel function body expected!");
 
-  //
-  // for (int gid_y=offset_y; gid_y<is_height+offset_y; gid_y++) {
-  //     for (int gid_x=offset_x; gid_x<is_width+offset_x; gid_x++) {
-  //         body
-  //     }
-  // }
-  //
-  Expr *upper_x = getWidthDecl(Kernel->getIterationSpace()->getAccessor());
-  Expr *upper_y = getHeightDecl(Kernel->getIterationSpace()->getAccessor());
-  if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl()) {
-    upper_x = createBinaryOperator(Ctx, upper_x,
-        getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()), BO_Add,
-        Ctx.IntTy);
-  }
-  if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl()) {
-    upper_y = createBinaryOperator(Ctx, upper_y,
-        getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()), BO_Add,
-        Ctx.IntTy);
-  }
-  ForStmt *innerLoop = createForStmt(Ctx, gid_x_stmt, createBinaryOperator(Ctx,
-        tileVars.global_id_x, upper_x, BO_LT, Ctx.BoolTy),
-      createUnaryOperator(Ctx, tileVars.global_id_x, UO_PostInc,
-        tileVars.global_id_x->getType()), clonedStmt);
-  ForStmt *outerLoop = createForStmt(Ctx, gid_y_stmt, createBinaryOperator(Ctx,
-        tileVars.global_id_y, upper_y, BO_LT, Ctx.BoolTy),
-      createUnaryOperator(Ctx, tileVars.global_id_y, UO_PostInc,
-        tileVars.global_id_y->getType()), innerLoop);
+  if (compilerOptions.emitVivado()) {
+    kernelBody.push_back(clonedStmt);
+  } else {
+    //
+    // for (int gid_y=offset_y; gid_y<is_height+offset_y; gid_y++) {
+    //     for (int gid_x=offset_x; gid_x<is_width+offset_x; gid_x++) {
+    //         body
+    //     }
+    // }
+    //
+    Expr *upper_x = getWidthDecl(Kernel->getIterationSpace()->getAccessor());
+    Expr *upper_y = getHeightDecl(Kernel->getIterationSpace()->getAccessor());
+    if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl()) {
+      upper_x = createBinaryOperator(Ctx, upper_x,
+          getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()), BO_Add,
+          Ctx.IntTy);
+    }
+    if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl()) {
+      upper_y = createBinaryOperator(Ctx, upper_y,
+          getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()), BO_Add,
+          Ctx.IntTy);
+    }
+    ForStmt *innerLoop = createForStmt(Ctx, gid_x_stmt, createBinaryOperator(Ctx,
+          tileVars.global_id_x, upper_x, BO_LT, Ctx.BoolTy),
+        createUnaryOperator(Ctx, tileVars.global_id_x, UO_PostInc,
+          tileVars.global_id_x->getType()), clonedStmt);
+    ForStmt *outerLoop = createForStmt(Ctx, gid_y_stmt, createBinaryOperator(Ctx,
+          tileVars.global_id_y, upper_y, BO_LT, Ctx.BoolTy),
+        createUnaryOperator(Ctx, tileVars.global_id_y, UO_PostInc,
+          tileVars.global_id_y->getType()), innerLoop);
 
-  kernelBody.push_back(outerLoop);
+    kernelBody.push_back(outerLoop);
+  }
 }
 
 
@@ -533,6 +544,7 @@ void ASTTranslate::updateTileVars() {
   switch (compilerOptions.getTargetCode()) {
     default:
     case TARGET_C:
+    case TARGET_Vivado:
     case TARGET_Renderscript:
     case TARGET_Filterscript:
       break;
@@ -691,6 +703,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   switch (compilerOptions.getTargetCode()) {
     default:
     case TARGET_C:
+    case TARGET_Vivado:
       initCPU(kernelBody, S);
       return createCompoundStmt(Ctx, kernelBody);
       break;
@@ -875,6 +888,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
 
       switch (compilerOptions.getTargetCode()) {
         case TARGET_C:
+        case TARGET_Vivado:
         case TARGET_Renderscript:
         case TARGET_Filterscript:
           break;
@@ -1287,6 +1301,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       SmallVector<Expr *, 16> args;
       switch (compilerOptions.getTargetCode()) {
         case TARGET_C:
+        case TARGET_Vivado:
         case TARGET_Renderscript:
         case TARGET_Filterscript:
           break;
@@ -1840,6 +1855,48 @@ Expr *ASTTranslate::VisitMemberExprTranslate(MemberExpr *E) {
 }
 
 
+Expr* ASTTranslate::stripLiteralOperand(Expr *operand1, Expr *operand2, int val) {
+  if (operand2 != nullptr && isa<IntegerLiteral>(operand2) &&
+      dyn_cast<IntegerLiteral>(operand2)->getValue() == val) {
+    return operand1;
+  } else
+  if (operand1 != nullptr && isa<IntegerLiteral>(operand1) &&
+      dyn_cast<IntegerLiteral>(operand1)->getValue() == val) {
+    return operand2;
+  }
+  return nullptr;
+}
+
+
+Expr* ASTTranslate::stripLiteralOperand(Expr *operand1, Expr *operand2, double val) {
+  if (operand2 != nullptr && isa<FloatingLiteral>(operand2)) {
+    llvm::APFloat val2 = dyn_cast<FloatingLiteral>(operand2)->getValue();
+    if (&val2.getSemantics() == (const llvm::fltSemantics*)&llvm::APFloat::IEEEsingle) {
+      if (val2.compare(llvm::APFloat((float)val)) == llvm::APFloat::cmpEqual) {
+        return operand1;
+      }
+    } else if (&val2.getSemantics() == (const llvm::fltSemantics*)&llvm::APFloat::IEEEdouble) {
+      if (val2.compare(llvm::APFloat(val)) == llvm::APFloat::cmpEqual) {
+        return operand1;
+      }
+    }
+  } else
+  if (operand1 != nullptr && isa<FloatingLiteral>(operand1)) {
+    llvm::APFloat val1 = dyn_cast<FloatingLiteral>(operand2)->getValue();
+    if (&val1.getSemantics() == (const llvm::fltSemantics*)&llvm::APFloat::IEEEsingle) {
+      if (val1.compare(llvm::APFloat((float)val)) == llvm::APFloat::cmpEqual) {
+        return operand2;
+      }
+    } else if (&val1.getSemantics() == (const llvm::fltSemantics*)&llvm::APFloat::IEEEdouble) {
+      if (val1.compare(llvm::APFloat(val)) == llvm::APFloat::cmpEqual) {
+        return operand2;
+      }
+    }
+  }
+  return nullptr;
+}
+
+
 Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
   Expr *result;
 
@@ -1877,6 +1934,80 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
   if (E->getOpcode() == BO_Assign) writeImageRHS = nullptr;
 
   setExprProps(E, result);
+
+  // Vivado-specific optimization:
+  // Remove neutral element operand from binary operator expression
+  if (compilerOptions.emitVivado() && isa<BinaryOperator>(result)) {
+    auto it = result->child_begin();
+    Expr *operand1 = nullptr, *operand2 = nullptr;
+
+    // extract operands
+    if (isa<Expr>(*it)) {
+      operand1 = dyn_cast<Expr>(*it)->IgnoreParenCasts();
+    }
+    ++it;
+    if (isa<Expr>(*it)) {
+      operand2 = dyn_cast<Expr>(*it)->IgnoreParenCasts();
+    }
+
+    // 1. strip literal operand for Add, Sub, Mul, and Div.
+    // 2. insert return stmt for Assign.
+    Expr *newResult = nullptr;
+    switch (dyn_cast<BinaryOperator>(result)->getOpcode()) {
+      case BO_Add:
+      case BO_Sub:
+        newResult = stripLiteralOperand(operand1, operand2, 0);
+        if (newResult == nullptr) {
+          newResult = stripLiteralOperand(operand1, operand2, 0.0);
+        }
+        break;
+      case BO_Mul:
+        newResult = stripLiteralOperand(operand1, operand2, 1);
+        // skip floating, because 1.0 can not be represented exactly
+        break;
+      case BO_Div:
+        result = stripLiteralOperand(operand1, operand2, 1);
+        if (newResult == operand2) {
+          newResult = nullptr;
+        }
+        // skip floating, because 1.0 can not be represented exactly
+        break;
+      case BO_Assign:
+        if (operand1 != nullptr && isa<DeclRefExpr>(operand1)) {
+          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(operand1);
+          if (DRE->getNameInfo().getAsString() == "VivadoDummyOutputVal") {
+            if (operand2 != nullptr) {
+              if (isa<CallExpr>(operand2)) {
+                CallExpr *CE = dyn_cast<CallExpr>(operand2);
+
+                // create function call convert_<type>(..., true), which converts
+                // <type> to type ap_uint<...>
+                SmallVector<Expr *, 16> args;
+                args.push_back(CE->getArg(0));
+                args.push_back(createCXXBoolLiteral(Ctx, true));
+                result = createFunctionCall(Ctx, getVivadoReturnConvertFunction(
+                      CE->getDirectCallee()->getNameInfo().getAsString()), args);
+              } else {
+                // whatever it is, just return it
+                result = operand2;
+              }
+
+              // create return statement, returning result of function
+              postStmts.push_back(createReturnStmt(Ctx, result));
+              postCStmt.push_back(curCStmt);
+
+              // clear result, we don't want current binary operator expression
+              result = nullptr;
+            }
+          }
+        }
+      default:
+        break;
+    }
+    if (newResult != nullptr) {
+      result = newResult;
+    }
+  }
 
   return result;
 }
@@ -1979,6 +2110,11 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
   // MemberExpr is converted to DeclRefExpr when cloning
   DeclRefExpr *LHS = dyn_cast<DeclRefExpr>(Clone(E->getArg(0)));
 
+  if (compilerOptions.emitVivado()) {
+    // Store mask as Vivado window. If the kernel uses a mask/domain then all
+    // Accessors are accessed using window buffers.
+    vivadoWindow = Kernel->getVivadoWindow();
+  }
 
   // look for Mask user class member variable
   if (Kernel->getMaskFromMapping(FD)) {
@@ -2023,6 +2159,9 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             case TARGET_Filterscript:
               // allocation access: rsGetElementAt(Mask, conv_x, conv_y)
               result = accessMemAllocAt(LHS, memAcc, midx_x, midx_y);
+              break;
+            case TARGET_Vivado:
+              assert(false && "Only constant masks are allowed for Vivado");
               break;
           }
         }
@@ -2074,6 +2213,9 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             case TARGET_Filterscript:
               // allocation access: rsGetElementAt(Mask, conv_x, conv_y)
               result = accessMemAllocAt(LHS, memAcc, midx_x, midx_y);
+              break;
+            case TARGET_Vivado:
+              assert(false && "Only constant masks are allowed for Vivado");
               break;
           }
         }
@@ -2139,11 +2281,13 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
                     Ctx.IntTy));
             }
             break;
+          case TARGET_Vivado:
+            assert(false && "Only constant masks are allowed for Vivado");
+            break;
         }
         break;
     }
   }
-
 
   // look for Image user class member variable
   if (Kernel->getImgFromMapping(FD)) {
@@ -2241,7 +2385,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
         } else {
           switch (memAcc) {
             case READ_ONLY:
-              if (bh_variant.borderVal) {
+              if (bh_variant.borderVal && !compilerOptions.emitVivado()) {
                 return addBorderHandling(LHS, offset_x, offset_y, Acc);
               }
               // fall through
@@ -2324,6 +2468,9 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
         case TARGET_Filterscript:
           postStmts.push_back(createReturnStmt(Ctx, retValRef));
           postCStmt.push_back(curCStmt);
+          result = retValRef;
+          break;
+        case TARGET_Vivado:
           result = retValRef;
           break;
       }
@@ -2427,6 +2574,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
 
     switch (compilerOptions.getTargetCode()) {
       case TARGET_C:
+      case TARGET_Vivado:
         result = accessMem2DAt(LHS, idx_x, idx_y);
         break;
       case TARGET_CUDA:

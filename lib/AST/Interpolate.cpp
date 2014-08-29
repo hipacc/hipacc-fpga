@@ -62,6 +62,7 @@ std::string ASTTranslate::getInterpolationName(ASTContext &Ctx,
 
   switch (compilerOptions.getTargetCode()) {
     case TARGET_C:
+    case TARGET_Vivado:
     case TARGET_Renderscript:
     case TARGET_Filterscript:
       name += "gmem";
@@ -166,6 +167,7 @@ FunctionDecl *ASTTranslate::getInterpolationFunction(HipaccAccessor *Acc) {
 
   switch (compilerOptions.getTargetCode()) {
     case TARGET_C:
+    case TARGET_Vivado:
     case TARGET_Renderscript:
     case TARGET_Filterscript:
     case TARGET_CUDA:

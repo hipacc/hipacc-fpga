@@ -551,39 +551,41 @@ void HipaccKernel::createArgInfo() {
               Ctx.getPointerType(QT).getAsString(), "cl_mem", name, FD);
         }
 
-        // add types for image width/height plus stride
-        addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
-            Ctx.getConstType(Ctx.IntTy),
-            Ctx.getConstType(Ctx.IntTy).getAsString(),
-            Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_width",
-            nullptr);
-        addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
-            Ctx.getConstType(Ctx.IntTy),
-            Ctx.getConstType(Ctx.IntTy).getAsString(),
-            Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_height",
-            nullptr);
+        if (!options.emitVivado()) {
+          // add types for image width/height plus stride
+          addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
+              Ctx.getConstType(Ctx.IntTy),
+              Ctx.getConstType(Ctx.IntTy).getAsString(),
+              Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_width",
+              nullptr);
+          addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
+              Ctx.getConstType(Ctx.IntTy),
+              Ctx.getConstType(Ctx.IntTy).getAsString(),
+              Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_height",
+              nullptr);
 
-        // stride
-        if (options.emitPadding() || getImgFromMapping(FD)->isCrop()) {
-          addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
-              Ctx.getConstType(Ctx.IntTy),
-              Ctx.getConstType(Ctx.IntTy).getAsString(),
-              Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_stride",
-              nullptr);
-        }
+          // stride
+          if (options.emitPadding() || getImgFromMapping(FD)->isCrop()) {
+            addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
+                Ctx.getConstType(Ctx.IntTy),
+                Ctx.getConstType(Ctx.IntTy).getAsString(),
+                Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_stride",
+                nullptr);
+          }
 
-        // offset_x, offset_y
-        if (getImgFromMapping(FD)->isCrop()) {
-          addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
-              Ctx.getConstType(Ctx.IntTy),
-              Ctx.getConstType(Ctx.IntTy).getAsString(),
-              Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_offset_x",
-              nullptr);
-          addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
-              Ctx.getConstType(Ctx.IntTy),
-              Ctx.getConstType(Ctx.IntTy).getAsString(),
-              Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_offset_y",
-              nullptr);
+          // offset_x, offset_y
+          if (getImgFromMapping(FD)->isCrop()) {
+            addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
+                Ctx.getConstType(Ctx.IntTy),
+                Ctx.getConstType(Ctx.IntTy).getAsString(),
+                Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_offset_x",
+                nullptr);
+            addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
+                Ctx.getConstType(Ctx.IntTy),
+                Ctx.getConstType(Ctx.IntTy).getAsString(),
+                Ctx.getConstType(Ctx.IntTy).getAsString(), name + "_offset_y",
+                nullptr);
+          }
         }
 
         break;
@@ -603,10 +605,12 @@ void HipaccKernel::createArgInfo() {
     }
   }
 
-  // is_stride
-  addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
-      Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy).getAsString(),
-      Ctx.getConstType(Ctx.IntTy).getAsString(), "is_stride", nullptr);
+  if (!options.emitVivado()) {
+    // is_stride
+    addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
+        Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy).getAsString(),
+        Ctx.getConstType(Ctx.IntTy).getAsString(), "is_stride", nullptr);
+  }
 
   // is_width, is_height
   addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
@@ -615,6 +619,10 @@ void HipaccKernel::createArgInfo() {
   addParam(Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy),
       Ctx.getConstType(Ctx.IntTy), Ctx.getConstType(Ctx.IntTy).getAsString(),
       Ctx.getConstType(Ctx.IntTy).getAsString(), "is_height", nullptr);
+
+  if (options.emitVivado()) {
+    return;
+  }
 
   // is_offset_x, is_offset_y
   if (iterationSpace->isCrop()) {

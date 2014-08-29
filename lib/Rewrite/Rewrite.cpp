@@ -56,6 +56,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
     HipaccDevice targetDevice;
     hipacc::Builtin::Context builtins;
     CreateHostStrings stringCreator;
+    HostDataDeps *dataDeps;
 
     // compiler known/built-in C++ classes
     CompilerKnownClasses compilerClasses;
@@ -126,6 +127,28 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
         PrintingPolicy Policy, llvm::raw_ostream *OS);
     void printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         HipaccKernel *K, std::string file, bool emitHints);
+    void createVivadoEntry();
+
+    enum VivadoParam {
+      None = 0,
+      Member = 1,
+      CTorHead = 2,
+      CTorBody = 3,
+      KernelDecl = 4,
+      KernelInit = 5,
+      KernelCall = 6,
+      Entry = 7
+    };
+
+    BoundaryMode vivadoBM = (BoundaryMode)-1;
+    size_t maxWindowSize = 0;
+    size_t maxImageWidth = 0;
+    size_t maxImageHeight = 0;
+
+    void printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
+        HipaccKernel *K, PrintingPolicy &Policy, llvm::raw_ostream *OS,
+        VivadoParam=None);
+    std::map<std::string,std::vector<std::pair<std::string, std::string>>> entryArguments;
 };
 }
 ASTConsumer *CreateRewrite(CompilerInstance &CI, CompilerOptions &options,
@@ -259,6 +282,8 @@ void Rewrite::HandleTranslationUnit(ASTContext &Context) {
 
   // include .cu or .h files for normal kernels
   switch (compilerOptions.getTargetCode()) {
+    case TARGET_Vivado:
+      break;
     case TARGET_C:
       for (auto it=KernelDeclMap.begin(), ei=KernelDeclMap.end(); it!=ei; ++it)
       {
@@ -376,6 +401,15 @@ void Rewrite::HandleTranslationUnit(ASTContext &Context) {
     std::string releaseStr;
 
     stringCreator.writeMemoryRelease(Img, releaseStr);
+
+    if (compilerOptions.emitVivado()) {
+      std::string streamDecl = dataDeps->getStreamDecl(it->first);
+      if (streamDecl.empty()) {
+        // image is only temporary, skip declaration
+        releaseStr = "";
+      }
+    }
+
     TextRewriter.InsertTextBefore(S->getLocStart(), releaseStr);
   }
   // release all non-const masks
@@ -400,6 +434,11 @@ void Rewrite::HandleTranslationUnit(ASTContext &Context) {
   // get buffer of main file id. If we haven't changed it, then we are done.
   if (const RewriteBuffer *RewriteBuf =
       TextRewriter.getRewriteBufferFor(mainFileID)) {
+    if (compilerOptions.emitVivado()) {
+      // add forward declarations for entry functions
+      Out << "#include \"hipacc_vivado.hpp\"\n\n";
+      Out << dataDeps->printEntryDecl(entryArguments) + "\n";
+    }
     Out << std::string(RewriteBuf->begin(), RewriteBuf->end());
   } else {
     llvm::errs() << "No changes to input file, something went wrong!\n";
@@ -686,7 +725,7 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
         llvm::raw_string_ostream WS(widthStr);
         CCE->getArg(0)->printPretty(WS, 0, PrintingPolicy(CI.getLangOpts()));
 
-        if (compilerOptions.emitC()) {
+        if (compilerOptions.emitC() || compilerOptions.emitVivado()) {
           // check if the parameter can be resolved to a constant
           unsigned int DiagIDConstant =
             Diags.getCustomDiagID(DiagnosticsEngine::Error,
@@ -699,8 +738,15 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
             Diags.Report(CCE->getArg(1)->getExprLoc(), DiagIDConstant)
               << "height" << Img->getName();
           }
-          Img->setSizeX(CCE->getArg(0)->EvaluateKnownConstInt(Context).getSExtValue());
-          Img->setSizeY(CCE->getArg(1)->EvaluateKnownConstInt(Context).getSExtValue());
+
+          size_t imgWidth = CCE->getArg(0)->EvaluateKnownConstInt(Context).getSExtValue();
+          size_t imgHeight = CCE->getArg(1)->EvaluateKnownConstInt(Context).getSExtValue();
+
+          Img->setSizeX(imgWidth);
+          Img->setSizeY(imgHeight);
+
+          if (maxImageWidth < imgWidth) maxImageWidth = imgWidth;
+          if (maxImageHeight < imgHeight) maxImageHeight = imgHeight;
         }
 
 
@@ -709,10 +755,49 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
         llvm::raw_string_ostream HS(heightStr);
         CCE->getArg(1)->printPretty(HS, 0, PrintingPolicy(CI.getLangOpts()));
 
+        // if vector type, get info
+        QualType QT = compilerClasses.getFirstTemplateType(VD->getType());
+        bool isVector = false;
+        VectorTypeInfo info;
+        if (isa<VectorType>(QT.getCanonicalType().getTypePtr())) {
+          const VectorType *VT = dyn_cast<VectorType>(
+              QT.getCanonicalType().getTypePtr());
+          info = createVectorTypeInfo(VT);
+          isVector = true;
+        }
+
+        std::string typeStr;
+        if (isVector && compilerOptions.emitVivado()) {
+          typeStr = getStdIntFromBitWidth(info.elementCount * info.elementWidth);
+        } else {
+          typeStr = compilerClasses.getFirstTemplateType(VD->getType()).getAsString();
+        }
+
         // create memory allocation string
-        stringCreator.writeMemoryAllocation(VD->getName(),
-            compilerClasses.getFirstTemplateType(VD->getType()).getAsString(),
+        stringCreator.writeMemoryAllocation(VD->getName(), typeStr,
             WS.str(), HS.str(), newStr, targetDevice);
+
+        if (compilerOptions.emitVivado()) {
+          std::string stream = dataDeps->getInputStream(VD);
+          if (stream.empty()) {
+            stream = dataDeps->getOutputStream(VD);
+          }
+          if (stream.empty()) {
+            // image is only temporary (not output or input), skip declaration
+            newStr = "";
+          } else {
+            newStr += "hls::stream<";
+
+            if (isVector) {
+              newStr += "ap_uint<" + std::to_string(
+                  info.elementCount * info.elementWidth) + "> ";
+            } else {
+              newStr += QT.getAsString();
+            }
+
+            newStr += "> " + stream + ";";
+          }
+        }
 
         // rewrite Image definition
         // get the start location and compute the semi location.
@@ -1080,7 +1165,9 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           Parms += ", " + SS.str();
         }
 
-        newStr += "HipaccAccessor " + Acc->getName() + "(" + Parms + ");";
+        if (!compilerOptions.emitVivado()) {
+          newStr += "HipaccAccessor " + Acc->getName() + "(" + Parms + ");";
+        }
 
         // replace Accessor decl by variables for width/height and offsets
         // get the start location and compute the semi location.
@@ -1183,7 +1270,9 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           Parms += ", " + SS.str();
         }
 
-        newStr += "HipaccAccessor " + IS->getName() + "(" + Parms + ");";
+        if (!compilerOptions.emitVivado()) {
+          newStr += "HipaccAccessor " + IS->getName() + "(" + Parms + ");";
+        }
 
         // store IterationSpace
         ISDeclMap[VD] = IS;
@@ -1394,6 +1483,12 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           }
         }
 
+        if (compilerOptions.emitVivado()) {
+          if (maxWindowSize < Buf->getSizeX()) {
+            maxWindowSize = Buf->getSizeX();
+          }
+        }
+
         // replace Mask declaration by Buffer allocation
         // get the start location and compute the semi location.
         SourceLocation startLoc = D->getLocStart();
@@ -1510,11 +1605,53 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
 }
 
 
+void Rewrite::createVivadoEntry() {
+  llvm::raw_ostream *OS = &llvm::errs();
+  std::ostringstream file;
+  file << "hipacc_run.cc";
+  int fd;
+
+  while ((fd = open(file.str().c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0664)) < 0) {
+    if (errno != EINTR) {
+      std::string errorInfo("Error opening output file '" + file.str() + "'");
+      perror(errorInfo.c_str());
+    }
+  }
+
+  OS = new llvm::raw_fd_ostream(fd, false);
+  *OS << "#define MAX_WIDTH    " << maxImageWidth << "\n";
+  *OS << "#define MAX_HEIGHT   " << maxImageHeight << "\n";
+  *OS << "#define WINDOW_SIZE  " << maxWindowSize << "\n";
+  *OS << "#define GROUP_DELAY  ((WINDOW_SIZE-1) / 2)\n";
+  *OS << "#define BORDER_FILL_VALUE 0\n";
+  *OS << "#define PRAGMA_SUB(x) _Pragma (#x)\n";
+  *OS << "#define PRAGMA_HLS(x) PRAGMA_SUB(x)\n";
+  *OS << "#define II_TARGET  1\n\n";
+  *OS << "#include \"hipacc_vivado_types.hpp\"\n";
+  *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
+
+  for (auto it=KernelDeclMap.begin(), ei=KernelDeclMap.end(); it!=ei; ++it) {
+    *OS << "#include \"" << it->second->getFileName() << ".cc\"\n";
+  }
+
+  *OS << "\n" << dataDeps->printEntryDef(entryArguments) << "\n";
+
+  OS->flush();
+  fsync(fd);
+  close(fd);
+}
+
+
 bool Rewrite::VisitFunctionDecl(FunctionDecl *D) {
   if (D->isMain()) {
     assert(D->getBody() && "main function has no body.");
     assert(isa<CompoundStmt>(D->getBody()) && "CompoundStmt for main body expected.");
     mainFD = D;
+
+    if (compilerOptions.emitVivado()) {
+      AnalysisDeclContext AC(0, mainFD);
+      dataDeps = HostDataDeps::parse(Context, AC, compilerClasses);
+    }
   }
 
   return true;
@@ -1783,8 +1920,27 @@ bool Rewrite::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
             stringCreator.writeMemoryTransfer(PyrLHS, PyrIdxLHS, DS.str(),
                 HOST_TO_DEVICE, newStr);
           } else {
-            stringCreator.writeMemoryTransfer(ImgLHS, DS.str(), HOST_TO_DEVICE,
-                newStr);
+            if (compilerOptions.emitVivado()) {
+              std::string stream = dataDeps->getInputStream(ImgLHS->getDecl());
+              if (!stream.empty()) {
+                // TODO: find better solution than embedding stream in mem string
+                std::string typeCast;
+                if (isa<VectorType>(ImgLHS->getType()
+                      .getCanonicalType().getTypePtr())) {
+                  const VectorType *VT = dyn_cast<VectorType>(ImgLHS->getType()
+                      .getCanonicalType().getTypePtr());
+                  VectorTypeInfo info = createVectorTypeInfo(VT);
+                  typeCast = "(" + getStdIntFromBitWidth(
+                      info.elementCount * info.elementWidth) + "*)";
+                }
+
+                stringCreator.writeMemoryTransfer(ImgLHS,
+                    stream + ", " + typeCast + DS.str(), HOST_TO_DEVICE, newStr);
+              }
+            } else {
+              stringCreator.writeMemoryTransfer(ImgLHS, DS.str(), HOST_TO_DEVICE,
+                  newStr);
+            }
           }
         }
       }
@@ -1831,8 +1987,28 @@ bool Rewrite::VisitBinaryOperator(BinaryOperator *E) {
         E->getLHS()->printPretty(DS, 0, PrintingPolicy(CI.getLangOpts()));
 
         // create memory transfer string
-        stringCreator.writeMemoryTransfer(Img, DS.str(), DEVICE_TO_HOST,
-            newStr);
+        if (compilerOptions.emitVivado()) {
+          std::string stream = dataDeps->getOutputStream(DRE->getDecl());
+          if (!stream.empty()) {
+            std::string typeCast;
+            if (isa<VectorType>(Img->getType()
+                  .getCanonicalType().getTypePtr())) {
+              const VectorType *VT = dyn_cast<VectorType>(Img->getType()
+                  .getCanonicalType().getTypePtr());
+              VectorTypeInfo info = createVectorTypeInfo(VT);
+              typeCast = "(" + getStdIntFromBitWidth(
+                    info.elementCount * info.elementWidth) + "*)";
+            }
+            // call entry function, which creates current output
+            newStr = dataDeps->printEntryCall(entryArguments, Img->getName());
+            // TODO: find better solution than embedding stream in mem string
+            stringCreator.writeMemoryTransfer(Img,
+                stream + ", " + typeCast + DS.str(), DEVICE_TO_HOST, newStr);
+          }
+        } else {
+          stringCreator.writeMemoryTransfer(Img, DS.str(), DEVICE_TO_HOST,
+              newStr);
+        }
 
         // rewrite Image assignment to memory transfer
         // get the start location and compute the semi location.
@@ -1988,6 +2164,7 @@ void Rewrite::setKernelConfiguration(HipaccKernelClass *KC, HipaccKernel *K) {
   switch (compilerOptions.getTargetCode()) {
     default:
     case TARGET_C:
+    case TARGET_Vivado:
     case TARGET_OpenCLACC:
     case TARGET_OpenCLCPU:
     case TARGET_Renderscript:
@@ -2166,6 +2343,7 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
   }
   switch (compilerOptions.getTargetCode()) {
     case TARGET_C:
+    case TARGET_Vivado:
       break;
     case TARGET_OpenCLACC:
     case TARGET_OpenCLCPU:
@@ -2213,6 +2391,7 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
   // write kernel name and qualifiers
   switch (compilerOptions.getTargetCode()) {
     case TARGET_C:
+    case TARGET_Vivado:
     case TARGET_OpenCLACC:
     case TARGET_OpenCLCPU:
     case TARGET_OpenCLGPU:
@@ -2249,6 +2428,7 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
   // instantiate reduction
   switch (compilerOptions.getTargetCode()) {
     case TARGET_C:
+    case TARGET_Vivado:
       break;
     case TARGET_OpenCLACC:
     case TARGET_OpenCLCPU:
@@ -2333,6 +2513,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     case TARGET_OpenCLGPU:
       Policy.LangOpts.OpenCL = 1; break;
     case TARGET_C:
+    case TARGET_Vivado:
     case TARGET_Renderscript:
     case TARGET_Filterscript:
       break;
@@ -2343,6 +2524,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
   std::string ifdef("_" + file + "_");
   switch (compilerOptions.getTargetCode()) {
     case TARGET_C:
+    case TARGET_Vivado:
       filename += ".cc";
       ifdef += "CC_"; break;
     case TARGET_CUDA:
@@ -2397,6 +2579,8 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
           << compilerOptions.getRSPackageName()
           << ")\n\n";
       break;
+    case TARGET_Vivado:
+      break;
   }
 
 
@@ -2414,6 +2598,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         inc = true;
         switch (compilerOptions.getTargetCode()) {
           case TARGET_C:
+          case TARGET_Vivado:
             break;
           case TARGET_CUDA:
             *OS << "#include \"hipacc_cuda_interpolate.hpp\"\n\n";
@@ -2444,6 +2629,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
         switch (compilerOptions.getTargetCode()) {
           case TARGET_C:
+          case TARGET_Vivado:
             break;
           case TARGET_CUDA:
           case TARGET_OpenCLACC:
@@ -2461,6 +2647,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
         switch (compilerOptions.getTargetCode()) {
           case TARGET_C:
+          case TARGET_Vivado:
             break;
           case TARGET_CUDA:
           case TARGET_OpenCLACC:
@@ -2512,6 +2699,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     if (i==0) {
       switch (compilerOptions.getTargetCode()) {
         case TARGET_C:
+        case TARGET_Vivado:
         case TARGET_OpenCLACC:
         case TARGET_OpenCLCPU:
         case TARGET_OpenCLGPU:
@@ -2539,6 +2727,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
       switch (compilerOptions.getTargetCode()) {
         case TARGET_C:
+        case TARGET_Vivado:
         case TARGET_OpenCLACC:
         case TARGET_OpenCLCPU:
         case TARGET_OpenCLGPU:
@@ -2585,6 +2774,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
             *OS << "__device__ __constant__ ";
             break;
           case TARGET_C:
+          case TARGET_Vivado:
           case TARGET_Renderscript:
           case TARGET_Filterscript:
             *OS << "static const ";
@@ -2615,6 +2805,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         // for other back ends, the mask will be added as kernel parameter
         switch (compilerOptions.getTargetCode()) {
           case TARGET_C:
+          case TARGET_Vivado:
           case TARGET_OpenCLACC:
           case TARGET_OpenCLCPU:
           case TARGET_OpenCLGPU:
@@ -2657,6 +2848,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
     switch (compilerOptions.getTargetCode()) {
       case TARGET_C:
+      case TARGET_Vivado:
       case TARGET_OpenCLACC:
       case TARGET_OpenCLCPU:
       case TARGET_OpenCLGPU:
@@ -2700,6 +2892,20 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       }
       break;
     case TARGET_C:
+    case TARGET_Vivado:
+      *OS << "struct " << K->getKernelName() << "Kernel {\n";
+      printKernelArguments(D, KC, K, Policy, OS, Rewrite::Member);
+      *OS << "\n";
+      *OS << "  " << K->getKernelName() << "Kernel(";
+      printKernelArguments(D, KC, K, Policy, OS, Rewrite::CTorHead);
+      *OS << ") {\n";
+      printKernelArguments(D, KC, K, Policy, OS, Rewrite::CTorBody);
+      *OS << "  }\n\n";
+      *OS << "  " << createVivadoTypeStr(K->getIterationSpace()->getAccessor()->getImage())
+          << " operator()(";
+      printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelDecl);
+      *OS << ") ";
+      break;
     case TARGET_Renderscript:
       break;
     case TARGET_Filterscript:
@@ -2707,21 +2913,106 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
           << " __attribute__((kernel)) ";
       break;
   }
-  if (!compilerOptions.emitFilterscript()) {
+  if (!compilerOptions.emitFilterscript() &&
+      !compilerOptions.emitVivado()) {
     *OS << "void ";
   }
-  *OS << K->getKernelName();
-  *OS << "(";
 
+  if (!compilerOptions.emitVivado()) {
+    *OS << K->getKernelName();
+    *OS << "(";
+    printKernelArguments(D, KC, K, Policy, OS);
+    *OS << ") ";
+  }
+
+  // print kernel body
+  D->getBody()->printPretty(*OS, 0, Policy, 0);
+  if (compilerOptions.emitCUDA()) {
+    *OS << "}\n";
+  }
+
+  // print vivado entry function
+  if (compilerOptions.emitVivado()) {
+    *OS << "};\n\n";
+    *OS << "void ";
+    *OS << K->getKernelName();
+    *OS << "(";
+    printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
+    *OS << ") {\n"
+        << "    struct " << K->getKernelName() << "Kernel kernel";
+    printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelInit);
+    *OS << ";\n";
+
+    if (KC->getNumMasks() > 0) {
+      *OS << "    process";
+    } else {
+      *OS << "    processPixels";
+    }
+    if (KC->getNumImages() != 1) *OS << KC->getNumImages();
+    if (KC->getNumMasks() > 0) {
+      *OS << "<" + K->getVivadoWindow()->getSizeXStr() + ">";
+    } else {
+      *OS << "<WINDOW_SIZE>";
+    }
+    *OS << "(";
+    printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
+    *OS << ", Output, is_width, is_height, kernel";
+    if (KC->getNumMasks() > 0) {
+      switch (vivadoBM) {
+        case clang::hipacc::BOUNDARY_CLAMP:
+          *OS << ", BorderPadding::BORDER_REPEAT";
+          break;
+        case clang::hipacc::BOUNDARY_MIRROR:
+          *OS << ", BorderPadding::BORDER_REFLECT";
+          break;
+        default:
+          assert(false && "Chosen BoundaryCondition not supported for Vivado");
+          break;
+      }
+    }
+    *OS << ");\n}\n";
+  }
+  *OS << "\n";
+
+  if (KC->getReduceFunction()) {
+    printReductionFunction(KC, K, Policy, OS);
+  }
+
+  *OS << "#endif //" + ifdef + "\n";
+  *OS << "\n";
+  OS->flush();
+  if (!dump) {
+    fsync(fd);
+    close(fd);
+  }
+
+  if (compilerOptions.emitVivado()) {
+    createVivadoEntry();
+  }
+}
+
+
+void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
+    HipaccKernel *K, PrintingPolicy &Policy, llvm::raw_ostream *OS,
+    enum Rewrite::VivadoParam param) {
   // write kernel parameters
   size_t comma = 0;
+  bool hasMask = false;
+  std::string maskSizeX;
+  std::string maskSizeY;
+  struct accdef {
+    std::string name;
+    std::string type;
+  };
+  std::vector<struct accdef> accs;
   for (size_t i=0, e=D->getNumParams(); i!=e; ++i) {
     std::string Name(D->getParamDecl(i)->getNameAsString());
     FieldDecl *FD = K->getDeviceArgFields()[i];
 
     if (!K->getUsed(Name) &&
         !compilerOptions.emitFilterscript() &&
-        !compilerOptions.emitRenderscript()) {
+        !compilerOptions.emitRenderscript() &&
+        !compilerOptions.emitVivado()) {
         // Proceed for Filterscript, because output image is never explicitly used
         continue;
     }
@@ -2764,6 +3055,19 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         case TARGET_Filterscript:
           // mask/domain is declared as static memory
           break;
+        case TARGET_Vivado:
+          assert(Mask->isConstant() && "Only constant mask are allowed for Vivado");
+          if (hasMask) {
+            assert(maskSizeX.compare(Mask->getSizeXStr()) == 0 &&
+                   maskSizeY.compare(Mask->getSizeYStr()) == 0 &&
+                   "All masks per kernel must have same size for Vivado");
+          }
+          if (param == Rewrite::VivadoParam::KernelDecl) {
+            maskSizeX = Mask->getSizeXStr();
+            maskSizeY = Mask->getSizeYStr();
+            hasMask = true;
+          }
+          break;
       }
       continue;
     }
@@ -2795,6 +3099,15 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         case TARGET_Filterscript:
           *OS << "uint32_t x, uint32_t y";
           doBreak = true;
+          break;
+        case TARGET_Vivado:
+          if (param == Rewrite::VivadoParam::Entry) {
+            std::string typeStr =
+              createVivadoTypeStr(K->getIterationSpace()->getAccessor()->getImage());
+            *OS << "hls::stream<" << typeStr << " > &Output";
+            comma++;
+          }
+          continue;
           break;
       }
       if (doBreak) break;
@@ -2852,14 +3165,90 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         case TARGET_Renderscript:
         case TARGET_Filterscript:
           break;
+        case TARGET_Vivado: {
+          std::string typeStr = createVivadoTypeStr(Acc->getImage());
+          switch (param) {
+            case Rewrite::VivadoParam::KernelDecl:
+              accs.push_back( { Name, typeStr } );
+            break;
+            case Rewrite::VivadoParam::Entry:
+              if (comma++) *OS << ", ";
+              *OS << "hls::stream<" << typeStr << " > &"
+                  << Name;
+            break;
+            case Rewrite::VivadoParam::KernelCall:
+              if (comma++) *OS << ", ";
+              *OS << Name;
+              assert((vivadoBM == -1 || vivadoBM == Acc->getBoundaryHandling()) &&
+                "All Accessors must use same BoundaryMode for Vivado");
+              vivadoBM = Acc->getBoundaryHandling();
+            break;
+            default:
+              /* nothing to do */
+            break;
+          }
+        }
+        break;
       }
       continue;
     }
 
-    // normal arguments
-    if (comma++) *OS << ", ";
-    T.getAsStringInternal(Name, Policy);
-    *OS << Name;
+    if (compilerOptions.emitVivado()) {
+      bool dimParam = false;
+      if (param == Rewrite::VivadoParam::KernelDecl) {
+        for (auto it = accs.begin(); it != accs.end(); ++it) {
+            if (comma++) *OS << ", ";
+            if (hasMask) {
+              *OS << "Window<" << maskSizeX << "," << maskSizeY << ","
+                  << it->type << " > &" << it->name;
+            } else {
+              *OS << it->type << " " << it->name;
+            }
+            comma++;
+        }
+        return;
+      }
+      if (Name.compare("is_width") == 0 || Name.compare("is_height") == 0) {
+        dimParam = true;
+      }
+
+      // normal arguments
+      switch (param) {
+        case Rewrite::VivadoParam::KernelCall:
+        case Rewrite::VivadoParam::KernelDecl:
+          break;
+        case Rewrite::VivadoParam::Member:
+          if (dimParam) continue;
+          T.getAsStringInternal(Name, Policy);
+          *OS << "  " << Name << ";\n";
+          break;
+        case Rewrite::VivadoParam::CTorBody:
+          if (dimParam) continue;
+          *OS << "    this->" << Name << " = " << Name << ";\n";
+          break;
+        case Rewrite::VivadoParam::KernelInit:
+          if (dimParam) {
+            if (comma && i==e-1) *OS << ")";
+            continue;
+          }
+          if (comma++) *OS << ", ";
+          else *OS << "(";
+          *OS << Name;
+          if (i==e-1) *OS << ")";
+          break;
+        case Rewrite::VivadoParam::CTorHead:
+          if (dimParam) continue;
+        default:
+          if (param == Rewrite::VivadoParam::Entry && !dimParam) {
+            entryArguments[K->getKernelName()].push_back(
+              std::pair<std::string,std::string>(T.getAsString(), Name));
+          }
+          if (comma++) *OS << ", ";
+          T.getAsStringInternal(Name, Policy);
+          *OS << Name;
+          break;
+      }
+    }
 
     // default arguments ...
     if (Expr *Init = D->getParamDecl(i)->getInit()) {
@@ -2869,26 +3258,6 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       }
       Init->printPretty(*OS, 0, Policy, 0);
     }
-  }
-  *OS << ") ";
-
-  // print kernel body
-  D->getBody()->printPretty(*OS, 0, Policy, 0);
-  if (compilerOptions.emitCUDA()) {
-    *OS << "}\n";
-  }
-  *OS << "\n";
-
-  if (KC->getReduceFunction()) {
-    printReductionFunction(KC, K, Policy, OS);
-  }
-
-  *OS << "#endif //" + ifdef + "\n";
-  *OS << "\n";
-  OS->flush();
-  if (!dump) {
-    fsync(fd);
-    close(fd);
   }
 }
 

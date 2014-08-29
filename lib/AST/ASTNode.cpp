@@ -31,7 +31,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <clang/AST/ExprCXX.h>
 #include "hipacc/AST/ASTNode.h"
+#include "hipacc/DSL/CompilerKnownClasses.h"
 
 
 namespace clang {
@@ -115,6 +117,32 @@ CallExpr *createFunctionCall(ASTContext &Ctx, FunctionDecl *FD, SmallVector<Expr
 }
 
 
+CXXMemberCallExpr *createMethodCall(ASTContext &Ctx, CXXMethodDecl *CMD,
+                                   SmallVector<Expr *, 16> Expr) {
+//  // get reference to CMD
+//  DeclRefExpr *CMDRef = createDeclRefExpr(Ctx, CMD);
+//  // now, we cast the reference to a pointer to the function type.
+//  QualType pToFunc = Ctx.getPointerType(CMD->getType());
+//
+//  ImplicitCastExpr *ICE = createImplicitCastExpr(Ctx, pToFunc,
+//      CK_FunctionToPointerDecay, CMDRef, nullptr, VK_RValue);
+//
+//  const FunctionType *FT = CMD->getType()->getAs<FunctionType>();
+//
+  // create call expression
+  CXXMemberCallExpr *E = new (Ctx)CXXMemberCallExpr(Ctx, Stmt::EmptyShell());
+  E->setNumArgs(Ctx, Expr.size());
+  E->setRParenLoc(SourceLocation());
+  //E->setCallee(ICE);
+  for (size_t I=0, N=Expr.size(); I!=N; ++I) {
+    E->setArg(I, Expr.data()[I]);
+  }
+//  E->setType(FT->getCallResultType(Ctx));
+
+  return E;
+}
+
+
 CStyleCastExpr *createCStyleCastExpr(ASTContext &Ctx, QualType T, CastKind Kind,
     Expr *Operand, CXXCastPath *BasePath, TypeSourceInfo *WrittenTy) {
   CStyleCastExpr *E = CStyleCastExpr::Create(Ctx, T, VK_RValue, Kind, Operand,
@@ -186,6 +214,103 @@ StringLiteral *createStringLiteral(ASTContext &Ctx, StringRef Name) {
   E->setType(StrTy);
 
   return E;
+}
+
+
+CXXBoolLiteralExpr *createCXXBoolLiteral(ASTContext &Ctx, bool val) {
+  return new (Ctx) CXXBoolLiteralExpr(val, QualType(), SourceLocation());
+}
+
+
+VectorTypeInfo createVectorTypeInfo(const VectorType *VT) {
+  VectorTypeInfo info;
+  info.elementType = VT->getElementType().getAsString();
+  info.elementCount = VT->getNumElements();
+  info.elementWidth = 0;
+
+  if (isa<BuiltinType>(VT->getElementType())) {
+    const BuiltinType *BT = dyn_cast<BuiltinType>(VT->getElementType());
+    switch (BT->getKind()) {
+      case BuiltinType::Char_U:
+      case BuiltinType::UChar:
+      case BuiltinType::Char_S:
+      case BuiltinType::SChar:
+        info.elementWidth = 8;
+        break;
+      case BuiltinType::Char16:
+      case BuiltinType::Short:
+      case BuiltinType::UShort:
+      case BuiltinType::Half:
+        info.elementWidth = 16;
+        break;
+      case BuiltinType::Char32:
+      case BuiltinType::Int:
+      case BuiltinType::UInt:
+      case BuiltinType::Float:
+        info.elementWidth = 32;
+        break;
+      case BuiltinType::Long:
+      case BuiltinType::ULong:
+      case BuiltinType::Double:
+        info.elementWidth = 64;
+        break;
+      case BuiltinType::LongLong:
+      case BuiltinType::ULongLong:
+      case BuiltinType::Int128:
+      case BuiltinType::UInt128:
+      //case BuiltinType::LongDouble: //???
+        info.elementWidth = 128;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return info;
+}
+
+
+std::string getStdIntFromBitWidth(int bitwidth) {
+  std::string stdInt;
+  switch (bitwidth) {
+    case 8: stdInt = "uint8_t";
+      break;
+    case 16: stdInt = "uint16_t";
+      break;
+    case 32: stdInt = "uint32_t";
+      break;
+    case 64: stdInt = "uint64_t";
+      break;
+    default:
+      assert(false && "StdInt types with size greater than 64 bit are not "
+                      "supported");
+      break;
+  }
+  return stdInt;
+}
+
+
+std::string createVivadoTypeStr(HipaccImage *Img) {
+  QualType QT = Img->getType();
+  bool isVector = false;
+  VectorTypeInfo info;
+  if (isa<VectorType>(QT.getCanonicalType().getTypePtr())) {
+    const VectorType *VT = dyn_cast<VectorType>(
+        QT.getCanonicalType().getTypePtr());
+    info = createVectorTypeInfo(VT);
+    isVector = true;
+  }
+
+  std::string typeStr;
+  std::stringstream TSS;
+  if (isVector) {
+    TSS << info.elementCount * info.elementWidth;
+    typeStr = "ap_uint<" + TSS.str() + ">";
+  } else {
+    typeStr = Img->getTypeStr();
+  }
+
+  return typeStr;
 }
 
 

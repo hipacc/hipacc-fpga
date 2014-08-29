@@ -751,6 +751,7 @@ class HipaccKernel : public HipaccKernelFeatures {
 
       switch (target_code) {
         case TARGET_C:
+        case TARGET_Vivado:
           return ArrayRef<QualType>(argTypesC.data(), argTypesC.size());
         case TARGET_CUDA:
           return ArrayRef<QualType>(argTypesCUDA.data(), argTypesCUDA.size());
@@ -848,6 +849,16 @@ class HipaccKernel : public HipaccKernelFeatures {
     }
     unsigned int getPixelsPerThreadReduce() {
       return pixels_per_thread[GlobalOperator];
+    }
+
+    HipaccMask *getVivadoWindow() {
+      if (maskMap.size() > 0) {
+        // All masks must have same size, therefore it doesn't matter which one
+        // we return.
+        return maskMap.begin()->second;
+      } else {
+        return nullptr;
+      }
     }
 };
 } // end namespace hipacc

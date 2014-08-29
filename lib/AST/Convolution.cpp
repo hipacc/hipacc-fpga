@@ -196,6 +196,7 @@ Stmt *ASTTranslate::addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var,
   Expr *dom_acc = nullptr;
   switch (compilerOptions.getTargetCode()) {
     case TARGET_C:
+    case TARGET_Vivado:
     case TARGET_CUDA:
       // array subscript: Domain[y][x]
       dom_acc = accessMem2DAt(domain_var, createIntegerLiteral(Ctx,
