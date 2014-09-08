@@ -571,14 +571,11 @@ FunctionDecl *ASTTranslate::getVivadoReturnConvertFunction(std::string name) {
 }
 
 
-// get setAt(x,y) and getAt(x,y) methods for Vivado windows
-//CXXMethodDecl *ASTTranslate::getWindowMethod(MemoryAccess memAcc) {
+// get setAt(wnd,val,x,y) and getAt(wnd,x,y) functions for Vivado windows
 FunctionDecl *ASTTranslate::getWindowFunction(MemoryAccess memAcc) {
   if (memAcc==READ_ONLY) {
-    //return builtins.getBuiltinMethod(VIVADOBIgetAt);
     return builtins.getBuiltinFunction(VIVADOBIgetWindowAt);
   } else {
-    //return builtins.getBuiltinMethod(VIVADOBIsetAt);
     return builtins.getBuiltinFunction(VIVADOBIsetWindowAt);
   }
 }

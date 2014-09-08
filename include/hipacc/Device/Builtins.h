@@ -61,7 +61,6 @@ struct Info {
   TargetCode builtin_target;
   ID CUDA, OpenCL, Renderscript, Vivado;
   FunctionDecl *FD;
-  CXXMethodDecl *CMD;
 
   bool operator==(const Info &RHS) const {
     return !strcmp(Name, RHS.Name) && !strcmp(Type, RHS.Type);
@@ -88,8 +87,6 @@ class Context {
     void InitializeBuiltins();
     FunctionDecl *CreateBuiltin(unsigned int bid);
     FunctionDecl *CreateBuiltin(QualType R, const char *Name);
-    CXXMethodDecl *CreateBuiltinMethod(unsigned int bid);
-    CXXMethodDecl *CreateBuiltinMethod(QualType R, const char *Name);
 
     void getBuiltinNames(TargetCode target, SmallVectorImpl<const char *>
         &Names);
@@ -98,14 +95,7 @@ class Context {
       return getRecord(ID-FirstBuiltin).FD;
     }
 
-    CXXMethodDecl *getBuiltinMethod(unsigned int ID) const {
-      return getRecord(ID-FirstBuiltin).CMD;
-    }
-
     FunctionDecl *getBuiltinFunction(StringRef Name, QualType QT, TargetCode
-        target) const;
-
-    CXXMethodDecl *getBuiltinMethod(StringRef Name, QualType QT, TargetCode
         target) const;
 
     const char *getName(unsigned int ID) const {
