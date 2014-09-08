@@ -356,9 +356,9 @@ int main(int argc, const char **argv) {
         for(j = 0; j < WIDTH; j++) {
             //fprintf(stdout,"%d ", host_out[i*WIDTH+j]);
             if (host_out[i*WIDTH+j] == 1) {
-                fprintf(stdout,"XXX ");
+                fprintf(stdout,"X ");
             } else {
-                fprintf(stdout,"--- ");
+                fprintf(stdout,"- ");
             }
         }
         fprintf(stdout,"\n");

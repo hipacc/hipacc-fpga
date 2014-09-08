@@ -178,11 +178,11 @@ int main(int argc, const char **argv) {
     int i,j;
     for(i = 0; i < HEIGHT; i++) {
         for(j = 0; j < WIDTH; j++) {
-            fprintf(stdout,"%d %d %d %d ",
-              host_out[i*WIDTH+j].x,
-              host_out[i*WIDTH+j].y,
-              host_out[i*WIDTH+j].z,
-              host_out[i*WIDTH+j].w);
+            fprintf(stdout,"%s %s %s %s ",
+              host_out[i*WIDTH+j].x == 255 ? "X" : "-",
+              host_out[i*WIDTH+j].y == 255 ? "X" : "-",
+              host_out[i*WIDTH+j].z == 255 ? "X" : "-",
+              host_out[i*WIDTH+j].w == 255 ? "X" : "-");
         }
         fprintf(stdout,"\n");
     }
