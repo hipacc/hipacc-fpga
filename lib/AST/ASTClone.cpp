@@ -57,32 +57,25 @@ void ASTTranslate::setExprPropsClone(Expr *orig, Expr *clone) {
 }
 
 
-void ASTTranslate::setCastPath(CastExpr *orig, CXXCastPath &castPath) {
-  for (auto PI = orig->path_begin(), PE = orig->path_end(); PI != PE; ++PI) {
-    castPath.push_back(*PI);
-  }
+void ASTTranslate::setCastPath(CastExpr *orig, CXXCastPath &cast_path) {
+  for (auto PI = orig->path_begin(), PE = orig->path_end(); PI != PE; ++PI)
+    cast_path.push_back(*PI);
 }
 
 
 // Statements
-Stmt *ASTTranslate::VisitStmt(Stmt *) {
-  HIPACC_BASE_CLASS(Stmt);
-  return nullptr;
-}
-
 Stmt *ASTTranslate::VisitNullStmt(NullStmt *S) {
   return new (Ctx) NullStmt(S->getSemiLoc());
 }
 
 Stmt *ASTTranslate::VisitCompoundStmtClone(CompoundStmt *S) {
-  CompoundStmt *result = new (Ctx) CompoundStmt(Ctx, MultiStmtArg(),
-      S->getLBracLoc(), S->getLBracLoc());
-
   SmallVector<Stmt *, 16> body;
-  for (auto I=S->body_begin(), E=S->body_end(); I!=E; ++I) {
-    body.push_back(Clone(*I));
-  }
-  result->setStmts(Ctx, body.data(), body.size());
+
+  for (auto stmt : S->body())
+    body.push_back(Clone(stmt));
+
+  CompoundStmt *result = new (Ctx) CompoundStmt(Ctx, body,
+      S->getLBracLoc(), S->getLBracLoc());
 
   return result;
 }
@@ -158,22 +151,15 @@ Stmt *ASTTranslate::VisitDeclStmt(DeclStmt *S) {
     clonedDecls = DeclGroupRef(CloneDecl(S->getSingleDecl()));
   } else if (S->getDeclGroup().isDeclGroup()) {
     SmallVector<Decl *, 16> clonedDeclGroup;
-    const DeclGroupRef& DG = S->getDeclGroup();
 
-    for (auto I=DG.begin(), E=DG.end(); I!=E; ++I) {
-      clonedDeclGroup.push_back(CloneDecl(*I));
-    }
+    for (auto decl : S->getDeclGroup())
+      clonedDeclGroup.push_back(CloneDecl(decl));
 
     clonedDecls = DeclGroupRef(DeclGroup::Create(Ctx,
           clonedDeclGroup.data(), clonedDeclGroup.size()));
   }
 
   return new (Ctx) DeclStmt(clonedDecls, S->getStartLoc(), S->getEndLoc());
-}
-
-Stmt *ASTTranslate::VisitSwitchCase(SwitchCase *S) {
-  HIPACC_BASE_CLASS(SwitchCase);
-  return nullptr;
 }
 
 Stmt *ASTTranslate::VisitCaseStmt(CaseStmt *S) {
@@ -191,26 +177,21 @@ Stmt *ASTTranslate::VisitDefaultStmt(DefaultStmt *S) {
 }
 
 Stmt *ASTTranslate::VisitCapturedStmt(CapturedStmt *S) {
-  SmallVector<CapturedStmt::Capture, 16> Captures;
-  SmallVector<Expr *, 16> CaptureInits;
+  SmallVector<CapturedStmt::Capture, 16> captures;
+  SmallVector<Expr *, 16> capture_inits;
 
   // Capture inits
-  for (auto I = S->capture_init_begin(), E = S->capture_init_end(); I != E; ++I)
-  {
-    CaptureInits.push_back(Clone(*I));
-  }
+  for (auto init : S->capture_inits())
+    capture_inits.push_back(Clone(init));
 
   // Captures
-  for (auto I = S->capture_begin(), E = S->capture_end(); I != E; ++I) {
-    Captures.push_back(CapturedStmt::Capture(I->getLocation(),
-          I->getCaptureKind(), CloneDecl(I->getCapturedVar())));
-  }
+  for (auto capture : S->captures())
+    captures.push_back(CapturedStmt::Capture(capture.getLocation(),
+          capture.getCaptureKind(), CloneDecl(capture.getCapturedVar())));
 
   return CapturedStmt::Create(Ctx, Clone(S->getCapturedStmt()),
-      S->getCapturedRegionKind(), llvm::makeArrayRef(Captures.data(),
-        Captures.size()), llvm::makeArrayRef(CaptureInits.data(),
-        CaptureInits.size()), S->getCapturedDecl(), (RecordDecl
-        *)S->getCapturedRecordDecl());
+      S->getCapturedRegionKind(), captures, capture_inits, S->getCapturedDecl(),
+      (RecordDecl *)S->getCapturedRecordDecl());
 }
 
 
@@ -236,9 +217,8 @@ Stmt *ASTTranslate::VisitGCCAsmStmt(GCCAsmStmt *S) {
 
   // constraints
   SmallVector<StringLiteral *, 16> clobbers;
-  for (size_t I=0, N=S->getNumClobbers(); I!=N; ++I) {
+  for (size_t I=0, N=S->getNumClobbers(); I!=N; ++I)
     clobbers.push_back(S->getClobberStringLiteral(I));
-  }
 
   return new (Ctx) GCCAsmStmt(Ctx, S->getAsmLoc(), S->isSimple(),
       S->isVolatile(), S->getNumOutputs(), S->getNumInputs(), names.data(),
@@ -257,26 +237,15 @@ Stmt *ASTTranslate::VisitCXXCatchStmt(CXXCatchStmt *S) {
 Stmt *ASTTranslate::VisitCXXTryStmt(CXXTryStmt *S) {
   SmallVector<Stmt *, 16> handlers;
 
-  for (size_t I=0, N=S->getNumHandlers(); I!=N; ++I) {
-    handlers.push_back((Stmt *)Clone(S->getHandler(I)));
-  }
+  for (size_t I=0, N=S->getNumHandlers(); I!=N; ++I)
+    handlers.push_back(Clone(S->getHandler(I)));
 
   return CXXTryStmt::Create(Ctx, S->getTryLoc(), Clone(S->getTryBlock()),
-      llvm::makeArrayRef(handlers.data(), handlers.size()));
-}
-
-Stmt *ASTTranslate::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
-  HIPACC_NOT_SUPPORTED(CXXForRangeStmt);
-  return nullptr;
+      handlers);
 }
 
 
 // Expressions
-Expr *ASTTranslate::VisitExpr(Expr *E) {
-  HIPACC_BASE_CLASS(Expr);
-  return nullptr;
-}
-
 Expr *ASTTranslate::VisitPredefinedExpr(PredefinedExpr *E) {
   Expr *result = new (Ctx) PredefinedExpr(E->getLocation(), E->getType(),
       E->getIdentType());
@@ -288,9 +257,8 @@ Expr *ASTTranslate::VisitPredefinedExpr(PredefinedExpr *E) {
 
 Expr *ASTTranslate::VisitDeclRefExpr(DeclRefExpr *E) {
   TemplateArgumentListInfo templateArgs(E->getLAngleLoc(), E->getRAngleLoc());
-  for (size_t I=0, N=E->getNumTemplateArgs(); I!=N; ++I) {
+  for (size_t I=0, N=E->getNumTemplateArgs(); I!=N; ++I)
     templateArgs.addArgument(E->getTemplateArgs()[I]);
-  }
 
   ValueDecl *VD = CloneDecl(E->getDecl());
   // remove reference type if present
@@ -381,13 +349,11 @@ Expr *ASTTranslate::VisitOffsetOfExpr(OffsetOfExpr *E) {
   result->setTypeSourceInfo(E->getTypeSourceInfo());
   result->setRParenLoc(E->getRParenLoc());
 
-  for (size_t I=0, N=E->getNumComponents(); I!=N; ++I) {
+  for (size_t I=0, N=E->getNumComponents(); I!=N; ++I)
     result->setComponent(I, E->getComponent(I));
-  }
 
-  for (size_t I=0, N=E->getNumExpressions(); I!=N; ++I) {
+  for (size_t I=0, N=E->getNumExpressions(); I!=N; ++I)
     result->setIndexExpr(I, Clone(E->getIndexExpr(I)));
-  }
 
   setExprPropsClone(E, result);
 
@@ -426,13 +392,11 @@ Expr *ASTTranslate::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
 Expr *ASTTranslate::VisitCallExprClone(CallExpr *E) {
   SmallVector<Expr *, 16> args;
 
-  for (size_t I=0, N=E->getNumArgs(); I!=N; ++I) {
-    args.push_back(Clone(E->getArg(I)));
-  }
+  for (auto arg : E->arguments())
+    args.push_back(Clone(arg));
 
-  CallExpr *result = new (Ctx) CallExpr(Ctx, Clone(E->getCallee()),
-      llvm::makeArrayRef(args.data(), args.size()), E->getType(),
-      E->getValueKind(), E->getRParenLoc());
+  CallExpr *result = new (Ctx) CallExpr(Ctx, Clone(E->getCallee()), args,
+      E->getType(), E->getValueKind(), E->getRParenLoc());
 
   setExprPropsClone(E, result);
 
@@ -447,11 +411,6 @@ Expr *ASTTranslate::VisitMemberExprClone(MemberExpr *E) {
   setExprPropsClone(E, result);
 
   return result;
-}
-
-Expr *ASTTranslate::VisitCastExpr(CastExpr *E) {
-  HIPACC_BASE_CLASS(CastExpr);
-  return nullptr;
 }
 
 Expr *ASTTranslate::VisitBinaryOperatorClone(BinaryOperator *E) {
@@ -474,11 +433,6 @@ Expr *ASTTranslate::VisitCompoundAssignOperator(CompoundAssignOperator *E) {
   setExprPropsClone(E, result);
 
   return result;
-}
-
-Expr *ASTTranslate::VisitAbstractConditionalOperator(AbstractConditionalOperator *E) {
-  HIPACC_NOT_SUPPORTED(AbstractConditionalOperator);
-  return nullptr;
 }
 
 Expr *ASTTranslate::VisitConditionalOperator(ConditionalOperator *E) {
@@ -504,28 +458,23 @@ Expr *ASTTranslate::VisitBinaryConditionalOperator(BinaryConditionalOperator *E)
 }
 
 Expr *ASTTranslate::VisitImplicitCastExprClone(ImplicitCastExpr *E) {
-  CXXCastPath castPath;
-  setCastPath(E, castPath);
+  CXXCastPath cast_path;
+  setCastPath(E, cast_path);
 
   ImplicitCastExpr *result = ImplicitCastExpr::Create(Ctx, E->getType(),
-      E->getCastKind(), Clone(E->getSubExpr()), &castPath, E->getValueKind());
+      E->getCastKind(), Clone(E->getSubExpr()), &cast_path, E->getValueKind());
 
   setExprPropsClone(E, result);
 
   return result;
 }
 
-Expr *ASTTranslate::VisitExplicitCastExpr(ExplicitCastExpr *E) {
-  HIPACC_BASE_CLASS(ExplicitCastExpr);
-  return nullptr;
-}
-
 Expr *ASTTranslate::VisitCStyleCastExprClone(CStyleCastExpr *E) {
-  CXXCastPath castPath;
-  setCastPath(E, castPath);
+  CXXCastPath cast_path;
+  setCastPath(E, cast_path);
 
   CStyleCastExpr *result = CStyleCastExpr::Create(Ctx, E->getType(),
-      E->getValueKind(), E->getCastKind(), Clone(E->getSubExpr()), &castPath,
+      E->getValueKind(), E->getCastKind(), Clone(E->getSubExpr()), &cast_path,
       E->getTypeInfoAsWritten(), E->getLParenLoc(), E->getRParenLoc());
 
   setExprPropsClone(E, result);
@@ -553,15 +502,13 @@ Expr *ASTTranslate::VisitExtVectorElementExpr(ExtVectorElementExpr *E) {
 }
 
 Expr *ASTTranslate::VisitInitListExpr(InitListExpr *E) {
-  SmallVector<Expr *, 16> initExprs;
+  SmallVector<Expr *, 16> init_exprs;
 
-  for (size_t I=0, N=E->getNumInits(); I!=N; ++I) {
-    initExprs.push_back(Clone(E->getInit(I)));
-  }
+  for (size_t I=0, N=E->getNumInits(); I!=N; ++I)
+    init_exprs.push_back(Clone(E->getInit(I)));
 
   InitListExpr *result = new (Ctx) InitListExpr(Ctx, E->getLBraceLoc(),
-      llvm::makeArrayRef(initExprs.data(), initExprs.size()),
-      E->getRBraceLoc());
+      init_exprs, E->getRBraceLoc());
 
   result->setInitializedFieldInUnion(E->getInitializedFieldInUnion());
   if (E->hasArrayFiller()) result->setArrayFiller(Clone(E->getArrayFiller()));
@@ -572,15 +519,14 @@ Expr *ASTTranslate::VisitInitListExpr(InitListExpr *E) {
 }
 
 Expr *ASTTranslate::VisitDesignatedInitExpr(DesignatedInitExpr *E) {
-  SmallVector<Expr *, 16> indexExprs;
+  SmallVector<Expr *, 16> index_exprs;
 
   size_t numIndexExprs = E->getNumSubExprs() - 1;
-  for (size_t I=0 ; I<numIndexExprs; ++I) {
-    indexExprs.push_back(Clone(E->getSubExpr(I+1)));
-  }
+  for (size_t I=0 ; I<numIndexExprs; ++I)
+    index_exprs.push_back(Clone(E->getSubExpr(I+1)));
 
   Expr *result = DesignatedInitExpr::Create(Ctx, E->getDesignator(0), E->size(),
-      indexExprs, E->getEqualOrColonLoc(), E->usesGNUSyntax(),
+      index_exprs, E->getEqualOrColonLoc(), E->usesGNUSyntax(),
       Clone(E->getInit()));
 
   setExprPropsClone(E, result);
@@ -597,14 +543,13 @@ Expr *ASTTranslate::VisitImplicitValueInitExpr(ImplicitValueInitExpr *E) {
 }
 
 Expr *ASTTranslate::VisitParenListExpr(ParenListExpr *E) {
-  SmallVector<Expr *, 16> Exprs;
+  SmallVector<Expr *, 16> exprs;
 
-  for (size_t I=0, N=E->getNumExprs(); I!=N; ++I) {
-    Exprs.push_back(Clone(E->getExpr(I)));
-  }
+  for (size_t I=0, N=E->getNumExprs(); I!=N; ++I)
+    exprs.push_back(Clone(E->getExpr(I)));
 
-  Expr *result = new (Ctx) ParenListExpr(Ctx, E->getLParenLoc(),
-      llvm::makeArrayRef(Exprs.data(), Exprs.size()), E->getRParenLoc());
+  Expr *result = new (Ctx) ParenListExpr(Ctx, E->getLParenLoc(), exprs,
+      E->getRParenLoc());
 
   setExprPropsClone(E, result);
 
@@ -620,26 +565,15 @@ Expr *ASTTranslate::VisitVAArgExpr(VAArgExpr *E) {
   return result;
 }
 
-Expr *ASTTranslate::VisitGenericSelectionExpr(GenericSelectionExpr *E) {
-  HIPACC_NOT_SUPPORTED(GenericSelectionExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitPseudoObjectExpr(PseudoObjectExpr *E) {
-  HIPACC_NOT_SUPPORTED(PseudoObjectExpr);
-  return nullptr;
-}
-
 
 // Atomic Expressions
 Expr *ASTTranslate::VisitAtomicExpr(AtomicExpr *E) {
-  SmallVector<Expr *, 16> Args;
+  SmallVector<Expr *, 16> args;
 
-  for (size_t I=0, N=E->getNumSubExprs(); I!=N; ++I) {
-    Args.push_back(Clone(E->getSubExprs()[I]));
-  }
+  for (size_t I=0, N=E->getNumSubExprs(); I!=N; ++I)
+    args.push_back(Clone(E->getSubExprs()[I]));
 
-  Expr *result = new (Ctx) AtomicExpr(E->getBuiltinLoc(), Args, E->getType(),
+  Expr *result = new (Ctx) AtomicExpr(E->getBuiltinLoc(), args, E->getType(),
       E->getOp(), E->getRParenLoc());
 
   setExprPropsClone(E, result);
@@ -691,14 +625,12 @@ Expr *ASTTranslate::VisitGNUNullExpr(GNUNullExpr *E) {
 Expr *ASTTranslate::VisitCXXOperatorCallExprClone(CXXOperatorCallExpr *E) {
   SmallVector<Expr *, 16> args;
 
-  for (size_t I=0, N=E->getNumArgs(); I!=N; ++I) {
-    args.push_back(Clone(E->getArg(I)));
-  }
+  for (auto arg : E->arguments())
+    args.push_back(Clone(arg));
 
   CXXOperatorCallExpr *result = new (Ctx) CXXOperatorCallExpr(Ctx,
-      E->getOperator(), Clone(E->getCallee()), llvm::makeArrayRef(args.data(),
-        args.size()), E->getType(), E->getValueKind(), E->getRParenLoc(),
-      E->isFPContractable());
+      E->getOperator(), Clone(E->getCallee()), args, E->getType(),
+      E->getValueKind(), E->getRParenLoc(), E->isFPContractable());
 
   setExprPropsClone(E, result);
 
@@ -706,32 +638,26 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprClone(CXXOperatorCallExpr *E) {
 }
 
 Expr *ASTTranslate::VisitCXXMemberCallExprClone(CXXMemberCallExpr *E) {
+  SmallVector<Expr *, 16> args;
+
+  for (auto arg : E->arguments())
+    args.push_back(Clone(arg));
+
   CXXMemberCallExpr *result = new (Ctx) CXXMemberCallExpr(Ctx,
-      Clone(E->getCallee()), MultiExprArg(), E->getType(), E->getValueKind(),
+      Clone(E->getCallee()), args, E->getType(), E->getValueKind(),
       E->getRParenLoc());
-
-  result->setNumArgs(Ctx, E->getNumArgs());
-
-  for (size_t I=0, N=E->getNumArgs(); I!=N; ++I) {
-    result->setArg(I, Clone(E->getArg(I)));
-  }
 
   setExprPropsClone(E, result);
 
   return result;
 }
 
-Expr *ASTTranslate::VisitCXXNamedCastExpr(CXXNamedCastExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXNamedCastExpr);
-  return nullptr;
-}
-
 Expr *ASTTranslate::VisitCXXStaticCastExpr(CXXStaticCastExpr *E) {
-  CXXCastPath castPath;
-  setCastPath(E, castPath);
+  CXXCastPath cast_path;
+  setCastPath(E, cast_path);
 
   CXXStaticCastExpr *result = CXXStaticCastExpr::Create(Ctx, E->getType(),
-      E->getValueKind(), E->getCastKind(), Clone(E->getSubExpr()), &castPath,
+      E->getValueKind(), E->getCastKind(), Clone(E->getSubExpr()), &cast_path,
       E->getTypeInfoAsWritten(), E->getOperatorLoc(), E->getRParenLoc(),
       E->getAngleBrackets());
 
@@ -741,11 +667,11 @@ Expr *ASTTranslate::VisitCXXStaticCastExpr(CXXStaticCastExpr *E) {
 }
 
 Expr *ASTTranslate::VisitCXXDynamicCastExpr(CXXDynamicCastExpr *E) {
-  CXXCastPath castPath;
-  setCastPath(E, castPath);
+  CXXCastPath cast_path;
+  setCastPath(E, cast_path);
 
   CXXDynamicCastExpr *result = CXXDynamicCastExpr::Create(Ctx, E->getType(),
-      E->getValueKind(), E->getCastKind(), Clone(E->getSubExpr()), &castPath,
+      E->getValueKind(), E->getCastKind(), Clone(E->getSubExpr()), &cast_path,
       E->getTypeInfoAsWritten(), E->getOperatorLoc(), E->getRParenLoc(),
       E->getAngleBrackets());
 
@@ -755,12 +681,12 @@ Expr *ASTTranslate::VisitCXXDynamicCastExpr(CXXDynamicCastExpr *E) {
 }
 
 Expr *ASTTranslate::VisitCXXReinterpretCastExpr(CXXReinterpretCastExpr *E) {
-  CXXCastPath castPath;
-  setCastPath(E, castPath);
+  CXXCastPath cast_path;
+  setCastPath(E, cast_path);
 
   CXXReinterpretCastExpr *result = CXXReinterpretCastExpr::Create(Ctx,
       E->getType(), E->getValueKind(), E->getCastKind(), Clone(E->getSubExpr()),
-      &castPath, E->getTypeInfoAsWritten(), E->getOperatorLoc(),
+      &cast_path, E->getTypeInfoAsWritten(), E->getOperatorLoc(),
       E->getRParenLoc(), E->getAngleBrackets());
 
   setExprPropsClone(E, result);
@@ -779,27 +705,17 @@ Expr *ASTTranslate::VisitCXXConstCastExpr(CXXConstCastExpr *E) {
 }
 
 Expr *ASTTranslate::VisitCXXFunctionalCastExpr(CXXFunctionalCastExpr *E) {
-  CXXCastPath castPath;
-  setCastPath(E, castPath);
+  CXXCastPath cast_path;
+  setCastPath(E, cast_path);
 
   CXXFunctionalCastExpr *result = CXXFunctionalCastExpr::Create(Ctx,
       E->getType(), E->getValueKind(), E->getTypeInfoAsWritten(),
-      E->getCastKind(), Clone(E->getSubExpr()), &castPath, E->getLParenLoc(),
+      E->getCastKind(), Clone(E->getSubExpr()), &cast_path, E->getLParenLoc(),
       E->getRParenLoc());
 
   setExprPropsClone(E, result);
 
   return result;
-}
-
-Expr *ASTTranslate::VisitCXXTypeidExpr(CXXTypeidExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXTypeidExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitUserDefinedLiteral(UserDefinedLiteral *E) {
-  HIPACC_NOT_SUPPORTED(UserDefinedLiteral);
-  return nullptr;
 }
 
 Expr *ASTTranslate::VisitCXXBoolLiteralExpr(CXXBoolLiteralExpr *E) {
@@ -839,11 +755,6 @@ Expr *ASTTranslate::VisitCXXThrowExpr(CXXThrowExpr *E) {
   return result;
 }
 
-Expr *ASTTranslate::VisitCXXDefaultArgExpr(CXXDefaultArgExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXDefaultArgExpr);
-  return nullptr;
-}
-
 Expr *ASTTranslate::VisitCXXDefaultInitExpr(CXXDefaultInitExpr *E) {
   Expr *result = CXXDefaultInitExpr::Create(Ctx, E->getExprLoc(),
       E->getField());
@@ -851,11 +762,6 @@ Expr *ASTTranslate::VisitCXXDefaultInitExpr(CXXDefaultInitExpr *E) {
   setExprPropsClone(E, result);
 
   return result;
-}
-
-Expr *ASTTranslate::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXScalarValueInitExpr);
-  return nullptr;
 }
 
 Expr *ASTTranslate::VisitCXXStdInitializerListExpr(CXXStdInitializerListExpr *E) {
@@ -867,130 +773,10 @@ Expr *ASTTranslate::VisitCXXStdInitializerListExpr(CXXStdInitializerListExpr *E)
   return result;
 }
 
-Expr *ASTTranslate::VisitCXXNewExpr(CXXNewExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXNewExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXDeleteExpr(CXXDeleteExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXDeleteExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXPseudoDestructorExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitTypeTraitExpr(TypeTraitExpr *E) {
-  HIPACC_NOT_SUPPORTED(TypeTraitExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
-  HIPACC_NOT_SUPPORTED(UnaryTypeTraitExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
-  HIPACC_NOT_SUPPORTED(ArrayTypeTraitExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitExpressionTraitExpr(ExpressionTraitExpr *E) {
-  HIPACC_NOT_SUPPORTED(ExpressionTraitExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E)
-{
-  HIPACC_NOT_SUPPORTED(DependentScopeDeclRefExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXConstructExpr(CXXConstructExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXConstructExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXBindTemporaryExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitExprWithCleanups(ExprWithCleanups *E) {
-  HIPACC_NOT_SUPPORTED(ExprWithCleanups);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXTemporaryObjectExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXUnresolvedConstructExpr(CXXUnresolvedConstructExpr
-    *E) {
-  HIPACC_NOT_SUPPORTED(CXXUnresolvedConstructExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr
-    *E) {
-  HIPACC_NOT_SUPPORTED(CXXDependentScopeMemberExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitOverloadExpr(OverloadExpr *E) {
-  HIPACC_NOT_SUPPORTED(OverloadExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
-  HIPACC_NOT_SUPPORTED(UnresolvedLookupExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *E) {
-  HIPACC_NOT_SUPPORTED(UnresolvedMemberExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
-  HIPACC_NOT_SUPPORTED(CXXNoexceptExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitPackExpansionExpr(PackExpansionExpr *E) {
-  HIPACC_NOT_SUPPORTED(PackExpansionExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
-  HIPACC_NOT_SUPPORTED(SizeOfPackExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitSubstNonTypeTemplateParmExpr(
-    SubstNonTypeTemplateParmExpr *E) {
-  HIPACC_NOT_SUPPORTED(SubstNonTypeTemplateParmExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitSubstNonTypeTemplateParmPackExpr(
-    SubstNonTypeTemplateParmPackExpr *E) {
-  HIPACC_NOT_SUPPORTED(SubstNonTypeTemplateParmPackExpr);
-  return nullptr;
-}
-
-Expr *ASTTranslate::VisitFunctionParmPackExpr(FunctionParmPackExpr *E) {
-  HIPACC_NOT_SUPPORTED(FunctionParmPackExpr);
-  return nullptr;
-}
-
 Expr *ASTTranslate::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
   MaterializeTemporaryExpr *result = new (Ctx)
     MaterializeTemporaryExpr(E->getType(), Clone(E->GetTemporaryExpr()),
-        E->isBoundToLvalueReference(), E->getExtendingDecl());
+        E->isBoundToLvalueReference());
 
   setExprPropsClone(E, result);
 
@@ -998,43 +784,40 @@ Expr *ASTTranslate::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
 }
 
 Expr *ASTTranslate::VisitLambdaExpr(LambdaExpr *E) {
-  SmallVector<LambdaExpr::Capture, 16> captures;
-  SmallVector<Expr *, 16> captureInits;
+  SmallVector<LambdaCapture, 16> captures;
+  SmallVector<Expr *, 16> capture_inits;
 
-  SmallVector<VarDecl *, 4> arrayIndexVars;
-  SmallVector<unsigned int, 4> arrayIndexStarts;
+  SmallVector<VarDecl *, 4> array_index_vars;
+  SmallVector<unsigned, 4> array_index_starts;
 
   // Captures
-  for (auto CI=E->capture_begin(), CE=E->capture_end(); CI!=CE; ++CI) {
-    captures.push_back(*CI);
-  }
+  for (auto capture : E->captures())
+    captures.push_back(capture);
   // CaptureInits
-  auto curField = E->getLambdaClass()->field_begin();
-  for (auto CI=E->capture_init_begin(), CE=E->capture_init_end(); CI!=CE; ++CI,
-          ++curField) {
-    captureInits.push_back(*CI);
+  auto field = E->getLambdaClass()->field_begin();
+  for (auto init : E->capture_inits()) {
+    capture_inits.push_back(init);
 
     // ArrayIndex[Vars|Starts]
-    if (curField->getType()->isArrayType()) {
-      arrayIndexStarts.push_back(arrayIndexVars.size());
+    if (field->getType()->isArrayType()) {
+      array_index_starts.push_back(array_index_vars.size());
 
-      ArrayRef<VarDecl *> curArrayIndexVars = E->getCaptureInitIndexVars(CI);
-      unsigned int num_var = 0;
-      QualType BaseType = curField->getType();
-      while (const ConstantArrayType *Array =
-          Ctx.getAsConstantArrayType(BaseType)) {
-        arrayIndexVars.push_back(curArrayIndexVars[num_var]);
-        BaseType = Array->getElementType();
-        num_var++;
+      auto cur_array_index_vars = E->getCaptureInitIndexVars(&init);
+      unsigned num_var = 0;
+      QualType BaseType = field->getType();
+      while (auto array = Ctx.getAsConstantArrayType(BaseType)) {
+        array_index_vars.push_back(cur_array_index_vars[num_var++]);
+        BaseType = array->getElementType();
       }
     }
+    field++;
   }
 
   LambdaExpr *result = LambdaExpr::Create(Ctx, E->getLambdaClass(),
       E->getIntroducerRange(), E->getCaptureDefault(),
       E->getCaptureDefaultLoc(), captures, E->hasExplicitParameters(),
-      E->hasExplicitResultType(), captureInits, arrayIndexVars,
-      arrayIndexStarts, E->getBody()->getLocEnd(),
+      E->hasExplicitResultType(), capture_inits, array_index_vars,
+      array_index_starts, E->getBody()->getLocEnd(),
       E->containsUnexpandedParameterPack());
 
   setExprPropsClone(E, result);
@@ -1045,14 +828,13 @@ Expr *ASTTranslate::VisitLambdaExpr(LambdaExpr *E) {
 
 // CUDA Expressions
 Expr *ASTTranslate::VisitCUDAKernelCallExpr(CUDAKernelCallExpr *E) {
-  SmallVector<Expr *, 16> Args;
+  SmallVector<Expr *, 16> args;
 
-  for (size_t I=0, N=E->getNumArgs(); I!=N; ++I) {
-    Args.push_back(Clone(E->getArg(I)));
-  }
+  for (auto arg : E->arguments())
+    args.push_back(Clone(arg));
 
   Expr *result = new (Ctx) CUDAKernelCallExpr(Ctx, Clone(E->getCallee()),
-      Clone(E->getConfig()), Args, E->getType(), E->getValueKind(),
+      Clone(E->getConfig()), args, E->getType(), E->getValueKind(),
       E->getRParenLoc());
 
   setExprPropsClone(E, result);
@@ -1065,9 +847,8 @@ Expr *ASTTranslate::VisitCUDAKernelCallExpr(CUDAKernelCallExpr *E) {
 Expr *ASTTranslate::VisitShuffleVectorExpr(ShuffleVectorExpr *E) {
   SmallVector<Expr *, 16> body;
 
-  for (size_t I=0, N=E->getNumSubExprs(); I!=N; ++I) {
+  for (size_t I=0, N=E->getNumSubExprs(); I!=N; ++I)
     body.push_back(Clone(E->getExpr(I)));
-  }
 
   Expr *result = new (Ctx) ShuffleVectorExpr(Ctx, body, E->getType(),
       E->getBuiltinLoc(), E->getRParenLoc());

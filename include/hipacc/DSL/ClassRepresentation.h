@@ -37,6 +37,7 @@
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Format.h>
 
 #include <map>
 #include <sstream>
@@ -596,7 +597,6 @@ class HipaccKernel : public HipaccKernelFeatures {
   private:
     ASTContext &Ctx;
     VarDecl *VD;
-    CompilerOptions &options;
     std::string name;
     std::string kernelName, reduceName;
     std::string fileName;
@@ -635,7 +635,6 @@ class HipaccKernel : public HipaccKernelFeatures {
       HipaccKernelFeatures(options, KC),
       Ctx(Ctx),
       VD(VD),
-      options(options),
       name(VD->getNameAsString()),
       kernelName(options.getTargetPrefix() + KC->getName() + name + "Kernel"),
       reduceName(options.getTargetPrefix() + KC->getName() + name + "Reduce"),
@@ -775,6 +774,7 @@ class HipaccKernel : public HipaccKernelFeatures {
     }
     void setHostArgNames(ArrayRef<Expr *>hostArgs, std::string
         &hostLiterals, unsigned int &literalCount) {
+      createArgInfo();
       createHostArgInfo(hostArgs, hostLiterals, literalCount);
     }
     std::string *getHostArgNames() {
@@ -796,7 +796,7 @@ class HipaccKernel : public HipaccKernelFeatures {
         num_smem = smem;
       }
       num_cmem = cmem;
-      // calcuclate new configuration
+      // calculate new configuration
       calcConfig();
       // reset parameter information since the tiling and corresponding
       // variables may have been changed

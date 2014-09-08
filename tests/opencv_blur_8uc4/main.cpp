@@ -23,15 +23,17 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <iostream>
 #include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
 
+//#define CPU
 #ifdef OpenCV
+#include "opencv2/opencv.hpp"
+#ifndef CPU
 #include "opencv2/gpu/gpu.hpp"
-#include "opencv2/imgproc/imgproc_c.h"
+#endif
 #endif
 
 #include "hipacc.hpp"
@@ -41,8 +43,8 @@
 //#define SIZE_Y 5
 //#define WIDTH 4096
 //#define HEIGHT 4096
-//#define CPU
-#define CONST_MASK
+#define ARRAY_DOMAIN
+#define CONST_DOMAIN
 #define USE_LAMBDA
 
 #define NT 100
@@ -63,8 +65,8 @@ double time_ms () {
 
 // blur filter reference
 #ifdef SIMPLE
-void blur_filter(uchar4 *in, uchar4 *out, int size_x, int size_y,
-        int width, int height) {
+void blur_filter(uchar4 *in, uchar4 *out, int size_x, int size_y, int width,
+        int height) {
     int anchor_x = size_x >> 1;
     int anchor_y = size_y >> 1;
     #ifdef OpenCV
@@ -232,7 +234,6 @@ int main(int argc, const char **argv) {
     const int offset_x = size_x >> 1;
     const int offset_y = size_y >> 1;
     const int t = NT;
-    float timing = 0.0f;
 
     // only filter kernel sizes 3x3 and 5x5 implemented
     if (size_x != size_y && (size_x != 3 || size_x != 5)) {
@@ -240,9 +241,29 @@ int main(int argc, const char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    // domain for blur filter
+    #ifdef ARRAY_DOMAIN
+    #ifdef CONST_DOMAIN
+    const
+    #endif
+    uchar domain[SIZE_Y][SIZE_X] = {
+        #if SIZE_X == 3
+        { 1, 1, 1 },
+        { 1, 1, 1 },
+        { 1, 1, 1 }
+        #endif
+        #if SIZE_X == 5
+        { 1, 1, 1, 1, 1 },
+        { 1, 1, 1, 1, 1 },
+        { 1, 1, 1, 1, 1 },
+        { 1, 1, 1, 1, 1 },
+        { 1, 1, 1, 1, 1 }
+        #endif
+    };
+    #endif
+
     // host memory for image of width x height pixels
-    uchar4 *host_in = (uchar4 *)malloc(sizeof(uchar4)*width*height);
-    uchar4 *host_out = (uchar4 *)malloc(sizeof(uchar4)*width*height);
+    uchar4 *input = (uchar4 *)malloc(sizeof(uchar4)*width*height);
     uchar4 *reference_in = (uchar4 *)malloc(sizeof(uchar4)*width*height);
     uchar4 *reference_out = (uchar4 *)malloc(sizeof(uchar4)*width*height);
 
@@ -254,38 +275,24 @@ int main(int argc, const char **argv) {
             val.y = (y*width + x + 2) % 256;
             val.z = (y*width + x + 3) % 256;
             val.w = (y*width + x + 4) % 256;
-            host_in[y*width + x] = val;
+            input[y*width + x] = val;
             reference_in[y*width + x] = val;
-            host_out[y*width + x] = (uchar4){ 0, 0, 0, 0 };
             reference_out[y*width + x] = (uchar4){ 0, 0, 0, 0 };
         }
     }
 
 
-    // define Domain for blur filter
-    Domain dom(size_x, size_y);
-    #ifdef CONST_MASK
-    const
-    #endif
-    uchar domain[] = { 
-        #if SIZE_X==3
-        1, 1, 1,
-        1, 1, 1,
-        1, 1, 1
-        #endif
-        #if SIZE_X==5
-        1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1
-        #endif
-    };
-    dom = domain;
-
     // input and output image of width x height pixels
     Image<uchar4> in(width, height);
     Image<uchar4> out(width, height);
+
+    // define Domain for blur filter
+    #ifdef ARRAY_DOMAIN
+    Domain dom(domain);
+    #else
+    Domain dom(size_x, size_y);
+    #endif
+
     // use undefined boundary handling to access image pixels beyond region
     // defined by Accessor
     BoundaryCondition<uchar4> bound(in, size_x, size_y, BOUNDARY_UNDEFINED);
@@ -299,16 +306,16 @@ int main(int argc, const char **argv) {
     BlurFilter filter(iter, acc, dom, size_x, size_y, t, height);
     #endif
 
-    in = host_in;
-    out = host_out;
+    in = input;
 
     fprintf(stderr, "Calculating HIPAcc blur filter ...\n");
+    float timing = 0.0f;
 
     filter.execute();
     timing = hipaccGetLastKernelTiming();
 
-    // get results
-    host_out = out.getData();
+    // get pointer to result data
+    uchar4 *output = out.getData();
 
     fprintf(stderr, "HIPACC: %.3f ms, %.3f Mpixel/s\n", timing, ((width-2*offset_x)*(height-2*offset_y)/timing)/1000);
 
@@ -331,8 +338,8 @@ int main(int argc, const char **argv) {
     #endif
 
 
-    cv::Mat cv_data_in(height, width, CV_8UC4, host_in);
-    cv::Mat cv_data_out(height, width, CV_8UC4, host_out);
+    cv::Mat cv_data_in(height, width, CV_8UC4, input);
+    cv::Mat cv_data_out(height, width, CV_8UC4, cv::Scalar(0));
     cv::Size ksize(size_x, size_y);
 
     #ifdef CPU
@@ -360,8 +367,10 @@ int main(int argc, const char **argv) {
         dt = time1 - time0;
         if (dt < min_dt) min_dt = dt;
     }
-
     gpu_out.download(cv_data_out);
+
+    // get pointer to result data
+    output = (uchar4 *)cv_data_out.data;
     #endif
 
     fprintf(stderr, "OpenCV: %.3f ms, %.3f Mpixel/s\n", min_dt, ((width-size_x)*(height-size_y)/min_dt)/1000);
@@ -397,20 +406,20 @@ int main(int argc, const char **argv) {
     // compare results
     for (int y=offset_y; y<upper_y; y++) {
         for (int x=offset_x; x<upper_x; x++) {
-            if (reference_out[y*width + x].x != host_out[y*width + x].x ||
-                reference_out[y*width + x].y != host_out[y*width + x].y ||
-                reference_out[y*width + x].z != host_out[y*width + x].z ||
-                reference_out[y*width + x].w != host_out[y*width + x].w) {
+            if (reference_out[y*width + x].x != output[y*width + x].x ||
+                reference_out[y*width + x].y != output[y*width + x].y ||
+                reference_out[y*width + x].z != output[y*width + x].z ||
+                reference_out[y*width + x].w != output[y*width + x].w) {
                 fprintf(stderr, "Test FAILED, at (%d,%d): "
                         "%hhu,%hhu,%hhu,%hhu vs. %hhu,%hhu,%hhu,%hhu\n", x, y,
                         reference_out[y*width + x].x,
                         reference_out[y*width + x].y,
                         reference_out[y*width + x].z,
                         reference_out[y*width + x].w,
-                        host_out[y*width + x].x,
-                        host_out[y*width + x].y,
-                        host_out[y*width + x].z,
-                        host_out[y*width + x].z);
+                        output[y*width + x].x,
+                        output[y*width + x].y,
+                        output[y*width + x].z,
+                        output[y*width + x].w);
                 exit(EXIT_FAILURE);
             }
         }
@@ -418,8 +427,7 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "Test PASSED\n");
 
     // memory cleanup
-    free(host_in);
-    //free(host_out);
+    free(input);
     free(reference_in);
     free(reference_out);
 

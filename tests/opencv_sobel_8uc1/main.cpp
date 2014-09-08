@@ -24,9 +24,6 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <iostream>
-#include <vector>
-
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
@@ -34,13 +31,14 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
+#include <vector>
+
+//#define CPU
 #ifdef OpenCV
+#include "opencv2/opencv.hpp"
 #ifndef CPU
 #include "opencv2/gpu/gpu.hpp"
-#else
-#include "opencv2/core/core.hpp"
 #endif
-#include "opencv2/imgproc/imgproc.hpp"
 #endif
 
 #include "hipacc.hpp"
@@ -50,7 +48,6 @@
 //#define SIZE_Y 5
 //#define WIDTH 4096
 //#define HEIGHT 4096
-//#define CPU
 //#define YORDER
 #define CONST_MASK
 #define USE_LAMBDA
@@ -77,13 +74,13 @@ void sobel_filter(uchar *in, short *out, int *filter, int size_x, int size_y,
         int width, int height) {
     int anchor_x = size_x >> 1;
     int anchor_y = size_y >> 1;
-#ifdef OpenCV
+    #ifdef OpenCV
     int upper_x = width-size_x+anchor_x;
     int upper_y = height-size_y+anchor_y;
-#else
+    #else
     int upper_x = width-anchor_x;
     int upper_y = height-anchor_y;
-#endif
+    #endif
 
     for (int y=anchor_y; y<upper_y; ++y) {
         for (int x=anchor_x; x<upper_x; ++x) {
@@ -102,11 +99,11 @@ void sobel_filter(uchar *in, short *out, int *filter, int size_x, int size_y,
 void sobel_filter_row(uchar *in, short *out, int *filter, int size_x, int width,
         int height) {
     int anchor_x = size_x >> 1;
-#ifdef OpenCV
+    #ifdef OpenCV
     int upper_x = width-size_x+anchor_x;
-#else
+    #else
     int upper_x = width-anchor_x;
-#endif
+    #endif
 
     for (int y=0; y<height; ++y) {
         //for (int x=0; x<anchor_x; x++) out[y*width + x] = in[y*width + x];
@@ -114,21 +111,21 @@ void sobel_filter_row(uchar *in, short *out, int *filter, int size_x, int width,
             int sum = 0;
 
             for (int xf = -anchor_x; xf<=anchor_x; xf++) {
-                sum += filter[xf+anchor_x]*in[(y)*width + x + xf];
+                sum += filter[xf+anchor_x] * in[(y)*width + x + xf];
             }
             out[y*width + x] = sum;
         }
         //for (int x=upper_x; x<width; x++) out[y*width + x] = in[y*width + x];
     }
 }
-void sobel_filter_column(short *in, int *out, int *filter, int size_y, int
-        width, int height) {
+void sobel_filter_column(short *in, short *out, int *filter, int size_y,
+        int width, int height) {
     int anchor_y = size_y >> 1;
-#ifdef OpenCV
+    #ifdef OpenCV
     int upper_y = height-size_y+anchor_y;
-#else
+    #else
     int upper_y = height-anchor_y;
-#endif
+    #endif
 
     //for (int y=0; y<anchor_y; y++) {
     //    for (int x=0; x<width; ++x) {
@@ -140,8 +137,7 @@ void sobel_filter_column(short *in, int *out, int *filter, int size_y, int
             int sum = 0;
 
             for (int yf = -anchor_y; yf<=anchor_y; yf++) {
-                sum += filter[yf + anchor_y] *
-                       in[(y + yf)*width + x];
+                sum += filter[yf + anchor_y] * in[(y + yf)*width + x];
             }
             out[y*width + x] = sum;
         }
@@ -278,7 +274,6 @@ int main(int argc, const char **argv) {
     const int offset_x = size_x >> 1;
     const int offset_y = size_y >> 1;
     std::vector<float> timings;
-    float timing = 0.0f;
 
     // only filter kernel sizes 3x3, 5x5, and 7x7 implemented
     if (size_x != size_y || !(size_x == 3 || size_x == 5 || size_x == 7)) {
@@ -286,8 +281,8 @@ int main(int argc, const char **argv) {
         exit(EXIT_FAILURE);
     }
 
-// filter coefficients
-#ifdef YORDER
+    // filter coefficients
+    #ifdef YORDER
     #ifdef ARRAY_DOMAIN
     #ifdef CONST_DOMAIN
     const
@@ -370,7 +365,7 @@ int main(int argc, const char **argv) {
         { -1 }, { -4 }, { -5 }, { 0 }, { 5 }, { 4 }, { 1 },
         #endif
     };
-#else
+    #else
     #ifdef ARRAY_DOMAIN
     #ifdef CONST_DOMAIN
     const
@@ -453,11 +448,10 @@ int main(int argc, const char **argv) {
         { 1 }, { 6 }, { 15 }, { 20 }, { 15 }, { 6 }, { 1 },
         #endif
     };
-#endif
+    #endif
 
     // host memory for image of width x height pixels
-    uchar *host_in = (uchar *)malloc(sizeof(uchar)*width*height);
-    short *host_out = (short *)malloc(sizeof(short)*width*height);
+    uchar *input = (uchar *)malloc(sizeof(uchar)*width*height);
     uchar *reference_in = (uchar *)malloc(sizeof(uchar)*width*height);
     short *reference_out = (short *)malloc(sizeof(short)*width*height);
     short *reference_tmp = (short *)malloc(sizeof(short)*width*height);
@@ -466,9 +460,8 @@ int main(int argc, const char **argv) {
     for (int y=0; y<height; ++y) {
         for (int x=0; x<width; ++x) {
             uchar val = rand()%256;
-            host_in[y*width + x] = val;
-            reference_in[y*width + x] = host_in[y*width + x];
-            host_out[y*width + x] = 0;
+            input[y*width + x] = val;
+            reference_in[y*width + x] = input[y*width + x];
             reference_out[y*width + x] = 0;
             reference_tmp[y*width + x] = 0;
         }
@@ -517,12 +510,12 @@ int main(int argc, const char **argv) {
     IterationSpace<short> IsOut(OUT);
     IterationSpace<short> IsTmp(TMP);
 
-    IN = host_in;
-    OUT = host_out;
+    IN = input;
 
 
-#ifndef OpenCV
+    #ifndef OpenCV
     fprintf(stderr, "Calculating Sobel filter ...\n");
+    float timing = 0.0f;
 
     // BOUNDARY_UNDEFINED
     #ifdef RUN_UNDEF
@@ -656,28 +649,28 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "HIPACC (CONSTANT): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
 
 
-    // get results
-    host_out = OUT.getData();
-#endif
+    // get pointer to result data
+    short *output = OUT.getData();
+    #endif
 
 
 
-#ifdef OpenCV
-#ifdef CPU
+    #ifdef OpenCV
+    #ifdef CPU
     fprintf(stderr, "\nCalculating OpenCV Sobel filter on the CPU ...\n");
-#else
+    #else
     fprintf(stderr, "\nCalculating OpenCV Sobel filter on the GPU ...\n");
-#endif
+    #endif
 
 
-    cv::Mat cv_data_in(height, width, CV_8UC1, host_in);
-    cv::Mat cv_data_out(height, width, CV_16SC1, host_out);
+    cv::Mat cv_data_in(height, width, CV_8UC1, input);
+    cv::Mat cv_data_out(height, width, CV_16SC1, cv::Scalar(0));
     int ddepth = CV_16S;
     double scale = 1.0f;
     double delta = 0.0f;
 
     for (int brd_type=0; brd_type<5; brd_type++) {
-#ifdef CPU
+        #ifdef CPU
         if (brd_type==cv::BORDER_WRAP) {
             // BORDER_WRAP is not supported on the CPU by OpenCV
             timings.push_back(0.0f);
@@ -697,7 +690,7 @@ int main(int argc, const char **argv) {
             dt = time1 - time0;
             if (dt < min_dt) min_dt = dt;
         }
-#else
+        #else
         cv::gpu::GpuMat gpu_in, gpu_out;
         gpu_in.upload(cv_data_in);
 
@@ -717,7 +710,7 @@ int main(int argc, const char **argv) {
         }
 
         gpu_out.download(cv_data_out);
-#endif
+        #endif
 
         fprintf(stderr, "OpenCV(");
         switch (brd_type) {
@@ -742,11 +735,15 @@ int main(int argc, const char **argv) {
         timings.push_back(min_dt);
         fprintf(stderr, "): %.3f ms, %.3f Mpixel/s\n", min_dt, (width*height/min_dt)/1000);
     }
-#endif
+
+    // get pointer to result data
+    short *output = (short *)cv_data_out.data;
+    #endif
 
     // print statistics
-    for (unsigned int i=0; i<timings.size(); i++) {
-        fprintf(stderr, "\t%.3f", timings.data()[i]);
+    for (std::vector<float>::const_iterator it = timings.begin();
+         it != timings.end(); ++it) {
+        fprintf(stderr, "\t%.3f", *it);
     }
     fprintf(stderr, "\n\n");
 
@@ -771,22 +768,22 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", min_dt, (width*height/min_dt)/1000);
 
     fprintf(stderr, "\nComparing results ...\n");
-#ifdef OpenCV
-#ifndef CPU
+    #ifdef OpenCV
+    #ifndef CPU
     fprintf(stderr, "\nWarning: OpenCV implementation on the GPU is currently broken (wrong results) ...\n");
-#endif
+    #endif
     int upper_y = height-size_y+offset_y;
     int upper_x = width-size_x+offset_x;
-#else
+    #else
     int upper_y = height-offset_y;
     int upper_x = width-offset_x;
-#endif
+    #endif
     // compare results
     for (int y=offset_y; y<upper_y; y++) {
         for (int x=offset_x; x<upper_x; x++) {
-            if (reference_out[y*width + x] != host_out[y*width + x]) {
+            if (reference_out[y*width + x] != output[y*width + x]) {
                 fprintf(stderr, "Test FAILED, at (%d,%d): %d vs. %d\n", x,
-                        y, reference_out[y*width + x], host_out[y*width + x]);
+                        y, reference_out[y*width + x], output[y*width + x]);
                 exit(EXIT_FAILURE);
             }
         }
@@ -794,8 +791,7 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "Test PASSED\n");
 
     // memory cleanup
-    free(host_in);
-    //free(host_out);
+    free(input);
     free(reference_in);
     free(reference_tmp);
     free(reference_out);

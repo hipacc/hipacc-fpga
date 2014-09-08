@@ -1,13 +1,15 @@
 HIPAcc Prerequisites:
 =====================
 
-- CMake (2.8 or later)
 - Clang (see dependencies.sh)
 - LLVM (see dependencies.sh)
+- compiler-rt (see dependencies.sh)
 - libcxx (see dependencies.sh)
+- libcxxabi (when using clang for GNU/Linux)
 - Polly (optional, see dependencies.sh)
+- CMake (2.8 or later)
 
-The versions of Clang/LLVM (and Polly) have to match in order to compile the
+The revision of the Clang/LLVM (and Polly) have to match in order to compile the
 HIPAcc sources successfully. The file 'dependencies.sh' lists the revisions and
 repositories of each dependency known to work with the latest version of HIPAcc.
 Use 'git checkout <revision>' in order to switch to the required revision.
@@ -49,9 +51,13 @@ EMBEDDED_OPENCL_LIB_PATH    - OpenCL library path within the target system
                               e.g. -DEMBEDDED_OPENCL_LIB_PATH=vendor/lib/egl
 EMBEDDED_OPENCL_LIB         - Name of the embedded OpenCL library
                               e.g. -DEMBEDDED_OPENCL_LIB=libGLES_mali.so
+OPENCV_INC_PATH             - OpenCV include path
+                              e.g. -DOPENCV_INC_PATH=/opt/local/include
+OPENCV_LIB_PATH             - OpenCV library path
+                              e.g. -DOPENCV_LIB_PATH=/opt/local/lib
 
 The following options can be enabled or disabled:
-USE_POLLY               - Use polly for kernel analysis (e.g. -DUSE_POLLY=ON)
+USE_POLLY               - Use Polly for kernel analysis (e.g. -DUSE_POLLY=ON)
 USE_JIT_ESTIMATE        - Use just-in-time compilation of generated kernels in
                           order to get resource estimates - option only
                           available for GNU/Linux systems

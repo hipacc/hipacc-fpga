@@ -24,8 +24,8 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-//#ifndef __HIPACC_OCL_RED_HPP__
-//#define __HIPACC_OCL_RED_HPP__
+//#ifndef __HIPACC_CL_RED_HPP__
+//#define __HIPACC_CL_RED_HPP__
 
 #ifndef PPT
 #define PPT 1
@@ -62,12 +62,12 @@
 // step 1:
 // reduce a 2D block stored to linear memory or an Image object and store the reduced value to linear memory
 __constant sampler_t img_sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE | CLK_FILTER_NEAREST;
-#define REDUCTION_OCL_2D(NAME, DATA_TYPE, REDUCE, IMG_ACC) \
+#define REDUCTION_CL_2D(NAME, DATA_TYPE, REDUCE, IMG_ACC) \
 __kernel __attribute__((reqd_work_group_size(BS, 1, 1))) void NAME( \
         INPUT_PARM(DATA_TYPE, input), __global DATA_TYPE *output, \
         const unsigned int width, const unsigned int height, \
         const unsigned int stride OFFSETS) { \
-    const unsigned int gid_x =  2*get_local_size(0) * get_group_id(0) + get_local_id(0) + OFFSET_BLOCK; \
+    const unsigned int gid_x =   2*get_local_size(0) * get_group_id(0) + get_local_id(0) + OFFSET_BLOCK; \
     const unsigned int gid_y = PPT*get_local_size(1) * get_group_id(1) + get_local_id(1); \
     const unsigned int tid = get_local_id(0); \
  \
@@ -99,21 +99,11 @@ __kernel __attribute__((reqd_work_group_size(BS, 1, 1))) void NAME( \
  \
     barrier(CLK_LOCAL_MEM_FENCE); \
  \
-    for (int s=get_local_size(0)/2; s>32; s>>=1) { \
+    for (int s=get_local_size(0)/2; s>0; s>>=1) { \
         if (tid < s) { \
             sdata[tid] = val = REDUCE(val, sdata[tid + s]); \
         } \
         barrier(CLK_LOCAL_MEM_FENCE); \
-    } \
- \
-    if (tid < 32) { \
-        volatile __local DATA_TYPE *smem = sdata; \
-        smem[tid] = val = REDUCE(val, smem[tid + 32]); \
-        smem[tid] = val = REDUCE(val, smem[tid + 16]); \
-        smem[tid] = val = REDUCE(val, smem[tid +  8]); \
-        smem[tid] = val = REDUCE(val, smem[tid +  4]); \
-        smem[tid] = val = REDUCE(val, smem[tid +  2]); \
-        smem[tid] = val = REDUCE(val, smem[tid +  1]); \
     } \
  \
     if (tid == 0) output[get_group_id(0) + get_num_groups(0)*get_group_id(1)] = sdata[0]; \
@@ -123,7 +113,7 @@ __kernel __attribute__((reqd_work_group_size(BS, 1, 1))) void NAME( \
 // step 2:
 // reduce a 1D block and store the reduced value to the first element of linear
 // memory
-#define REDUCTION_OCL_1D(NAME, DATA_TYPE, REDUCE) \
+#define REDUCTION_CL_1D(NAME, DATA_TYPE, REDUCE) \
 __kernel void NAME(__global const DATA_TYPE *input, __global DATA_TYPE *output, \
         const unsigned int num_elements, const unsigned int iterations) { \
     const unsigned int tid = get_local_id(0); \
@@ -152,5 +142,5 @@ __kernel void NAME(__global const DATA_TYPE *input, __global DATA_TYPE *output, 
     if (tid == 0) output[get_group_id(0)] = sdata[0]; \
 }
 
-//#endif  // __HIPACC_OCL_RED_HPP__
+//#endif  // __HIPACC_CL_RED_HPP__
 

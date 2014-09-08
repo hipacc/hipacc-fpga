@@ -36,7 +36,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "hipacc_ocl.hpp"
+#include "hipacc_cl.hpp"
 
 
 void usage(char **argv) {
@@ -49,7 +49,6 @@ int main(int argc, char *argv[]) {
     cl_device_type device_type = CL_DEVICE_TYPE_ALL;
     cl_platform_name platform_name = ALL;
     size_t memory_size = 64*(1 << 20);      //64 M
-    float bandwidth_MBs = 0.0f;
 
     // scan command-line options
     while ((option = getopt(argc, (char * const *)argv, "hd:p:s:")) != -1) {
@@ -94,21 +93,21 @@ int main(int argc, char *argv[]) {
     // c) accessMode : MAPPED, DIRECT
 
     // allocate host memory
-    unsigned char *host_idata = (unsigned char *)malloc(memory_size);
+    uchar *host_idata = (uchar *)malloc(memory_size);
 
     // initialize the memory
-    for (size_t i=0; i < memory_size/sizeof(unsigned char); ++i) {
-        host_idata[i] = (unsigned char) (i & 0xff);
+    for (size_t i=0; i < memory_size/sizeof(uchar); ++i) {
+        host_idata[i] = (uchar) (i & 0xff);
     }
 
     // allocate device input and output memory
-    HipaccImage dev_idata = hipaccCreateBuffer<unsigned char>(NULL, memory_size, 1);
-    HipaccImage dev_odata = hipaccCreateBuffer<unsigned char>(NULL, memory_size, 1);
+    HipaccImage dev_idata = hipaccCreateBuffer<uchar>(NULL, memory_size, 1);
+    HipaccImage dev_odata = hipaccCreateBuffer<uchar>(NULL, memory_size, 1);
 
     std::cout << std::endl << "Bandwidth test, memory size [MB]: " << memory_size/(1024*1024) << std::endl;
     for (size_t num_device=0; num_device<devices_all.size(); ++num_device) {
         // copy data to device
-        hipaccWriteMemory<unsigned char>(dev_idata, host_idata, num_device);
+        hipaccWriteMemory<uchar>(dev_idata, host_idata, num_device);
 
         // get time in ms
         double time = hipaccCopyBufferBenchmark(dev_idata, dev_odata, num_device);
@@ -118,7 +117,7 @@ int main(int argc, char *argv[]) {
         // calculate bandwidth in MB/s
         // this is for kernels that read and write global memory simultaneously
         // obtained throughput for unidirectional block copies will be 1/2 of this #
-        bandwidth_MBs = 2.0f * ((double)memory_size)/(time * (double)(1 << 20));
+        float bandwidth_MBs = 2.0f * ((double)memory_size)/(time * (double)(1 << 20));
 
         // print statistic
         std::cout << "Device number: " << num_device << std::endl;

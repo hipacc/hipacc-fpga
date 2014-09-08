@@ -67,7 +67,7 @@ FunctionDecl *ASTTranslate::cloneFunction(FunctionDecl *FD) {
                  << "for execution on device.\n";
 
     // check return type
-    QualType retType = FD->getResultType();
+    QualType retType = FD->getReturnType();
     if (!retType->isStandardLayoutType() && !retType->isVoidType()) {
       unsigned int DiagIDRetType =
         Diags.getCustomDiagID(DiagnosticsEngine::Error,
@@ -143,7 +143,7 @@ T *ASTTranslate::lookup(std::string name, QualType QT, NamespaceDecl *NS) {
     if (result) {
       if (isa<FunctionDecl>(result)) {
         FunctionDecl *decl = dyn_cast<FunctionDecl>(result);
-        if (decl->getResultType().getDesugaredType(Ctx) ==
+        if (decl->getReturnType().getDesugaredType(Ctx) ==
             QT.getDesugaredType(Ctx)) return result;
         continue;
       }
@@ -206,7 +206,7 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
 
   // check if we need border handling
   for (size_t i=0; i<KernelClass->getNumImages(); ++i) {
-    FieldDecl *FD = KernelClass->getImgFields().data()[i];
+    FieldDecl *FD = KernelClass->getImgFields()[i];
     HipaccAccessor *Acc = Kernel->getImgFromMapping(FD);
 
     // bail out for user defined kernels
@@ -556,27 +556,27 @@ void ASTTranslate::updateTileVars() {
       tileVars.local_id_y = addCastToInt(tileVars.local_id_y);
       tileVars.block_id_x = addCastToInt(tileVars.block_id_x);
       tileVars.block_id_y = addCastToInt(tileVars.block_id_y);
-      if (compilerOptions.exploreConfig() && !emitEstimation) {
-        tileVars.local_size_x = createDeclRefExpr(Ctx, createVarDecl(Ctx,
-              kernelDecl, "BSX_EXPLORE", Ctx.IntTy, nullptr));
-        tileVars.local_size_y = createDeclRefExpr(Ctx, createVarDecl(Ctx,
-              kernelDecl, "BSY_EXPLORE", Ctx.IntTy, nullptr));
-      } else {
-        // select fastest method for accessing blockDim.[x|y]
-        // TODO: define this in HipaccDeviceOptions
-        if (compilerOptions.getTargetDevice()>=FERMI_20 &&
-            compilerOptions.getTargetDevice()<=KEPLER_30 &&
-            compilerOptions.getTargetCode()==TARGET_CUDA) {
+      // select fastest method for accessing blockDim.[x|y]
+      // TODO: define this in HipaccDeviceOptions
+      if (compilerOptions.getTargetDevice()>=FERMI_20 &&
+          compilerOptions.getTargetDevice()<=KEPLER_30 &&
+          compilerOptions.getTargetCode()==TARGET_CUDA) {
+        if (compilerOptions.exploreConfig() && !emitEstimation) {
+          tileVars.local_size_x = createDeclRefExpr(Ctx, createVarDecl(Ctx,
+                kernelDecl, "BSX_EXPLORE", Ctx.IntTy, nullptr));
+          tileVars.local_size_y = createDeclRefExpr(Ctx, createVarDecl(Ctx,
+                kernelDecl, "BSY_EXPLORE", Ctx.IntTy, nullptr));
+        } else {
           // use constant for final kernel configuration
           tileVars.local_size_x = createIntegerLiteral(Ctx,
               (int)Kernel->getNumThreadsX());
           tileVars.local_size_y = createIntegerLiteral(Ctx,
               (int)Kernel->getNumThreadsY());
-        } else {
-          // cast blockDim.[x|y] to signed integer
-          tileVars.local_size_x = addCastToInt(tileVars.local_size_x);
-          tileVars.local_size_y = addCastToInt(tileVars.local_size_y);
         }
+      } else {
+        // cast blockDim.[x|y] to signed integer
+        tileVars.local_size_x = addCastToInt(tileVars.local_size_x);
+        tileVars.local_size_y = addCastToInt(tileVars.local_size_y);
       }
       break;
   }
@@ -659,7 +659,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
 
     // search for image width, height and stride parameters
     for (size_t i=0; i<KernelClass->getNumImages(); ++i) {
-      FieldDecl *FD = KernelClass->getImgFields().data()[i];
+      FieldDecl *FD = KernelClass->getImgFields()[i];
       HipaccAccessor *Acc = Kernel->getImgFromMapping(FD);
 
       if (PVD->getName().equals(FD->getNameAsString() + "_width")) {
@@ -687,7 +687,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
 
   // in case no stride was found, use image width as fallback
   for (size_t i=0; i<KernelClass->getNumImages(); ++i) {
-    FieldDecl *FD = KernelClass->getImgFields().data()[i];
+    FieldDecl *FD = KernelClass->getImgFields()[i];
     HipaccAccessor *Acc = Kernel->getImgFromMapping(FD);
 
     if (Acc->getStrideDecl() == nullptr) {
@@ -728,7 +728,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   gidYRef = tileVars.global_id_y;
 
   for (size_t i=0; i<KernelClass->getNumImages(); ++i) {
-    FieldDecl *FD = KernelClass->getImgFields().data()[i];
+    FieldDecl *FD = KernelClass->getImgFields()[i];
     HipaccAccessor *Acc = Kernel->getImgFromMapping(FD);
 
     // add scale factor calculations for interpolation:
@@ -769,7 +769,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   // add vector pointer declarations for images
   if (Kernel->vectorize() && !compilerOptions.emitC()) {
     for (size_t i=0; i<=KernelClass->getNumImages(); ++i) {
-      FieldDecl *FD = KernelClass->getImgFields().data()[i];
+      FieldDecl *FD = KernelClass->getImgFields()[i];
       // output image - iteration space
       StringRef name = "Output";
       if (i<KernelClass->getNumImages()) {
@@ -806,7 +806,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   bool kernel_x = false;
   bool kernel_y = false;
   for (size_t i=0; i<KernelClass->getNumImages(); ++i) {
-    FieldDecl *FD = KernelClass->getImgFields().data()[i];
+    FieldDecl *FD = KernelClass->getImgFields()[i];
     HipaccAccessor *Acc = Kernel->getImgFromMapping(FD);
     MemoryAccess memAcc = KernelClass->getImgAccess(FD);
 
@@ -831,8 +831,11 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       // __shared__ T _smemIn[SY-1 + BSY*PPT][3 * BSX];
       // for left and right halo, add 2*BSX
       if (!emitEstimation && compilerOptions.exploreConfig()) {
-        Expr *SX = tileVars.local_size_x;
-        Expr *SY = tileVars.local_size_y;
+        Expr *SX = createDeclRefExpr(Ctx, createVarDecl(Ctx, kernelDecl,
+              "BSX_EXPLORE", Ctx.IntTy, nullptr));
+        Expr *BSY = createDeclRefExpr(Ctx, createVarDecl(Ctx, kernelDecl,
+              "BSY_EXPLORE", Ctx.IntTy, nullptr));
+        Expr *SY = BSY;
 
         if (Acc->getSizeX() > 1) {
           // 3*BSX
@@ -854,10 +857,9 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
           SY = createBinaryOperator(Ctx, SY, createBinaryOperator(Ctx,
                 createParenExpr(Ctx, createBinaryOperator(Ctx,
                     createBinaryOperator(Ctx, createIntegerLiteral(Ctx,
-                        (int)Acc->getSizeY()-2), tileVars.local_size_y, BO_Div,
-                      Ctx.IntTy), createIntegerLiteral(Ctx, 1), BO_Add,
-                    Ctx.IntTy)), tileVars.local_size_y, BO_Mul, Ctx.IntTy),
-              BO_Add, Ctx.IntTy);
+                        (int)Acc->getSizeY()-2), BSY, BO_Div, Ctx.IntTy),
+                    createIntegerLiteral(Ctx, 1), BO_Add, Ctx.IntTy)), BSY,
+                BO_Mul, Ctx.IntTy), BO_Add, Ctx.IntTy);
         }
 
         QT = Acc->getImage()->getType();
@@ -894,7 +896,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
           break;
         case TARGET_CUDA:
           VD = createVarDecl(Ctx, DC, sharedName, QT, nullptr);
-          VD->addAttr(new (Ctx) CUDASharedAttr(SourceLocation(), Ctx));
+          VD->addAttr(CUDASharedAttr::CreateImplicit(Ctx));
           break;
         case TARGET_OpenCLACC:
         case TARGET_OpenCLCPU:
@@ -1311,8 +1313,9 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
         case TARGET_OpenCLACC:
         case TARGET_OpenCLCPU:
         case TARGET_OpenCLGPU:
-          // TODO: pass CLK_LOCAL_MEM_FENCE argument to barrier()
-          args.push_back(createIntegerLiteral(Ctx, 0));
+          // CLK_LOCAL_MEM_FENCE -> 1
+          // CLK_GLOBAL_MEM_FENCE -> 2
+          args.push_back(createIntegerLiteral(Ctx, 1));
           labelBody.push_back(createFunctionCall(Ctx, barrier, args));
           break;
       }
@@ -1387,14 +1390,14 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
         labelBody.push_back(ispace_check);
       } else {
         for (size_t i=0, e=pptBody.size(); i!=e; ++i) {
-          labelBody.push_back(pptBody.data()[i]);
+          labelBody.push_back(pptBody[i]);
         }
       }
     }
 
     // add label statement if needed (boundary handling), else add body
     if (border_handling) {
-      LabelStmt *LS = createLabelStmt(Ctx, LDS.data()[ld_count++],
+      LabelStmt *LS = createLabelStmt(Ctx, LDS[ld_count++],
           createCompoundStmt(Ctx, labelBody));
       kernelBody.push_back(LS);
       kernelBody.push_back(GSExit);
@@ -1484,7 +1487,7 @@ VarDecl *ASTTranslate::CloneParmVarDecl(ParmVarDecl *PVD) {
     // only vectorize image PVDs
     if (Kernel->vectorize() && !compilerOptions.emitC()) {
       for (size_t i=0; i<KernelClass->getNumImages(); ++i) {
-        FieldDecl *FD = KernelClass->getImgFields().data()[i];
+        FieldDecl *FD = KernelClass->getImgFields()[i];
 
         // parameter name matches
         if (PVD->getName().equals(FD->getName()) ||
@@ -1566,8 +1569,8 @@ Stmt *ASTTranslate::VisitCompoundStmtTranslate(CompoundStmt *S) {
     if (preStmts.size()) {
       size_t num_stmts = 0;
       for (size_t i=0, e=preStmts.size(); i!=e; ++i) {
-        if (preCStmt.data()[i]==S) {
-          body.push_back(preStmts.data()[i]);
+        if (preCStmt[i]==S) {
+          body.push_back(preStmts[i]);
           num_stmts++;
         }
       }
@@ -1582,8 +1585,8 @@ Stmt *ASTTranslate::VisitCompoundStmtTranslate(CompoundStmt *S) {
     if (postStmts.size()) {
       size_t num_stmts = 0;
       for (size_t i=0, e=postStmts.size(); i!=e; ++i) {
-        if (postCStmt.data()[i]==S) {
-          body.push_back(postStmts.data()[i]);
+        if (postCStmt[i]==S) {
+          body.push_back(postStmts[i]);
           num_stmts++;
         }
       }
@@ -1646,9 +1649,9 @@ Expr *ASTTranslate::VisitCallExprTranslate(CallExpr *E) {
         if (NS->getNameAsString() == "hipacc") {
           // namespace hipacc::math
           targetFD = E->getDirectCallee();
-          bool doUpdate = false;
 
           if (!compilerOptions.emitCUDA()) {
+            bool doUpdate = false;
             std::string name = E->getDirectCallee()->getNameAsString();
             if (name.at(name.length()-1)=='f') {
               if (name!="modf" && name!="erf") {
@@ -1683,10 +1686,8 @@ Expr *ASTTranslate::VisitCallExprTranslate(CallExpr *E) {
                 argNames.push_back((*P)->getName());
               }
 
-              targetFD = createFunctionDecl(Ctx,
-                  Ctx.getTranslationUnitDecl(), name,
-                  targetFD->getResultType(), makeArrayRef(argTypes),
-                  makeArrayRef(argNames));
+              targetFD = createFunctionDecl(Ctx, Ctx.getTranslationUnitDecl(),
+                  name, targetFD->getReturnType(), argTypes, argNames);
             }
           }
         }
@@ -1720,7 +1721,7 @@ Expr *ASTTranslate::VisitCallExprTranslate(CallExpr *E) {
 
       llvm::errs() << "Supported functions are: ";
       for (size_t i=0, e=builtinNames.size(); i!=e; ++i) {
-        llvm::errs() << builtinNames.data()[i];
+        llvm::errs() << builtinNames[i];
         llvm::errs() << ((i==e-1)?".\n":", ");
       }
       exit(EXIT_FAILURE);
@@ -1815,7 +1816,7 @@ Expr *ASTTranslate::VisitMemberExprTranslate(MemberExpr *E) {
   // check if the parameter is a Mask and replace it by a global VarDecl
   bool isMask = false;
   for (size_t i=0; i<KernelClass->getNumMasks(); ++i) {
-    FieldDecl *FD = KernelClass->getMaskFields().data()[i];
+    FieldDecl *FD = KernelClass->getMaskFields()[i];
 
     if (paramDecl->getName().equals(FD->getName())) {
       HipaccMask *Mask = Kernel->getMaskFromMapping(FD);
@@ -2411,11 +2412,10 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
       "Hipacc: Stumbled upon unsupported expression or statement: CXXMemberCallExpr");
   MemberExpr *ME = dyn_cast<MemberExpr>(E->getCallee());
 
-  DeclRefExpr *LHS;
+  DeclRefExpr *LHS = nullptr;
   HipaccAccessor *Acc = nullptr;
-  HipaccMask *Mask = nullptr;
+  Expr *result = nullptr;
   MemoryAccess memAcc = UNDEFINED;
-  Expr *result;
 
   if (isa<CXXThisExpr>(ME->getBase()->IgnoreImpCasts())) {
     // check if this is a convolve function call
@@ -2489,7 +2489,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
     FieldDecl *FD = dyn_cast<FieldDecl>(ImgAcc->getMemberDecl());
 
     Acc = Kernel->getImgFromMapping(FD);
-    Mask = Kernel->getMaskFromMapping(FD);
+    HipaccMask *Mask = Kernel->getMaskFromMapping(FD);
     memAcc = KernelClass->getImgAccess(FD);
     assert((Acc || Mask) &&
            "Could not find Image/Accessor/Mask/Domain Field Decl.");
@@ -2608,7 +2608,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
     return result;
   }
 
-  HIPACC_NOT_SUPPORTED(CXXMemberCallExpr);
+  assert(0 && "Hipacc: Stumbled upon unsupported expression: CXXMemberCallExpr");
   return nullptr;
 }
 

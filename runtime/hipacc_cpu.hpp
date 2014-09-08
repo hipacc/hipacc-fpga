@@ -26,6 +26,9 @@
 #ifndef __HIPACC_CPU_HPP__
 #define __HIPACC_CPU_HPP__
 
+#include <math.h>
+#include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <iostream>
@@ -106,6 +109,7 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem) {
     int height = img.height;
     int stride = img.stride;
 
+    std::copy(host_mem, host_mem + width*height, (T*)img.host);
     if (stride > width) {
         for (size_t i=0; i<height; ++i) {
             memcpy(&((T*)img.mem)[i*stride], &host_mem[i*width], sizeof(T)*width);
@@ -118,18 +122,20 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem) {
 
 // Read from memory
 template<typename T>
-void hipaccReadMemory(T *host_mem, HipaccImage &img) {
+T *hipaccReadMemory(HipaccImage &img) {
     int width = img.width;
     int height = img.height;
     int stride = img.stride;
 
     if (stride > width) {
         for (size_t i=0; i<height; ++i) {
-            memcpy(&host_mem[i*width], &((T*)img.mem)[i*stride], sizeof(T)*width);
+            memcpy(&((T*)img.host)[i*width], &((T*)img.mem)[i*stride], sizeof(T)*width);
         }
     } else {
-        memcpy(host_mem, img.mem, sizeof(T)*width*height);
+        memcpy((T*)img.host, img.mem, sizeof(T)*width*height);
     }
+
+    return (T*)img.host;
 }
 
 
@@ -145,22 +151,22 @@ void hipaccCopyMemory(HipaccImage &src, HipaccImage &dst) {
 // Infer non-const Domain from non-const Mask
 template<typename T>
 void hipaccWriteDomainFromMask(HipaccImage &dom, T* host_mem) {
-  int size = dom.width * dom.height;
-  uchar *dom_mem = new uchar[size];
+    size_t size = dom.width * dom.height;
+    uchar *dom_mem = new uchar[size];
 
-  for (int i = 0; i < size; ++i) {
-    dom_mem[i] = (host_mem[i] == T(0) ? 0 : 1);
-  }
+    for (size_t i=0; i<size; ++i) {
+        dom_mem[i] = (host_mem[i] == T(0) ? 0 : 1);
+    }
 
-  hipaccWriteMemory(dom, dom_mem);
+    hipaccWriteMemory(dom, dom_mem);
 
-  delete[] dom_mem;
+    delete[] dom_mem;
 }
 
 
 // Copy from memory region to memory region
 void hipaccCopyMemoryRegion(HipaccAccessor src, HipaccAccessor dst) {
-    for (size_t i=0; i<dst.height; ++i) {
+    for (size_t i=0; i<(size_t)dst.height; ++i) {
         memcpy(&((uchar*)dst.img.mem)[dst.offset_x*dst.img.pixel_size + (dst.offset_y + i)*dst.img.stride*dst.img.pixel_size],
                &((uchar*)src.img.mem)[src.offset_x*src.img.pixel_size + (src.offset_y + i)*src.img.stride*src.img.pixel_size],
                src.width*src.img.pixel_size);

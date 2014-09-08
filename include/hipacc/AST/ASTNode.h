@@ -110,9 +110,6 @@ IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, int32_t val);
 IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, uint32_t val);
 IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, int64_t val);
 IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, uint64_t val);
-FloatingLiteral *createFloatingLiteral(ASTContext &Ctx, float val);
-FloatingLiteral *createFloatingLiteral(ASTContext &Ctx, double val);
-StringLiteral *createStringLiteral(ASTContext &Ctx, StringRef Name);
 CXXBoolLiteralExpr *createCXXBoolLiteral(ASTContext &Ctx, bool val);
 
 typedef struct {

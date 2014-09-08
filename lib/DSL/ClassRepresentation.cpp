@@ -33,6 +33,10 @@
 
 #include "hipacc/DSL/ClassRepresentation.h"
 
+#ifdef USE_JIT_ESTIMATE
+#include <cuda_occupancy.h>
+#endif
+
 using namespace clang;
 using namespace hipacc;
 
@@ -263,43 +267,17 @@ struct sortOccMap {
 
 
 void HipaccKernel::calcConfig() {
+  #ifdef USE_JIT_ESTIMATE
   std::vector<std::pair<unsigned int, float> > occVec;
   unsigned int num_threads = max_threads_per_warp;
   bool use_shared = false;
 
   while (num_threads <= max_threads_per_block) {
-    // allocations per thread block limits
-    int warps_per_block = (int)ceil((float)num_threads /
-        (float)max_threads_per_warp);
-    int registers_per_block;
-    if (isAMDGPU()) {
-      // for AMD assume simple allocation strategy
-      registers_per_block = warps_per_block * num_reg * max_threads_per_warp;
-    } else {
-      switch (allocation_granularity) {
-        case BLOCK:
-          // allocation in steps of two
-          registers_per_block = (int)ceil((float)warps_per_block /
-              (float)warp_register_alloc_size) * warp_register_alloc_size *
-            num_reg * max_threads_per_warp;
-          registers_per_block = (int)ceil((float)registers_per_block /
-              (float)register_alloc_size) * register_alloc_size;
-          break;
-        case WARP:
-          registers_per_block = (int)ceil((float)(num_reg *
-                max_threads_per_warp) / (float)register_alloc_size) *
-            register_alloc_size;
-          registers_per_block *= (int)ceil((float)warps_per_block /
-              (float)warp_register_alloc_size) * warp_register_alloc_size;
-          break;
-      }
-    }
-
     unsigned int smem_used = 0;
     bool skip_config = false;
     // calculate shared memory usage for pixels staged to shared memory
     for (size_t i=0; i<KC->getNumImages(); ++i) {
-      HipaccAccessor *Acc = getImgFromMapping(KC->getImgFields().data()[i]);
+      HipaccAccessor *Acc = getImgFromMapping(KC->getImgFields()[i]);
       if (useLocalMemory(Acc)) {
         // check if the configuration suits our assumptions about shared memory
         if (num_threads % 32 == 0) {
@@ -327,39 +305,47 @@ void HipaccKernel::calcConfig() {
       num_threads += max_threads_per_warp;
       continue;
     }
+    max_threads_for_kernel = num_threads;
 
-    int shared_memory_per_block = (int)ceil((float)smem_used /
-        (float)shared_memory_alloc_size) * shared_memory_alloc_size;
-
-    // maximum thread blocks per multiprocessor
-    int lim_by_max_warps = std::min(max_blocks_per_multiprocessor, (unsigned
-          int)floor((float)max_warps_per_multiprocessor /
-            (float)warps_per_block));
-    int lim_by_reg, lim_by_smem;
-    if (num_reg > max_register_per_thread) {
-      lim_by_reg = 0;
-    } else {
-      if (num_reg > 0) {
-        lim_by_reg = (int)floor((float)max_total_registers /
-            (float)registers_per_block);
-      } else {
-        lim_by_reg = max_blocks_per_multiprocessor;
-      }
-    }
-    if (smem_used > 0) {
-      lim_by_smem = (int)floor((float)max_total_shared_memory /
-          (float)shared_memory_per_block);
-    } else {
-      lim_by_smem = max_blocks_per_multiprocessor;
+    int major = target_device/10;
+    int minor = target_device%10;
+    if (isAMDGPU()) {
+      // set architecture to "Fermi"
+      major = 2;
+      minor = 0;
     }
 
-    // calculate GPU occupancy
-    int active_thread_blocks_per_multiprocessor = std::min(std::min(lim_by_max_warps, lim_by_reg), lim_by_smem);
-    if (active_thread_blocks_per_multiprocessor > 0) max_threads_for_kernel = num_threads;
-    int active_warps_per_multiprocessor = active_thread_blocks_per_multiprocessor * warps_per_block;
-    //int active_threads_per_multiprocessor = active_thread_blocks_per_multiprocessor * num_threads;
-    float occupancy = (float)active_warps_per_multiprocessor/(float)max_warps_per_multiprocessor;
-    //int max_simultaneous_blocks_per_GPU = active_thread_blocks_per_multiprocessor*max_multiprocessors_per_GPU;
+    cudaOccDeviceState dev_state;
+    cudaOccDeviceProp dev_props;
+    cudaOccFuncAttributes fun_attrs;
+
+    dev_props.computeMajor = major;
+    dev_props.computeMinor = minor;
+    dev_props.maxThreadsPerBlock = max_threads_per_block;
+    dev_props.maxThreadsPerMultiprocessor = max_threads_per_multiprocessor;
+    dev_props.regsPerBlock = max_total_registers;
+    dev_props.regsPerMultiprocessor = max_total_registers;
+    dev_props.warpSize = max_threads_per_warp;
+    dev_props.sharedMemPerBlock = max_total_shared_memory;
+    dev_props.sharedMemPerMultiprocessor = max_total_shared_memory;
+    dev_props.numSms = 23;
+    fun_attrs.maxThreadsPerBlock = max_threads_per_block;
+    fun_attrs.numRegs = num_reg;
+    fun_attrs.sharedSizeBytes = smem_used;
+
+    size_t dynamic_smem_bytes = 0;
+    cudaOccResult fun_occ;
+    cudaOccMaxActiveBlocksPerMultiprocessor(&fun_occ, &dev_props, &fun_attrs, &dev_state, num_threads, dynamic_smem_bytes);
+    int active_blocks = fun_occ.activeBlocksPerMultiprocessor;
+    int min_grid_size, opt_block_size;
+    cudaOccMaxPotentialOccupancyBlockSize(&min_grid_size, &opt_block_size, &dev_props, &fun_attrs, &dev_state, 0, dynamic_smem_bytes);
+    int active_warps = active_blocks * (num_threads/max_threads_per_warp);
+
+    // re-compute with optimal block size
+    cudaOccMaxActiveBlocksPerMultiprocessor(&fun_occ, &dev_props, &fun_attrs, &dev_state, opt_block_size, dynamic_smem_bytes);
+    int max_blocks = std::min(fun_occ.blockLimitRegs, std::min(fun_occ.blockLimitSharedMem, std::min(fun_occ.blockLimitWarps, fun_occ.blockLimitBlocks)));
+    int max_warps = max_blocks * (opt_block_size/max_threads_per_warp);
+    float occupancy = (float)active_warps/(float)max_warps;
 
     occVec.push_back(std::pair<int, float>(num_threads, occupancy));
     num_threads += max_threads_per_warp;
@@ -382,33 +368,35 @@ void HipaccKernel::calcConfig() {
   // 1) - minimize #threads for border handling (e.g. prefer y over x)
   //    - prefer x over y when no border handling is necessary
   llvm::errs() << "\nCalculating kernel configuration for " << kernelName << "\n";
-  llvm::errs() << "\toptimal configuration: " << num_threads_x_opt << "x" <<
-    num_threads_y_opt << "(x" << getPixelsPerThread() << ")\n";
+  llvm::errs() << "  optimal configuration: " << num_threads_x_opt << "x"
+               << num_threads_y_opt << "(x" << getPixelsPerThread() << ")\n";
   for (auto iter=occVec.begin(); iter<occVec.end(); ++iter) {
     std::pair<unsigned int, float> occMap = *iter;
-    llvm::errs() << "\t" << occMap.first << " threads:\t" << occMap.second << "\t";
+    llvm::errs() << "    " << llvm::format("%5d", occMap.first) << " threads:"
+                 << " occupancy = " << llvm::format("%*.2f", 6, occMap.second*100) << "%";
+
+    unsigned int num_threads_x = max_threads_per_warp;
+    unsigned int num_threads_y = 1;
 
     if (use_shared) {
-      // start with warp_size or num_threads_x_opt if possible
-      unsigned int num_threads_x = 32;
-      unsigned int num_threads_y = occMap.first / num_threads_x;
-      llvm::errs() << " -> " << num_threads_x << "x" << num_threads_y;
+      // use warp_size x N
+      num_threads_y = occMap.first / num_threads_x;
     } else {
-      // make difference if we create border handling or not
+      // do we need border handling?
       if (max_size_y > 1) {
-        // start with warp_size or num_threads_x_opt if possible
-        unsigned int num_threads_x = max_threads_per_warp;
+        // use N x M
         if (occMap.first >= num_threads_x_opt && occMap.first % num_threads_x_opt == 0) {
           num_threads_x = num_threads_x_opt;
         }
-        unsigned int num_threads_y = occMap.first / num_threads_x;
-        llvm::errs() << " -> " << num_threads_x << "x" << num_threads_y;
+        num_threads_y = occMap.first / num_threads_x;
       } else {
-        // use all threads for x direction
-        llvm::errs() << " -> " << occMap.first << "x1";
+        // use num_threads x 1
+        num_threads_x = occMap.first;
       }
     }
-    llvm::errs() << "(x" << getPixelsPerThread() << ")\n";
+    llvm::errs() << " -> " << llvm::format("%4d", num_threads_x)
+                 << "x" << llvm::format("%-2d", num_threads_y)
+                 << "(x" << getPixelsPerThread() << ")\n";
   }
 
 
@@ -425,22 +413,23 @@ void HipaccKernel::calcConfig() {
     auto iter = occVec.begin();
     std::pair<unsigned int, float> occMap = *iter;
 
+    num_threads_x = max_threads_per_warp;
+    num_threads_y = 1;
+
     if (use_shared) {
-      num_threads_x = 32;
+      // use warp_size x N
       num_threads_y = occMap.first / num_threads_x;
     } else {
-      // make difference if we create border handling or not
+      // do we need border handling?
       if (max_size_y > 1) {
-        // start with warp_size or num_threads_x_opt if possible
-        num_threads_x = max_threads_per_warp;
+        // use N x M
         if (occMap.first >= num_threads_x_opt && occMap.first % num_threads_x_opt == 0) {
           num_threads_x = num_threads_x_opt;
         }
         num_threads_y = occMap.first / num_threads_x;
       } else {
-        // use all threads for x direction
+        // use num_threads x 1
         num_threads_x = occMap.first;
-        num_threads_y = 1;
       }
     }
 
@@ -477,13 +466,16 @@ void HipaccKernel::calcConfig() {
         }
       }
     }
-    llvm::errs() << "Using configuration " << num_threads_x << "x"
-                 << num_threads_y << "(occupancy: " << occMap.second
+    llvm::errs() << "Using configuration " << num_threads_x << "x" << num_threads_y
+                 << "(occupancy = " << llvm::format("%*.2f", 6, occMap.second*100)
                  << ") for kernel '" << kernelName << "'\n";
   }
 
-  llvm::errs() << "\t Blocks required for border handling: " <<
-    num_blocks_bh_x << "x" << num_blocks_bh_y << "\n\n";
+  llvm::errs() << "  Blocks required for border handling: "
+               << num_blocks_bh_x << "x" << num_blocks_bh_y << "\n\n";
+  #else
+  setDefaultConfig();
+  #endif
 }
 
 void HipaccKernel::setDefaultConfig() {
@@ -508,17 +500,16 @@ void HipaccKernel::addParam(QualType QT1, QualType QT2, QualType QT3,
 void HipaccKernel::createArgInfo() {
   if (argTypesCUDA.size()) return;
 
-  SmallVector<HipaccKernelClass::argumentInfo, 16> arguments =
-    KC->arguments;
+  SmallVector<HipaccKernelClass::argumentInfo, 16> arguments = KC->arguments;
 
   // normal parameters
   for (size_t i=0; i<KC->getNumArgs(); ++i) {
-    FieldDecl *FD = arguments.data()[i].field;
-    QualType QT = arguments.data()[i].type;
-    std::string name = arguments.data()[i].name;
+    FieldDecl *FD = arguments[i].field;
+    QualType QT = arguments[i].type;
+    std::string name = arguments[i].name;
     QualType QTtmp;
 
-    switch (arguments.data()[i].kind) {
+    switch (arguments[i].kind) {
       case HipaccKernelClass::Normal:
         addParam(QT, QT, QT, QT.getAsString(), QT.getAsString(), name, FD);
 
@@ -673,12 +664,12 @@ void HipaccKernel::createHostArgInfo(ArrayRef<Expr *> hostArgs, std::string
   if (hostArgNames.size()) hostArgNames.clear();
 
   for (size_t i=0; i<KC->getNumArgs(); ++i) {
-    FieldDecl *FD = KC->arguments.data()[i].field;
+    FieldDecl *FD = KC->arguments[i].field;
 
     std::string Str;
     llvm::raw_string_ostream SS(Str);
 
-    switch (KC->arguments.data()[i].kind) {
+    switch (KC->arguments[i].kind) {
       case HipaccKernelClass::Normal:
         hostArgs[i]->printPretty(SS, 0, PrintingPolicy(Ctx.getLangOpts()));
 
@@ -690,7 +681,8 @@ void HipaccKernel::createHostArgInfo(ArrayRef<Expr *> hostArgs, std::string
           LSS << "_tmpLiteral" << literalCount;
           literalCount++;
 
-          hostLiterals += hostArgs[i]->IgnoreParenCasts()->getType().getAsString();
+          // use type of kernel class
+          hostLiterals += KC->arguments[i].type.getAsString();
           hostLiterals += " ";
           hostLiterals += LSS.str();
           hostLiterals += " = ";
@@ -728,7 +720,7 @@ void HipaccKernel::createHostArgInfo(ArrayRef<Expr *> hostArgs, std::string
         break;
         }
       case HipaccKernelClass::Mask:
-        hostArgNames.push_back(getMaskFromMapping(FD)->getName() + ".mem");
+        hostArgNames.push_back(getMaskFromMapping(FD)->getName());
 
         break;
     }

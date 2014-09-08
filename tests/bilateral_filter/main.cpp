@@ -1,7 +1,6 @@
 //
 // Copyright (c) 2012, University of Erlangen-Nuremberg
 // Copyright (c) 2012, Siemens AG
-// Copyright (c) 2010, ARM Limited
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -25,7 +24,6 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <iostream>
 #include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,8 +42,10 @@
 #define SIGMA_R SIZE_Y
 #define CONVOLUTION_MASK
 #define EPS 0.02f
+#define CONSTANT 1.0f
 
 using namespace hipacc;
+using namespace hipacc::math;
 
 
 // get time in milliseconds
@@ -56,26 +56,76 @@ double time_ms () {
     return ((double)(tv.tv_sec) * 1e+3 + (double)(tv.tv_usec) * 1e-3);
 }
 
+enum BoundaryMode {
+    BH_UNDEFINED,
+    BH_CLAMP,
+    BH_REPEAT,
+    BH_MIRROR,
+    BH_CONSTANT
+};
+
+// wrapper function for border handling
+template<typename data_t> data_t get_data(data_t *array, int x, int y, int width, int height, BoundaryMode mode) {
+    data_t ret = CONSTANT;
+
+    switch (mode) {
+        default:
+        case BH_UNDEFINED:
+            ret = array[x + y*width];
+            break;
+        case BH_CLAMP:
+            x = min(max(x, 0), width-1);
+            y = min(max(y, 0), height-1);
+            ret = array[x + y*width];
+            break;
+        case BH_REPEAT:
+            while (x >= width) x -= width;
+            while (y >= height) y -= height;
+            while (x < 0) x += width;
+            while (y < 0) y += height;
+            ret = array[x + y*width];
+            break;
+        case BH_MIRROR:
+            if (x < 0) x = -x - 1;
+            if (y < 0) y = -y - 1;
+            if (x >= width) x = width - (x+1 - width);
+            if (y >= height) y = height - (y+1 - height);
+            ret = array[x + y*width];
+            break;
+        case BH_CONSTANT:
+            if (x < 0 || y < 0 || x >= width || y >= height) {
+                ret = CONSTANT;
+            } else {
+                ret = array[x + y*width];
+            }
+            break;
+    }
+
+    return ret;
+}
+
 
 // bilateral filter reference
 void bilateral_filter(float *in, float *out, int sigma_d, int sigma_r, int
-        width, int height) {
+        width, int height, BoundaryMode mode) {
     float c_r = 1.0f/(2.0f*sigma_r*sigma_r);
     float c_d = 1.0f/(2.0f*sigma_d*sigma_d);
 
-    for (int y=2*sigma_d; y<(height-2*sigma_d); ++y) {
-        for (int x=2*sigma_d; x<width-2*sigma_d; ++x) {
+    for (int y=0; y<height; ++y) {
+        for (int x=0; x<width; ++x) {
             float d = 0;
             float p = 0;
 
             for (int yf = -2*sigma_d; yf<=2*sigma_d; yf++) {
+                int iy = y + yf;
                 for (int xf = -2*sigma_d; xf<=2*sigma_d; xf++) {
-                    float diff = in[(y + yf)*width + x + xf] - in[y*width + x];
+                    int ix = x + xf;
+                    float diff = get_data(in, ix, iy, width, height, mode) - in[y*width + x];
 
                     float s = expf(-c_r * diff*diff) * expf(-c_d * xf*xf) *
                         expf(-c_d * yf*yf);
                     d += s;
-                    p += s * in[(y + yf)*width + x + xf];
+                    p += s * get_data(in, ix, iy, width, height, mode);
                 }
             }
             out[y*width + x] = p/d;
@@ -85,24 +135,59 @@ void bilateral_filter(float *in, float *out, int sigma_d, int sigma_r, int
 
 
 // Kernel description in HIPAcc
-#ifdef CONVOLUTION_MASK
+class BilateralFilter : public Kernel<float> {
+    private:
+        Accessor<float> &input;
+        int sigma_d;
+        int sigma_r;
+
+    public:
+        BilateralFilter(IterationSpace<float> &iter, Accessor<float> &input, int
+                sigma_d, int sigma_r) :
+            Kernel(iter),
+            input(input),
+            sigma_d(sigma_d),
+            sigma_r(sigma_r)
+        { addAccessor(&input); }
+
+        void kernel() {
+            float c_r = 1.0f/(2.0f*sigma_r*sigma_r);
+            float c_d = 1.0f/(2.0f*sigma_d*sigma_d);
+            float d = 0;
+            float p = 0;
+
+            for (int yf = -2*sigma_d; yf<=2*sigma_d; yf++) {
+                for (int xf = -2*sigma_d; xf<=2*sigma_d; xf++) {
+                    float diff = input(xf, yf) - input();
+
+                    float s = expf(-c_r * diff*diff) * expf(-c_d * xf*xf) *
+                        expf(-c_d * yf*yf);
+                    d += s;
+                    p += s * input(xf, yf);
+                }
+            }
+
+            output() = p/d;
+        }
+};
+
 class BilateralFilterMask : public Kernel<float> {
     private:
-        Accessor<float> &in;
+        Accessor<float> &input;
         Mask<float> &mask;
         Domain &dom;
         int sigma_d, sigma_r;
 
     public:
-        BilateralFilterMask(IterationSpace<float> &iter, Accessor<float> &in,
+        BilateralFilterMask(IterationSpace<float> &iter, Accessor<float> &input,
                 Mask<float> &mask, Domain &dom, int sigma_d, int sigma_r) :
             Kernel(iter),
-            in(in),
+            input(input),
             mask(mask),
             dom(dom),
             sigma_d(sigma_d),
             sigma_r(sigma_r)
-        { addAccessor(&in); }
+        { addAccessor(&input); }
 
         #ifdef USE_LAMBDA
         void kernel() {
@@ -111,11 +196,11 @@ class BilateralFilterMask : public Kernel<float> {
             float p = 0;
 
             iterate(dom, [&] () -> void {
-                    float diff = in(dom) - in();
+                    float diff = input(dom) - input();
 
                     float s = expf(-c_r * diff*diff) * mask(dom);
                     d += s;
-                    p += s * in(dom);
+                    p += s * input(dom);
                     });
 
             output() = p/d;
@@ -128,11 +213,11 @@ class BilateralFilterMask : public Kernel<float> {
 
             for (int yf = -2*sigma_d; yf<=2*sigma_d; yf++) {
                 for (int xf = -2*sigma_d; xf<=2*sigma_d; xf++) {
-                    float diff = in(xf, yf) - in();
+                    float diff = input(xf, yf) - input();
 
                     float s = expf(-c_r * diff*diff) * mask(xf, yf);
                     d += s;
-                    p += s * in(xf, yf);
+                    p += s * input(xf, yf);
                 }
             }
 
@@ -140,21 +225,25 @@ class BilateralFilterMask : public Kernel<float> {
         }
         #endif
 };
-#else
-class BilateralFilter : public Kernel<float> {
+
+class BilateralFilterBHCLAMP : public Kernel<float> {
     private:
-        Accessor<float> &in;
+        Accessor<float> &input;
         int sigma_d;
         int sigma_r;
+        int width;
+        int height;
 
     public:
-        BilateralFilter(IterationSpace<float> &iter, Accessor<float> &in, int
-                sigma_d, int sigma_r) :
+        BilateralFilterBHCLAMP(IterationSpace<float> &iter, Accessor<float>
+                &input, int sigma_d, int sigma_r, int width, int height) :
             Kernel(iter),
-            in(in),
+            input(input),
             sigma_d(sigma_d),
-            sigma_r(sigma_r)
-        { addAccessor(&in); }
+            sigma_r(sigma_r),
+            width(width),
+            height(height)
+        { addAccessor(&input); }
 
         void kernel() {
             float c_r = 1.0f/(2.0f*sigma_r*sigma_r);
@@ -163,20 +252,166 @@ class BilateralFilter : public Kernel<float> {
             float p = 0;
 
             for (int yf = -2*sigma_d; yf<=2*sigma_d; yf++) {
+                int iy = input.getY() + yf;
+                iy = min(max(iy, 0), height-1);
                 for (int xf = -2*sigma_d; xf<=2*sigma_d; xf++) {
-                    float diff = in(xf, yf) - in();
+                    int ix = input.getX() + xf;
+                    ix = min(max(ix, 0), width-1);
+                    float diff = input.getPixel(ix, iy) - input();
 
                     float s = expf(-c_r * diff*diff) * expf(-c_d * xf*xf) *
                         expf(-c_d * yf*yf);
                     d += s;
-                    p += s * in(xf, yf);
+                    p += s * input.getPixel(ix, iy);
                 }
             }
 
             output() = p/d;
         }
 };
-#endif
+
+class BilateralFilterBHREPEAT : public Kernel<float> {
+    private:
+        Accessor<float> &input;
+        int sigma_d;
+        int sigma_r;
+        int width;
+        int height;
+
+    public:
+        BilateralFilterBHREPEAT(IterationSpace<float> &iter, Accessor<float>
+                &input, int sigma_d, int sigma_r, int width, int height) :
+            Kernel(iter),
+            input(input),
+            sigma_d(sigma_d),
+            sigma_r(sigma_r),
+            width(width),
+            height(height)
+        { addAccessor(&input); }
+
+        void kernel() {
+            float c_r = 1.0f/(2.0f*sigma_r*sigma_r);
+            float c_d = 1.0f/(2.0f*sigma_d*sigma_d);
+            float d = 0;
+            float p = 0;
+
+            for (int yf = -2*sigma_d; yf<=2*sigma_d; yf++) {
+                int iy = input.getY() + yf;
+                while (iy < 0) iy += height;
+                while (iy >= height) iy -= height;
+                for (int xf = -2*sigma_d; xf<=2*sigma_d; xf++) {
+                    int ix = input.getX() + xf;
+                    while (ix < 0) ix += width;
+                    while (ix >= width) ix -= width;
+                    float diff = input.getPixel(ix, iy) - input();
+
+                    float s = expf(-c_r * diff*diff) * expf(-c_d * xf*xf) *
+                        expf(-c_d * yf*yf);
+                    d += s;
+                    p += s * input.getPixel(ix, iy);
+                }
+            }
+
+            output() = p/d;
+        }
+};
+
+class BilateralFilterBHMIRROR : public Kernel<float> {
+    private:
+        Accessor<float> &input;
+        int sigma_d;
+        int sigma_r;
+        int width;
+        int height;
+
+    public:
+        BilateralFilterBHMIRROR(IterationSpace<float> &iter, Accessor<float>
+                &input, int sigma_d, int sigma_r, int width, int height) :
+            Kernel(iter),
+            input(input),
+            sigma_d(sigma_d),
+            sigma_r(sigma_r),
+            width(width),
+            height(height)
+        { addAccessor(&input); }
+
+        void kernel() {
+            float c_r = 1.0f/(2.0f*sigma_r*sigma_r);
+            float c_d = 1.0f/(2.0f*sigma_d*sigma_d);
+            float d = 0;
+            float p = 0;
+
+            for (int yf = -2*sigma_d; yf<=2*sigma_d; yf++) {
+                int iy = input.getY() + yf;
+                if (iy < 0) iy = -iy - 1;
+                if (iy >= height) iy = height - (iy+1 - height);
+                for (int xf = -2*sigma_d; xf<=2*sigma_d; xf++) {
+                    int ix = input.getX() + xf;
+                    if (ix < 0) ix = -ix - 1;
+                    if (ix >= width) ix = width - (ix+1 - width);
+                    float diff = input.getPixel(ix, iy) - input();
+
+                    float s = expf(-c_r * diff*diff) * expf(-c_d * xf*xf) *
+                        expf(-c_d * yf*yf);
+                    d += s;
+                    p += s * input.getPixel(ix, iy);
+                }
+            }
+
+            output() = p/d;
+        }
+};
+
+class BilateralFilterBHCONSTANT : public Kernel<float> {
+    private:
+        Accessor<float> &input;
+        int sigma_d;
+        int sigma_r;
+        int width;
+        int height;
+
+    public:
+        BilateralFilterBHCONSTANT(IterationSpace<float> &iter, Accessor<float>
+                &input, int sigma_d, int sigma_r, int width, int height) :
+            Kernel(iter),
+            input(input),
+            sigma_d(sigma_d),
+            sigma_r(sigma_r),
+            width(width),
+            height(height)
+        { addAccessor(&input); }
+
+        void kernel() {
+            float c_r = 1.0f/(2.0f*sigma_r*sigma_r);
+            float c_d = 1.0f/(2.0f*sigma_d*sigma_d);
+            float d = 0;
+            float p = 0;
+
+            for (int yf = -2*sigma_d; yf<=2*sigma_d; yf++) {
+                int iy = input.getY() + yf;
+                for (int xf = -2*sigma_d; xf<=2*sigma_d; xf++) {
+                    int ix = input.getX() + xf;
+                    float diff;
+                    if (ix < 0 || iy < 0 || ix >= width || iy >= height) {
+                        diff = CONSTANT;
+                    } else {
+                        diff = input.getPixel(ix, iy) - input();
+                    }
+
+                    float s = expf(-c_r * diff*diff) * expf(-c_d * xf*xf) *
+                        expf(-c_d * yf*yf);
+                    d += s;
+                    if (ix < 0 || iy < 0 || ix >= width || iy >= height) {
+                        p += s * CONSTANT;
+                    } else {
+                        p += s * input.getPixel(ix, iy);
+                    }
+                }
+            }
+
+            output() = p/d;
+        }
+};
 
 
 int main(int argc, const char **argv) {
@@ -195,6 +430,17 @@ int main(int argc, const char **argv) {
         { 0.135335f, 0.606531f, 1.000000f, 0.606531f, 0.135335f },
         { 0.082085f, 0.367879f, 0.606531f, 0.367879f, 0.082085f },
         { 0.018316f, 0.082085f, 0.135335f, 0.082085f, 0.018316f }
+        #endif
+        #if SIGMA_D==2
+        { 0.018316f, 0.043937f, 0.082085f, 0.119433f, 0.135335f, 0.119433f, 0.082085f, 0.043937f, 0.018316f },
+        { 0.043937f, 0.105399f, 0.196912f, 0.286505f, 0.324652f, 0.286505f, 0.196912f, 0.105399f, 0.043937f },
+        { 0.082085f, 0.196912f, 0.367879f, 0.535261f, 0.606531f, 0.535261f, 0.367879f, 0.196912f, 0.082085f },
+        { 0.119433f, 0.286505f, 0.535261f, 0.778801f, 0.882497f, 0.778801f, 0.535261f, 0.286505f, 0.119433f },
+        { 0.135335f, 0.324652f, 0.606531f, 0.882497f, 1.000000f, 0.882497f, 0.606531f, 0.324652f, 0.135335f },
+        { 0.119433f, 0.286505f, 0.535261f, 0.778801f, 0.882497f, 0.778801f, 0.535261f, 0.286505f, 0.119433f },
+        { 0.082085f, 0.196912f, 0.367879f, 0.535261f, 0.606531f, 0.535261f, 0.367879f, 0.196912f, 0.082085f },
+        { 0.043937f, 0.105399f, 0.196912f, 0.286505f, 0.324652f, 0.286505f, 0.196912f, 0.105399f, 0.043937f },
+        { 0.018316f, 0.043937f, 0.082085f, 0.119433f, 0.135335f, 0.119433f, 0.082085f, 0.043937f, 0.018316f }
         #endif
         #if SIGMA_D==3
         { 0.018316f, 0.033746f, 0.055638f, 0.082085f, 0.108368f, 0.128022f, 0.135335f, 0.128022f, 0.108368f, 0.082085f, 0.055638f, 0.033746f, 0.018316f },
@@ -221,7 +467,7 @@ int main(int argc, const char **argv) {
     for (int yf=-2*sigma_d; yf<=2*sigma_d; yf++) {
         for (int xf=-2*sigma_d; xf<=2*sigma_d; xf++) {
             filter_mask[yf+2*sigma_d][xf+2*sigma_d] = mask_tmp[yf+2*sigma_d] * mask_tmp[xf+2*SIGMA_D];
-            fprintf(stderr, "%f, ", filter_mask[yf+2*sigma_d][xf+2*sigma_d]);
+            fprintf(stderr, "%ff, ", filter_mask[yf+2*sigma_d][xf+2*sigma_d]);
         }
         fprintf(stderr, "\n");
     }
@@ -233,8 +479,7 @@ int main(int argc, const char **argv) {
 
 
     // host memory for image of width x height pixels
-    float *host_in = (float *)malloc(sizeof(float)*width*height);
-    float *host_out = (float *)malloc(sizeof(float)*width*height);
+    float *input = (float *)malloc(sizeof(float)*width*height);
     float *reference_in = (float *)malloc(sizeof(float)*width*height);
     float *reference_out = (float *)malloc(sizeof(float)*width*height);
 
@@ -242,9 +487,8 @@ int main(int argc, const char **argv) {
     #define DELTA 0.001f
     for (int y=0; y<height; ++y) {
         for (int x=0; x<width; ++x) {
-            host_in[y*width + x] = (float) (x*height + y) * DELTA;
+            input[y*width + x] = (float) (x*height + y) * DELTA;
             reference_in[y*width + x] = (float) (x*height + y) * DELTA;
-            host_out[y*width + x] = (float) (3.12451);
             reference_out[y*width + x] = (float) (-3.12451);
         }
     }
@@ -253,61 +497,119 @@ int main(int argc, const char **argv) {
     // input and output image of width x height pixels
     Image<float> in(width, height);
     Image<float> out(width, height);
-    // use undefined boundary handling to access image pixels beyond region
-    // defined by Accessor
-    BoundaryCondition<float> bound(in, 4*sigma_d, 4*sigma_d, BOUNDARY_UNDEFINED);
-    // Image without border
-    Accessor<float> acc(bound, width-4*sigma_d, height-4*sigma_d, 2*sigma_d, 2*sigma_d);
 
     // iteration space
-    IterationSpace<float> iter(out, width-4*sigma_d, height-4*sigma_d, 2*sigma_d, 2*sigma_d);
+    IterationSpace<float> iter(out);
 
-    #ifdef CONVOLUTION_MASK
-    BilateralFilterMask filter(iter, acc, mask, dom, sigma_d, sigma_r);
-    #else
-    BilateralFilter filter(iter, acc, sigma_d, sigma_r);
-    #endif
-
-    in = host_in;
-    out = host_out;
+    in = input;
 
     fprintf(stderr, "Calculating HIPAcc bilateral filter ...\n");
 
-    filter.execute();
+    // Image only
+    Accessor<float> AccInUndef(in);
+    #ifdef CONVOLUTION_MASK
+    BilateralFilterMask BFNOBH(iter, AccInUndef, mask, dom, sigma_d, sigma_r);
+    #else
+    BilateralFilter BFNOBH(iter, AccInUndef, sigma_d, sigma_r);
+    #endif
+
+
+    BFNOBH.execute();
     timing = hipaccGetLastKernelTiming();
 
-    // get results
-    host_out = out.getData();
+    fprintf(stderr, "Hipacc (NOBH): %.3f ms, %.3f Mpixel/s\n\n", timing, (width*height/timing)/1000);
 
-    fprintf(stderr, "HIPACC: %.3f ms, %.3f Mpixel/s\n", timing, ((width-4*sigma_d)*(height-4*sigma_d)/timing)/1000);
+
+    // BOUNDARY_CLAMP
+    BoundaryCondition<float> BcInClamp(in, mask, BOUNDARY_CLAMP);
+    Accessor<float> AccInClamp(BcInClamp);
+    #ifdef CONVOLUTION_MASK
+    BilateralFilterMask BF(iter, AccInClamp, mask, dom, sigma_d, sigma_r);
+    #else
+    BilateralFilter BF(iter, AccInClamp, sigma_d, sigma_r);
+    #endif
+
+    BF.execute();
+    timing = hipaccGetLastKernelTiming();
+
+    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n\n", timing, (width*height/timing)/1000);
+
+
+    // get pointer to result data
+    float *output = out.getData();
+
+
+    // manual border handling: CLAMP
+    Accessor<float> AccIn(in);
+    BilateralFilterBHCLAMP BFBHCLAMP(iter, AccIn, sigma_d, sigma_r, width, height);
+
+    fprintf(stderr, "Calculating bilateral filter with manual border handling ...\n");
+
+    BFBHCLAMP.execute();
+    timing = hipaccGetLastKernelTiming();
+
+    fprintf(stderr, "Hipacc(BHCLAMP): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+
+
+    // manual border handling: REPEAT
+    BilateralFilterBHREPEAT BFBHREPEAT(iter, AccIn, sigma_d, sigma_r, width, height);
+
+    fprintf(stderr, "Calculating bilateral filter with manual border handling ...\n");
+
+    BFBHREPEAT.execute();
+    timing = hipaccGetLastKernelTiming();
+
+    fprintf(stderr, "Hipacc(BHREPEAT): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+
+
+    // manual border handling: MIRROR
+    BilateralFilterBHMIRROR BFBHMIRROR(iter, AccIn, sigma_d, sigma_r, width, height);
+
+    fprintf(stderr, "Calculating bilateral filter with manual border handling ...\n");
+
+    BFBHMIRROR.execute();
+    timing = hipaccGetLastKernelTiming();
+
+    fprintf(stderr, "Hipacc(BHMIRROR): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+
+
+    // manual border handling: CONSTANT
+    BilateralFilterBHCONSTANT BFBHCONSTANT(iter, AccIn, sigma_d, sigma_r, width, height);
+
+    fprintf(stderr, "Calculating bilateral filter with manual border handling ...\n");
+
+    BFBHCONSTANT.execute();
+    timing = hipaccGetLastKernelTiming();
+
+    fprintf(stderr, "Hipacc(BHCONSTANT): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
 
 
     fprintf(stderr, "\nCalculating reference ...\n");
     time0 = time_ms();
 
     // calculate reference
-    bilateral_filter(reference_in, reference_out, sigma_d, sigma_r, width, height);
+    bilateral_filter(reference_in, reference_out, sigma_d, sigma_r, width, height, BH_CLAMP);
 
     time1 = time_ms();
     dt = time1 - time0;
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, ((width-4*sigma_d)*(height-4*sigma_d)/dt)/1000);
+    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, (width*height/dt)/1000);
 
     fprintf(stderr, "\nComparing results ...\n");
     // compare results
     float rms_err = 0.0f;   // RMS error
-    for (int y=2*sigma_d; y<height-2*sigma_d; y++) {
-        for (int x=2*sigma_d; x<width-2*sigma_d; x++) {
-            float derr = reference_out[y*width + x] - host_out[y*width +x];
+    for (int y=0; y<height; y++) {
+        for (int x=0; x<width; x++) {
+            float derr = reference_out[y*width + x] - output[y*width + x];
             rms_err += derr*derr;
 
             if (fabs(derr) > EPS) {
                 fprintf(stderr, "Test FAILED, at (%d,%d): %f vs. %f\n", x, y,
-                        reference_out[y*width + x], host_out[y*width +x]);
+                        reference_out[y*width + x], output[y*width + x]);
                 exit(EXIT_FAILURE);
             }
         }
     }
-    rms_err = sqrtf(rms_err / (float((width-4*sigma_d)*(height-4*sigma_d))));
+    rms_err = sqrtf(rms_err / ((float)(width*height)));
     // check RMS error
     if (rms_err > EPS) {
         fprintf(stderr, "Test FAILED: RMS error in image: %.3f > %.3f, aborting...\n", rms_err, EPS);
@@ -316,8 +618,7 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "Test PASSED\n");
 
     // memory cleanup
-    free(host_in);
-    //free(host_out);
+    free(input);
     free(reference_in);
     free(reference_out);
 

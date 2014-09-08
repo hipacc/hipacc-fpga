@@ -24,32 +24,34 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#ifndef __HIPACC_OCL_HPP__
-#define __HIPACC_OCL_HPP__
+#ifndef __HIPACC_CL_HPP__
+#define __HIPACC_CL_HPP__
 
-#if defined(__APPLE__) || defined(MACOSX)
+#ifdef __APPLE__
 #include <OpenCL/cl.h>
 #else
 #include <CL/cl.h>
 #endif
 
-#include <assert.h>
 #include <float.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <memory>
 #include <sstream>
+#include <string>
 #include <utility>
-#include <vector>
-#include <algorithm>
 
 #include "hipacc_base.hpp"
 
-#define GPU_TIMING
+#define EVENT_TIMING
 
 enum cl_platform_name {
     AMD     = 0x1,
@@ -129,7 +131,7 @@ void hipaccCalcGridFromBlock(hipacc_launch_info &info, size_t *block, size_t *gr
 }
 
 
-const char *getOpenCLErrorCodeStr(int errorCode) {
+std::string getOpenCLErrorCodeStr(int errorCode) {
     switch (errorCode) {
         case CL_SUCCESS:
             return "CL_SUCCESS";
@@ -270,7 +272,7 @@ const char *getOpenCLErrorCodeStr(int errorCode) {
         exit(EXIT_FAILURE); \
     }
 #else
-inline void checkErr(cl_int err, const char *name) {
+inline void checkErr(cl_int err, std::string name) {
     if (err != CL_SUCCESS) {
         std::cerr << "ERROR: " << name << " (" << err << ")" << std::endl;
         exit(EXIT_FAILURE);
@@ -285,9 +287,6 @@ void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name pla
     char pnBuffer[1024], pvBuffer[1024], pv2Buffer[1024], pdBuffer[1024], pd2Buffer[1024];
     int platform_number = -1, device_number = -1;
     cl_uint num_platforms, num_devices, num_devices_type;
-    cl_platform_id *platforms;
-    cl_platform_name *platform_names;
-    cl_device_id *devices;
     cl_int err = CL_SUCCESS;
 
     // Set environment variable to tell AMD/ATI platform to dump kernel
@@ -309,14 +308,14 @@ void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name pla
     if (num_platforms == 0) {
         exit(EXIT_FAILURE);
     } else {
-        platforms = (cl_platform_id *)malloc(num_platforms * sizeof(cl_platform_id));
-        platform_names = (cl_platform_name *)malloc(num_platforms * sizeof(cl_platform_name));
+        std::vector<cl_platform_id> platforms(num_platforms);
+        std::vector<cl_platform_name> platform_names(num_platforms);
 
-        err = clGetPlatformIDs(num_platforms, platforms, NULL);
+        err = clGetPlatformIDs(platforms.size(), platforms.data(), NULL);
         checkErr(err, "clGetPlatformIDs()");
 
         // Get platform info for each platform
-        for (size_t i=0; i<num_platforms; ++i) {
+        for (size_t i=0; i<platforms.size(); ++i) {
             err = clGetPlatformInfo(platforms[i], CL_PLATFORM_NAME, 1024, &pnBuffer, NULL);
             err |= clGetPlatformInfo(platforms[i], CL_PLATFORM_VENDOR, 1024, &pvBuffer, NULL);
             err |= clGetPlatformInfo(platforms[i], CL_PLATFORM_VERSION, 1024, &pv2Buffer, NULL);
@@ -346,12 +345,12 @@ void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name pla
             std::cerr << "      Platform Vendor: " << pvBuffer << std::endl;
             std::cerr << "      Platform Version: " << pv2Buffer << std::endl;
 
-            devices = (cl_device_id *)malloc(sizeof(cl_device_id) * num_devices);
-            err = clGetDeviceIDs(platforms[i], CL_DEVICE_TYPE_ALL, num_devices, devices, &num_devices);
+            std::vector<cl_device_id> devices(num_devices);
+            err = clGetDeviceIDs(platforms[i], CL_DEVICE_TYPE_ALL, devices.size(), devices.data(), &num_devices);
             checkErr(err, "clGetDeviceIDs()");
 
             // Get device info for each device
-            for (size_t j=0; j<num_devices; ++j) {
+            for (size_t j=0; j<devices.size(); ++j) {
                 cl_device_type this_dev_type;
                 cl_uint device_vendor_id;
 
@@ -389,7 +388,6 @@ void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name pla
                     Ctx.add_device_all(devices[j]);
                 }
             }
-            free(devices);
         }
 
         if (platform_number == -1) {
@@ -398,7 +396,6 @@ void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name pla
         }
 
         Ctx.add_platform(platforms[platform_number], platform_names[platform_number]);
-        free(platforms);
     }
 }
 
@@ -422,7 +419,7 @@ void hipaccCreateContextsAndCommandQueues(bool all_devies=false) {
     std::vector<cl_device_id> devices = all_devies?Ctx.get_devices_all():Ctx.get_devices();
 
     // Create context
-    cl_context_properties cprops[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)platforms.data()[0], 0 };
+    cl_context_properties cprops[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)platforms[0], 0 };
     context = clCreateContext(cprops, devices.size(), devices.data(), NULL, NULL, &err);
     checkErr(err, "clCreateContext()");
 
@@ -430,7 +427,7 @@ void hipaccCreateContextsAndCommandQueues(bool all_devies=false) {
 
     // Create command queues
     for (size_t i=0; i<devices.size(); ++i) {
-        command_queue = clCreateCommandQueue(context, devices.data()[i], CL_QUEUE_PROFILING_ENABLE, &err);
+        command_queue = clCreateCommandQueue(context, devices[i], CL_QUEUE_PROFILING_ENABLE, &err);
         checkErr(err, "clCreateCommandQueue()");
 
         Ctx.add_command_queue(command_queue);
@@ -447,43 +444,40 @@ void hipaccDumpBinary(cl_program program, cl_device_id device) {
     err = clGetProgramInfo(program, CL_PROGRAM_NUM_DEVICES, sizeof(cl_uint), &num_devices, NULL);
 
     // Get the associated device ids
-    cl_device_id *devices = (cl_device_id *)malloc(num_devices * sizeof(cl_device_id));
-    err |= clGetProgramInfo(program, CL_PROGRAM_DEVICES, num_devices * sizeof(cl_device_id), devices, 0);
+    std::vector<cl_device_id> devices(num_devices);
+    err |= clGetProgramInfo(program, CL_PROGRAM_DEVICES, devices.size() * sizeof(cl_device_id), devices.data(), 0);
 
     // Get the sizes of the binaries
-    size_t *binary_sizes = (size_t *)malloc(num_devices * sizeof(size_t));
-    err |= clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, num_devices * sizeof(size_t), binary_sizes, NULL);
+    std::vector<size_t> binary_sizes(num_devices);
+    err |= clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, binary_sizes.size() * sizeof(size_t), binary_sizes.data(), NULL);
 
     // Get the binaries
-    unsigned char **binary = (unsigned char **)malloc(num_devices * sizeof(unsigned char *));
-    for (size_t i=0; i<num_devices; ++i) {
-        binary[i] = (unsigned char *)malloc(binary_sizes[i]);
+    std::vector<unsigned char *> binaries(num_devices);
+    for (size_t i=0; i<binaries.size(); ++i) {
+        binaries[i] = new unsigned char[binary_sizes[i]];
     }
-    err |= clGetProgramInfo(program, CL_PROGRAM_BINARIES,  sizeof(unsigned char *)*num_devices, binary, NULL);
+    err |= clGetProgramInfo(program, CL_PROGRAM_BINARIES,  sizeof(unsigned char *)*binaries.size(), binaries.data(), NULL);
     checkErr(err, "clGetProgramInfo()");
 
-    for (size_t i=0; i<num_devices; ++i) {
+    for (size_t i=0; i<devices.size(); ++i) {
         if (devices[i] == device) {
             std::cerr << "OpenCL binary : " << std::endl;
             // binary can contain any character, emit char by char
             for (size_t n=0; n<binary_sizes[i]; ++n) {
-                std::cerr << binary[i][n];
+                std::cerr << binaries[i][n];
             }
             std::cerr << std::endl;
         }
     }
 
-    for (size_t i=0; i<num_devices; ++i) {
-        free(binary[i]);
+    for (size_t i=0; i<num_devices; i++) {
+        delete[] binaries[i];
     }
-    free(binary);
-    free(binary_sizes);
-    free(devices);
 }
 
 
 // Load OpenCL source file, build program, and create kernel
-cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_name, bool print_progress=true, bool dump_binary=false, bool print_log=false, const char *build_options=(const char *)"", const char *build_includes=(const char *)"") {
+cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_name, bool print_progress=true, bool dump_binary=false, bool print_log=false, std::string build_options=std::string(), std::string build_includes=std::string()) {
     cl_int err = CL_SUCCESS;
     cl_program program;
     cl_kernel kernel;
@@ -491,7 +485,7 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
 
     std::ifstream srcFile(file_name.c_str());
     if (!srcFile.is_open()) {
-        std::cerr << "ERROR: Can't open OpenCL source file '" << file_name.c_str() << "'!" << std::endl;
+        std::cerr << "ERROR: Can't open OpenCL source file '" << file_name << "'!" << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -505,57 +499,61 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
     program = clCreateProgramWithSource(Ctx.get_contexts()[0], 1, (const char **)&c_str, &length, &err);
     checkErr(err, "clCreateProgramWithSource()");
 
-    std::string options = build_options;
-    std::string includes = build_includes;
     cl_platform_name platform_name = Ctx.get_platform_names()[0];
-    if (options == "") {
+    if (build_options.empty()) {
         switch (platform_name) {
             case AMD:
-                options += "-cl-single-precision-constant -cl-denorms-are-zero";
+                build_options = "-cl-single-precision-constant -cl-denorms-are-zero";
                 #ifdef CL_VERSION_1_2
-                options += " -save-temps";
+                build_options += " -save-temps";
                 #endif
                 break;
             case NVIDIA:
-                options += "-cl-single-precision-constant -cl-denorms-are-zero -cl-nv-verbose";
+                build_options = "-cl-single-precision-constant -cl-denorms-are-zero -cl-nv-verbose";
                 break;
             case APPLE:
             case ARM:
             case INTEL:
             case ALL:
-                options += "-cl-single-precision-constant -cl-denorms-are-zero";
+                build_options = "-cl-single-precision-constant -cl-denorms-are-zero";
                 break;
         }
     }
-    if (includes != "") {
-        options += " " + includes;
+    if (!build_includes.empty()) {
+        build_options += " " + build_includes;
     }
-    err = clBuildProgram(program, 0, NULL, options.c_str(), NULL, NULL);
+    err = clBuildProgram(program, 0, NULL, build_options.c_str(), NULL, NULL);
     if (print_progress) std::cerr << ".";
 
-    if (err != CL_SUCCESS || print_log) {
+    cl_build_status build_status;
+    clGetProgramBuildInfo(program, Ctx.get_devices()[0], CL_PROGRAM_BUILD_STATUS, sizeof(build_status), &build_status, NULL);
+
+    if (build_status == CL_BUILD_ERROR || err != CL_SUCCESS || print_log) {
         // determine the size of the options and log
         size_t log_size, options_size;
         err |= clGetProgramBuildInfo(program, Ctx.get_devices()[0], CL_PROGRAM_BUILD_OPTIONS, 0, NULL, &options_size);
         err |= clGetProgramBuildInfo(program, Ctx.get_devices()[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
 
         // allocate memory for the options and log
-        char *program_build_options = (char *)malloc(options_size);
-        char *program_build_log = (char *)malloc(log_size);
+        char *program_build_options = new char[options_size];
+        char *program_build_log = new char[log_size];
 
         // get the options and log
         err |= clGetProgramBuildInfo(program, Ctx.get_devices()[0], CL_PROGRAM_BUILD_OPTIONS, options_size, program_build_options, NULL);
         err |= clGetProgramBuildInfo(program, Ctx.get_devices()[0], CL_PROGRAM_BUILD_LOG, log_size, program_build_log, NULL);
         if (print_progress) {
             if (err != CL_SUCCESS) std::cerr << ". failed!" << std::endl;
-            else std::cerr << "." << std::endl;
+            else std::cerr << ".";
         }
-        std::cerr << "<HIPACC:> OpenCL build options : " << std::endl << program_build_options << std::endl;
-        std::cerr << "<HIPACC:> OpenCL build log : " << std::endl << program_build_log << std::endl;
+        std::cerr << std::endl
+                  << "<HIPACC:> OpenCL build options : " << std::endl
+                  << program_build_options << std::endl
+                  << "<HIPACC:> OpenCL build log : " << std::endl
+                  << program_build_log << std::endl;
 
         // free memory for options and log
-        free(program_build_options);
-        free(program_build_log);
+        delete[] program_build_options;
+        delete[] program_build_log;
     }
     checkErr(err, "clBuildProgram(), clGetProgramBuildInfo()");
 
@@ -564,6 +562,10 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
     kernel = clCreateKernel(program, kernel_name.c_str(), &err);
     checkErr(err, "clCreateKernel()");
     if (print_progress) std::cerr << ". done" << std::endl;
+
+    // release program
+    err = clReleaseProgram(program);
+    checkErr(err, "clReleaseProgram()");
 
     return kernel;
 }
@@ -728,6 +730,7 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem, int num_device=0) {
     cl_int err = CL_SUCCESS;
     HipaccContext &Ctx = HipaccContext::getInstance();
 
+    std::copy(host_mem, host_mem + img.width*img.height, (T*)img.host);
     if (img.mem_type >= Array2D) {
         const size_t origin[] = { 0, 0, 0 };
         const size_t region[] = { (size_t)img.width, (size_t)img.height, 1 };
@@ -758,7 +761,7 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem, int num_device=0) {
 
 // Read from memory
 template<typename T>
-void hipaccReadMemory(T *host_mem, HipaccImage &img, int num_device=0) {
+T *hipaccReadMemory(HipaccImage &img, int num_device=0) {
     cl_int err = CL_SUCCESS;
     HipaccContext &Ctx = HipaccContext::getInstance();
 
@@ -769,7 +772,7 @@ void hipaccReadMemory(T *host_mem, HipaccImage &img, int num_device=0) {
         const size_t row_pitch = img.width*sizeof(T);
         const size_t slice_pitch = 0;
 
-        err = clEnqueueReadImage(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, origin, region, row_pitch, slice_pitch, host_mem, 0, NULL, NULL);
+        err = clEnqueueReadImage(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, origin, region, row_pitch, slice_pitch, (T*)img.host, 0, NULL, NULL);
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         checkErr(err, "clEnqueueReadImage()");
     } else {
@@ -779,14 +782,16 @@ void hipaccReadMemory(T *host_mem, HipaccImage &img, int num_device=0) {
 
         if (stride > width) {
             for (size_t i=0; i<height; ++i) {
-                err |= clEnqueueReadBuffer(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, i*sizeof(T)*stride, sizeof(T)*width, &host_mem[i*width], 0, NULL, NULL);
+                err |= clEnqueueReadBuffer(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, i*sizeof(T)*stride, sizeof(T)*width, &((T*)img.host)[i*width], 0, NULL, NULL);
             }
         } else {
-            err = clEnqueueReadBuffer(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, 0, sizeof(T)*width*height, host_mem, 0, NULL, NULL);
+            err = clEnqueueReadBuffer(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, 0, sizeof(T)*width*height, (T*)img.host, 0, NULL, NULL);
         }
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         checkErr(err, "clEnqueueReadBuffer()");
     }
+
+    return (T*)img.host;
 }
 
 
@@ -867,14 +872,14 @@ double hipaccCopyBufferBenchmark(HipaccImage &src, HipaccImage &dst, int num_dev
     assert(src.width == dst.width && src.height == dst.height && src.pixel_size == dst.pixel_size && "Invalid CopyBuffer!");
 
     float timing=FLT_MAX;
-    #ifdef GPU_TIMING
+    #ifdef EVENT_TIMING
     cl_event event;
     #else
     std::vector<float> times;
     times.reserve(HIPACC_NUM_ITERATIONS);
     #endif
     for (size_t i=0; i<HIPACC_NUM_ITERATIONS; ++i) {
-        #ifdef GPU_TIMING
+        #ifdef EVENT_TIMING
         err = clEnqueueCopyBuffer(Ctx.get_command_queues()[num_device], (cl_mem)src.mem, (cl_mem)dst.mem, 0, 0, src.width*src.height*src.pixel_size, 0, NULL, &event);
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         checkErr(err, "clEnqueueCopyBuffer()");
@@ -893,14 +898,14 @@ double hipaccCopyBufferBenchmark(HipaccImage &src, HipaccImage &dst, int num_dev
         err = clEnqueueCopyBuffer(Ctx.get_command_queues()[num_device], (cl_mem)src.mem, (cl_mem)dst.mem, 0, 0, src.width*src.height*src.pixel_size, 0, NULL, NULL);
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         end = getMicroTime();
-        checkErr(err, "clEnqueueNDRangeKernel()");
+        checkErr(err, "clEnqueueCopyBuffer()");
         #endif
 
         if (print_timing) {
             std::cerr << "<HIPACC:> Copy timing (" << (src.width*src.height*src.pixel_size) / (float)(1 << 20) << " MB): " << (end-start)*1.0e-3f << "(ms)" << std::endl;
             std::cerr << "          Bandwidth: " << 2.0f * (double)(src.width*src.height*src.pixel_size) / ((end-start)*1.0e-6f * (float)(1 << 30)) << " GB/s" << std::endl;
         }
-        #ifdef GPU_TIMING
+        #ifdef EVENT_TIMING
         if ((end-start) < timing) timing = (end-start);
         #else
         times.push_back(end-start);
@@ -908,7 +913,7 @@ double hipaccCopyBufferBenchmark(HipaccImage &src, HipaccImage &dst, int num_dev
     }
 
     // return time in ms
-    #ifdef GPU_TIMING
+    #ifdef EVENT_TIMING
     err = clReleaseEvent(event);
     checkErr(err, "clReleaseEvent()");
     #else
@@ -933,7 +938,7 @@ void hipaccSetKernelArg(cl_kernel kernel, unsigned int num, size_t size, T* para
 // Enqueue and launch kernel
 void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *local_work_size, bool print_timing=true) {
     cl_int err = CL_SUCCESS;
-    #ifdef GPU_TIMING
+    #ifdef EVENT_TIMING
     cl_event event;
     cl_ulong end, start;
     #else
@@ -941,7 +946,7 @@ void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *loc
     #endif
     HipaccContext &Ctx = HipaccContext::getInstance();
 
-    #ifdef GPU_TIMING
+    #ifdef EVENT_TIMING
     err = clEnqueueNDRangeKernel(Ctx.get_command_queues()[0], kernel, 2, NULL, global_work_size, local_work_size, 0, NULL, &event);
     err |= clFinish(Ctx.get_command_queues()[0]);
     checkErr(err, "clEnqueueNDRangeKernel()");
@@ -1065,8 +1070,8 @@ T hipaccApplyReduction(cl_kernel kernel2D, cl_kernel kernel1D, HipaccImage &img,
 
 // Perform exploration of global reduction and return result
 template<typename T>
-T hipaccApplyReductionExploration(const char *filename, const char *kernel2D,
-        const char *kernel1D, HipaccAccessor &acc, unsigned int max_threads,
+T hipaccApplyReductionExploration(std::string filename, std::string kernel2D,
+        std::string kernel1D, HipaccAccessor &acc, unsigned int max_threads,
         unsigned int pixels_per_thread) {
     HipaccContext &Ctx = HipaccContext::getInstance();
     cl_mem_flags flags = CL_MEM_READ_WRITE;
@@ -1090,11 +1095,11 @@ T hipaccApplyReductionExploration(const char *filename, const char *kernel2D,
 
         std::string compile_options = "-D PPT=" + num_ppt_ss.str() + " -D BS=" + num_bs_ss.str() + " -I./include ";
         compile_options += "-D BSX_EXPLORE=64 -D BSY_EXPLORE=1 ";
-        cl_kernel exploreReduction2D = hipaccBuildProgramAndKernel(filename, kernel2D, false, false, false, compile_options.c_str());
-        cl_kernel exploreReduction1D = hipaccBuildProgramAndKernel(filename, kernel1D, false, false, false, compile_options.c_str());
+        cl_kernel exploreReduction2D = hipaccBuildProgramAndKernel(filename, kernel2D, false, false, false, compile_options);
+        cl_kernel exploreReduction1D = hipaccBuildProgramAndKernel(filename, kernel1D, false, false, false, compile_options);
 
         float timing=FLT_MAX;
-        #ifndef GPU_TIMING
+        #ifndef EVENT_TIMING
         std::vector<float> times;
         times.reserve(HIPACC_NUM_ITERATIONS);
         #endif
@@ -1158,15 +1163,13 @@ T hipaccApplyReductionExploration(const char *filename, const char *kernel2D,
                 num_blocks = global_work_size[0]/local_work_size[0];
             }
             // stop timing
-            #ifdef GPU_TIMING
+            #ifdef EVENT_TIMING
             if (total_time < timing) timing = total_time;
             #else
             times.push_back(total_time);
             #endif
         }
-
-        // print timing
-        #ifndef GPU_TIMING
+        #ifndef EVENT_TIMING
         std::sort(times.begin(), times.end());
         timing = times.at(HIPACC_NUM_ITERATIONS/2);
         #endif
@@ -1175,9 +1178,16 @@ T hipaccApplyReductionExploration(const char *filename, const char *kernel2D,
             opt_ppt = ppt;
         }
 
+        // print timing
         std::cerr << "<HIPACC:> PPT: " << std::setw(4) << std::right << ppt
                   << ", " << std::setw(8) << std::fixed << std::setprecision(4)
                   << timing << " ms" << std::endl;
+
+        // release kernels
+        err = clReleaseKernel(exploreReduction2D);
+        checkErr(err, "clReleaseKernel()");
+        err = clReleaseKernel(exploreReduction1D);
+        checkErr(err, "clReleaseKernel()");
     }
     std::cerr << "<HIPACC:> Best unroll factor for reduction kernel '"
               << kernel2D << "/" << kernel1D << "': "
@@ -1194,8 +1204,8 @@ T hipaccApplyReductionExploration(const char *filename, const char *kernel2D,
     return result;
 }
 template<typename T>
-T hipaccApplyReductionExploration(const char *filename, const char *kernel2D,
-        const char *kernel1D, HipaccImage &img, unsigned int max_threads,
+T hipaccApplyReductionExploration(std::string filename, std::string kernel2D,
+        std::string kernel1D, HipaccImage &img, unsigned int max_threads,
         unsigned int pixels_per_thread) {
     HipaccAccessor acc(img);
     return hipaccApplyReductionExploration<T>(filename, kernel2D, kernel1D, acc,
@@ -1206,7 +1216,7 @@ T hipaccApplyReductionExploration(const char *filename, const char *kernel2D,
 // Benchmark timing for a kernel call
 void hipaccEnqueueKernelBenchmark(cl_kernel kernel, std::vector<std::pair<size_t, void *> > args, size_t *global_work_size, size_t *local_work_size, bool print_timing=true) {
     float timing=FLT_MAX;
-    #ifndef GPU_TIMING
+    #ifndef EVENT_TIMING
     std::vector<float> times;
     times.reserve(HIPACC_NUM_ITERATIONS);
     #endif
@@ -1214,19 +1224,19 @@ void hipaccEnqueueKernelBenchmark(cl_kernel kernel, std::vector<std::pair<size_t
     for (size_t i=0; i<HIPACC_NUM_ITERATIONS; ++i) {
         // set kernel arguments
         for (size_t j=0; j<args.size(); ++j) {
-            hipaccSetKernelArg(kernel, j, args.data()[j].first, args.data()[j].second);
+            hipaccSetKernelArg(kernel, j, args[j].first, args[j].second);
         }
 
         // launch kernel
         hipaccEnqueueKernel(kernel, global_work_size, local_work_size, print_timing);
-        #ifdef GPU_TIMING
+        #ifdef EVENT_TIMING
         if (last_gpu_timing < timing) timing = last_gpu_timing;
         #else
         times.push_back(last_gpu_timing);
         #endif
     }
 
-    #ifndef GPU_TIMING
+    #ifndef EVENT_TIMING
     std::sort(times.begin(), times.end());
     timing = times.at(HIPACC_NUM_ITERATIONS/2);
     #endif
@@ -1241,7 +1251,7 @@ void hipaccEnqueueKernelBenchmark(cl_kernel kernel, std::vector<std::pair<size_t
 
 
 // Perform configuration exploration for a kernel call
-void hipaccKernelExploration(const char *filename, const char *kernel,
+void hipaccKernelExploration(std::string filename, std::string kernel,
         std::vector<std::pair<size_t, void *> > args,
         std::vector<hipacc_smem_info> smems, hipacc_launch_info &info, int
         warp_size, int max_threads_per_block, int max_threads_for_kernel, int
@@ -1261,7 +1271,7 @@ void hipaccKernelExploration(const char *filename, const char *kernel,
             // check if we exceed size of shared memory
             int used_smem = 0;
             for (size_t i=0; i<smems.size(); ++i) {
-                used_smem += (tile_size_x + smems.data()[i].size_x)*(tile_size_y + smems.data()[i].size_y - 1) * smems.data()[i].pixel_size;
+                used_smem += (tile_size_x + smems[i].size_x)*(tile_size_y + smems[i].size_y - 1) * smems[i].pixel_size;
             }
             if (used_smem >= max_smem_per_block) continue;
             if (used_smem && tile_size_x > warp_size) continue;
@@ -1275,7 +1285,7 @@ void hipaccKernelExploration(const char *filename, const char *kernel,
                 " -D BSX_EXPLORE=" + num_threads_x_ss.str() +
                 " -D BSY_EXPLORE=" + num_threads_y_ss.str() +
                 " -I./include ";
-            cl_kernel exploreKernel = hipaccBuildProgramAndKernel(filename, kernel, false, false, false, compile_options.c_str());
+            cl_kernel exploreKernel = hipaccBuildProgramAndKernel(filename, kernel, false, false, false, compile_options);
 
 
             size_t local_work_size[2];
@@ -1286,14 +1296,14 @@ void hipaccKernelExploration(const char *filename, const char *kernel,
             hipaccPrepareKernelLaunch(info, local_work_size);
 
             float timing=FLT_MAX;
-            #ifndef GPU_TIMING
+            #ifndef EVENT_TIMING
             std::vector<float> times;
             times.reserve(HIPACC_NUM_ITERATIONS);
             #endif
             for (size_t i=0; i<HIPACC_NUM_ITERATIONS; ++i) {
                 // set kernel arguments
                 for (size_t j=0; j<args.size(); ++j) {
-                    hipaccSetKernelArg(exploreKernel, j, args.data()[j].first, args.data()[j].second);
+                    hipaccSetKernelArg(exploreKernel, j, args[j].first, args[j].second);
                 }
 
                 // start timing
@@ -1302,13 +1312,13 @@ void hipaccKernelExploration(const char *filename, const char *kernel,
                 hipaccEnqueueKernel(exploreKernel, global_work_size, local_work_size, false);
 
                 // stop timing
-                #ifdef GPU_TIMING
+                #ifdef EVENT_TIMING
                 if (total_time < timing) timing = total_time;
                 #else
                 times.push_back(timing);
                 #endif
             }
-            #ifndef GPU_TIMING
+            #ifndef EVENT_TIMING
             std::sort(times.begin(), times.end());
             timing = times.at(HIPACC_NUM_ITERATIONS/2);
             #endif
@@ -1322,10 +1332,14 @@ void hipaccKernelExploration(const char *filename, const char *kernel,
             std::cerr << "<HIPACC:> Kernel config: "
                       << std::setw(4) << std::right << tile_size_x << "x"
                       << std::setw(2) << std::left << tile_size_y
-                      << std::setw(5-floor(log10(tile_size_x*tile_size_y)))
+                      << std::setw(5-floor(log10f((float)(tile_size_x*tile_size_y))))
                       << std::right << "(" << tile_size_x*tile_size_y << "): "
                       << std::setw(8) << std::fixed << std::setprecision(4)
                       << timing << " ms" << std::endl;
+
+            // release kernel
+            cl_int err = clReleaseKernel(exploreKernel);
+            checkErr(err, "clReleaseKernel()");
         }
     }
     std::cerr << "<HIPACC:> Best configurations for kernel '" << kernel << "': "
@@ -1353,5 +1367,5 @@ HipaccImage hipaccCreatePyramidImage(HipaccImage &base, int width, int height) {
   }
 }
 
-#endif  // __HIPACC_OCL_HPP__
+#endif  // __HIPACC_CL_HPP__
 

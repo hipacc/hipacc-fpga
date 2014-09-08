@@ -44,6 +44,10 @@ static void LLVMErrorHandler(void *userData, const std::string &message, bool
 
   Diags.Report(diag::err_fe_error_backend) << message;
 
+  // Run the interrupt handlers to make sure any special cleanups get done, in
+  // particular that we remove files registered with RemoveFileOnSignal.
+  llvm::sys::RunInterruptHandlers();
+
   // We cannot recover from llvm errors.  When reporting a fatal error, exit
   // with status 70 to generate crash diagnostics.  For BSD systems this is
   // defined as an internal software error.  Otherwise, exit with status 1.
@@ -368,18 +372,18 @@ int main(int argc, char *argv[]) {
   }
   // Textures in OpenCL - only supported on some CPU platforms
   if (compilerOptions.emitOpenCLCPU() && compilerOptions.useTextureMemory(USER_ON)) {
-      llvm::errs() << "\nWarning: image support is only available on some CPU devices!\n\n";
+      llvm::errs() << "Warning: image support is only available on some CPU devices!\n";
   }
   // Textures in OpenCL - only supported on some CPU platforms
   if (compilerOptions.emitOpenCLACC() && compilerOptions.useTextureMemory(USER_ON)) {
-      llvm::errs() << "\nWarning: image support is not available on ACC devices!\n\n";
+      llvm::errs() << "ERROR: image support is not available on ACC devices!\n\n";
       printUsage();
       return EXIT_FAILURE;
   }
   // Textures in OpenCL - only Array2D textures supported
   if (compilerOptions.emitOpenCLGPU() && compilerOptions.useTextureMemory(USER_ON)) {
     if (compilerOptions.getTextureType()!=Array2D) {
-      llvm::errs() << "Warning: 'Linear1D', 'Linear2D', and 'Ldg' texture memory not supported by OpenCL!"
+      llvm::errs() << "Warning: 'Linear1D', 'Linear2D', and 'Ldg' texture memory not supported by OpenCL!\n"
                    << "  Using 'Array2D' instead!\n";
       compilerOptions.setTextureMemory(Array2D);
     }
@@ -397,10 +401,16 @@ int main(int argc, char *argv[]) {
   // Pixels per thread > 1 not supported on Filterscript
   if (compilerOptions.emitFilterscript() &&
       compilerOptions.getPixelsPerThread() > 1) {
-    llvm::errs() << "ERROR: Calculating multiple pixels per thread selected, which is not supported for Filterscript!\n"
-                 << "  Please disable multiple pixels per thread oder switch target code generation back end.\n\n";
-    printUsage();
-    return EXIT_FAILURE;
+    llvm::errs() << "Warning: computing multiple pixels per thread is not supported by Filterscript!\n"
+                 << "  Computing only a single pixel per thread instead!\n";
+    compilerOptions.setPixelsPerThread(1);
+  }
+  // No scratchpad memory support in Renderscript/Filterscript
+  if ((compilerOptions.emitFilterscript() ||compilerOptions.emitRenderscript())
+      && compilerOptions.useLocalMemory(USER_ON)) {
+    llvm::errs() << "Warning: local memory support is not available in Renderscript and Filterscript!\n"
+                 << "  Local memory disabled!\n";
+    compilerOptions.setLocalMemory(USER_OFF);
   }
   if (compilerOptions.timeKernels(USER_ON) &&
       compilerOptions.exploreConfig(USER_ON)) {
@@ -416,7 +426,7 @@ int main(int argc, char *argv[]) {
   void *mainAddr = (void *) (intptr_t) getExecutablePath;
   std::string Path = getExecutablePath(argv[0]);
 
-  OwningPtr<CompilerInstance> Clang(new CompilerInstance());
+  std::unique_ptr<CompilerInstance> Clang(new CompilerInstance());
   IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
 
   IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts = new DiagnosticOptions();
@@ -453,9 +463,22 @@ int main(int argc, char *argv[]) {
   if (!success) return EXIT_FAILURE;
 
   // create and execute the frontend action
-  OwningPtr<ASTFrontendAction> Act(new HipaccRewriteAction(compilerOptions));
+  std::unique_ptr<ASTFrontendAction> Act(new HipaccRewriteAction(compilerOptions));
 
   if (!Clang->ExecuteAction(*Act)) return EXIT_FAILURE;
+
+  // if any timers were active but haven't been destroyed yet, print their
+  // results now.  This happens in -disable-free mode.
+  llvm::TimerGroup::printAll(llvm::errs());
+
+  // our error handler depends on the Diagnostics object, which we're
+  // potentially about to delete. Uninstall the handler now so that any
+  // later errors use the default handling behavior instead.
+  llvm::remove_fatal_error_handler();
+
+  // managed static deconstruction. Useful for making things like
+  // -time-passes usable.
+  llvm::llvm_shutdown();
 
   return EXIT_SUCCESS;
 }

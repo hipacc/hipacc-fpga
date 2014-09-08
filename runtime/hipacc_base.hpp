@@ -26,12 +26,14 @@
 #ifndef __HIPACC_BASE_HPP__
 #define __HIPACC_BASE_HPP__
 
+#include <stdint.h>
 #include <time.h>
-#ifdef __MACH__
+#ifdef __APPLE__
 #include <mach/clock.h>
 #include <mach/mach.h>
 #endif
 
+#include <algorithm>
 #include <cassert>
 #include <vector>
 #include <algorithm>
@@ -59,7 +61,7 @@ float hipaccGetLastKernelTiming() {
 long getMicroTime() {
     struct timespec ts;
 
-    #ifdef __MACH__ // OS X does not have clock_gettime, use clock_get_time
+    #ifdef __APPLE__ // OS X does not have clock_gettime, use clock_get_time
     clock_serv_t cclock;
     mach_timespec_t mts;
     host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
@@ -91,6 +93,8 @@ class HipaccImage {
         int32_t pixel_size;
         void *mem;
         hipaccMemoryType mem_type;
+        char *host;
+        uint32_t *refcount;
 
     public:
         HipaccImage(int32_t width, int32_t height, int32_t stride, int32_t
@@ -102,10 +106,38 @@ class HipaccImage {
             alignment(alignment),
             pixel_size(pixel_size),
             mem(mem),
-            mem_type(mem_type)
-            {}
+            mem_type(mem_type),
+            host(new char[width*height*pixel_size]),
+            refcount(new uint32_t(1))
+        {
+            std::fill(host, host + width*height*pixel_size, 0);
+        }
 
-        bool operator==(HipaccImage other) const {
+        HipaccImage(const HipaccImage &image) :
+            width(image.width),
+            height(image.height),
+            stride(image.stride),
+            alignment(image.alignment),
+            pixel_size(image.pixel_size),
+            mem(image.mem),
+            mem_type(image.mem_type),
+            host(image.host),
+            refcount(image.refcount)
+        {
+            ++(*refcount);
+        }
+
+        ~HipaccImage() {
+            --(*refcount);
+            if (host != NULL &&
+                *refcount == 0) {
+              delete refcount;
+              delete[] host;
+              host = NULL;
+            }
+        }
+
+        bool operator==(HipaccImage &other) const {
             return mem==other.mem;
         }
 };
@@ -135,16 +167,16 @@ class HipaccAccessor {
 
 class HipaccContextBase {
     protected:
-        std::vector<HipaccImage> imgs;
+        std::vector<HipaccImage*> imgs;
 
         HipaccContextBase() {};
         HipaccContextBase(HipaccContextBase const &);
         void operator=(HipaccContextBase const &);
 
     public:
-        void add_image(HipaccImage &img) { imgs.push_back(img); }
+        void add_image(HipaccImage &img) { imgs.push_back(&img); }
         void del_image(HipaccImage &img) {
-            imgs.erase(std::remove(imgs.begin(), imgs.end(), img), imgs.end());
+            imgs.erase(std::remove(imgs.begin(), imgs.end(), &img), imgs.end());
         }
 };
 
@@ -275,7 +307,7 @@ HipaccPyramid hipaccCreatePyramid(HipaccImage &img, size_t depth) {
   int height = img.height/2;
   int width = img.width/2;
   for (size_t i=1; i<depth; ++i) {
-    assert(width * height > 0 && "Pyramid stages to deep for image size");
+    assert(width * height > 0 && "Pyramid stages too deep for image size");
     p.add(hipaccCreatePyramidImage<data_t>(img, width, height));
     height /= 2;
     width /= 2;
@@ -472,8 +504,7 @@ void hipaccTraverse(unsigned int loop=1,
   std::vector<HipaccPyramid*> pyrs = hipaccPyramids.back();
 
   if (!pyrs.at(0)->isBottomLevel()) {
-    for (std::vector<HipaccPyramid*>::iterator it = pyrs.begin();
-           it != pyrs.end(); ++it) {
+    for (auto it = pyrs.begin(); it != pyrs.end(); ++it) {
       ++((*it)->level_);
     }
 
@@ -484,8 +515,7 @@ void hipaccTraverse(unsigned int loop=1,
       }
     }
 
-    for (std::vector<HipaccPyramid*>::iterator it = pyrs.begin();
-         it != pyrs.end(); ++it) {
+    for (auto it = pyrs.begin(); it != pyrs.end(); ++it) {
       --((*it)->level_);
     }
   }

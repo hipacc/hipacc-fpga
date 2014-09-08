@@ -24,15 +24,17 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <iostream>
 #include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
 
+//#define CPU
 #ifdef OpenCV
+#include "opencv2/opencv.hpp"
+#ifndef CPU
 #include "opencv2/gpu/gpu.hpp"
-#include "opencv2/imgproc/imgproc_c.h"
+#endif
 #endif
 
 #include "hipacc.hpp"
@@ -42,7 +44,6 @@
 //#define SIZE_Y 5
 //#define WIDTH 4096
 //#define HEIGHT 4096
-//#define CPU
 #define ARRAY_DOMAIN
 #define CONST_DOMAIN
 #define USE_LAMBDA
@@ -233,7 +234,6 @@ int main(int argc, const char **argv) {
     const int offset_x = size_x >> 1;
     const int offset_y = size_y >> 1;
     const int t = NT;
-    float timing = 0.0f;
 
     // only filter kernel sizes 3x3 and 5x5 implemented
     if (size_x != size_y && (size_x != 3 || size_x != 5)) {
@@ -241,35 +241,18 @@ int main(int argc, const char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    // host memory for image of width x height pixels
-    uchar *host_in = (uchar *)malloc(sizeof(uchar)*width*height);
-    uchar *host_out = (uchar *)malloc(sizeof(uchar)*width*height);
-    uchar *reference_in = (uchar *)malloc(sizeof(uchar)*width*height);
-    uchar *reference_out = (uchar *)malloc(sizeof(uchar)*width*height);
-
-    // initialize data
-    for (int y=0; y<height; ++y) {
-        for (int x=0; x<width; ++x) {
-            host_in[y*width + x] = (uchar)(y*width + x) % 256;
-            reference_in[y*width + x] = (uchar)(y*width + x) % 256;
-            host_out[y*width + x] = 0;
-            reference_out[y*width + x] = 0;
-        }
-    }
-
-
-    // define Domain for blur filter
+    // domain for blur filter
     #ifdef ARRAY_DOMAIN
     #ifdef CONST_DOMAIN
     const
     #endif
-    uchar domain[size_y][size_x] = {
-        #if SIZE_X==3
+    uchar domain[SIZE_Y][SIZE_X] = {
+        #if SIZE_X == 3
         { 1, 1, 1 },
         { 1, 1, 1 },
         { 1, 1, 1 }
         #endif
-        #if SIZE_X==5
+        #if SIZE_X == 5
         { 1, 1, 1, 1, 1 },
         { 1, 1, 1, 1, 1 },
         { 1, 1, 1, 1, 1 },
@@ -277,14 +260,34 @@ int main(int argc, const char **argv) {
         { 1, 1, 1, 1, 1 }
         #endif
     };
+    #endif
+
+    // host memory for image of width x height pixels
+    uchar *input = (uchar *)malloc(sizeof(uchar)*width*height);
+    uchar *reference_in = (uchar *)malloc(sizeof(uchar)*width*height);
+    uchar *reference_out = (uchar *)malloc(sizeof(uchar)*width*height);
+
+    // initialize data
+    for (int y=0; y<height; ++y) {
+        for (int x=0; x<width; ++x) {
+            input[y*width + x] = (uchar)(y*width + x) % 256;
+            reference_in[y*width + x] = (uchar)(y*width + x) % 256;
+            reference_out[y*width + x] = 0;
+        }
+    }
+
+
+    // input and output image of width x height pixels
+    Image<uchar> in(width, height);
+    Image<uchar> out(width, height);
+
+    // define Domain for blur filter
+    #ifdef ARRAY_DOMAIN
     Domain dom(domain);
     #else
     Domain dom(size_x, size_y);
     #endif
 
-    // input and output image of width x height pixels
-    Image<uchar> in(width, height);
-    Image<uchar> out(width, height);
     // use undefined boundary handling to access image pixels beyond region
     // defined by Accessor
     BoundaryCondition<uchar> bound(in, size_x, size_y, BOUNDARY_UNDEFINED);
@@ -298,16 +301,16 @@ int main(int argc, const char **argv) {
     BlurFilter filter(iter, acc, dom, size_x, size_y, t, height);
     #endif
 
-    in = host_in;
-    out = host_out;
+    in = input;
 
     fprintf(stderr, "Calculating HIPAcc blur filter ...\n");
+    float timing = 0.0f;
 
     filter.execute();
     timing = hipaccGetLastKernelTiming();
 
-    // get results
-    host_out = out.getData();
+    // get pointer to result data
+    uchar *output = out.getData();
 
     fprintf(stderr, "HIPACC: %.3f ms, %.3f Mpixel/s\n", timing, ((width-2*offset_x)*(height-2*offset_y)/timing)/1000);
 
@@ -330,8 +333,8 @@ int main(int argc, const char **argv) {
     #endif
 
 
-    cv::Mat cv_data_in(height, width, CV_8UC1, host_in);
-    cv::Mat cv_data_out(height, width, CV_8UC1, host_out);
+    cv::Mat cv_data_in(height, width, CV_8UC1, input);
+    cv::Mat cv_data_out(height, width, CV_8UC1, cv::Scalar(0));
     cv::Size ksize(size_x, size_y);
 
     #ifdef CPU
@@ -359,8 +362,10 @@ int main(int argc, const char **argv) {
         dt = time1 - time0;
         if (dt < min_dt) min_dt = dt;
     }
-
     gpu_out.download(cv_data_out);
+
+    // get pointer to result data
+    output = (uchar *)cv_data_out.data;
     #endif
 
     fprintf(stderr, "OpenCV: %.3f ms, %.3f Mpixel/s\n", min_dt, ((width-size_x)*(height-size_y)/min_dt)/1000);
@@ -396,9 +401,9 @@ int main(int argc, const char **argv) {
     // compare results
     for (int y=offset_y; y<upper_y; y++) {
         for (int x=offset_x; x<upper_x; x++) {
-            if (reference_out[y*width + x] != host_out[y*width + x]) {
+            if (reference_out[y*width + x] != output[y*width + x]) {
                 fprintf(stderr, "Test FAILED, at (%d,%d): %hhu vs. %hhu\n", x,
-                        y, reference_out[y*width + x], host_out[y*width + x]);
+                        y, reference_out[y*width + x], output[y*width + x]);
                 exit(EXIT_FAILURE);
             }
         }
@@ -406,8 +411,7 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "Test PASSED\n");
 
     // memory cleanup
-    free(host_in);
-    //free(host_out);
+    free(input);
     free(reference_in);
     free(reference_out);
 

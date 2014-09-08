@@ -88,27 +88,28 @@ using namespace android;
 # endif // RS_TARGET_API > 19
 #endif // RS_TARGET_API
 
-#include <assert.h>
 #include <float.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <memory>
 #include <sstream>
+#include <string>
 #include <utility>
-#include <vector>
-#include <algorithm>
 
 #include "hipacc_base.hpp"
 
 const sp<Allocation> *hipaccGetAllocation(HipaccImage &img);
 void hipaccPrepareKernelLaunch(hipacc_launch_info &info, size_t *block);
 long getMicroTime();
-const char *getRSErrorCodeStr(int errorNum);
-EHF::ErrorHandlerFunc_t errorHandler(uint32_t errorNum, const char *errorText);
+std::string getRSErrorCodeStr(int errorNum);
+EHF::ErrorHandlerFunc_t errorHandler(uint32_t errorNum, std::string errorText);
 void hipaccInitRenderScript(int targetAPI);
 void hipaccCopyMemory(HipaccImage &src, HipaccImage &dst);
 void hipaccCopyMemoryRegion(HipaccAccessor src, HipaccAccessor dst);
@@ -153,7 +154,7 @@ class HipaccContext : public HipaccContextBase {
             return instance;
         }
         void add_image(HipaccImage &img, sp<Allocation> id) {
-            imgs.push_back(img);
+            imgs.push_back(&img);
             allocs.push_back(std::make_pair(id, img));
         }
         void del_image(HipaccImage &img) {
@@ -335,7 +336,7 @@ void hipaccPrepareKernelLaunch(hipacc_launch_info &info, size_t *block) {
 }
 
 
-const char *getRSErrorCodeStr(int errorNum) {
+std::string getRSErrorCodeStr(int errorNum) {
     switch (errorNum) {
         case RS_ERROR_NONE:
             return "RS_ERROR_NONE";
@@ -361,7 +362,7 @@ const char *getRSErrorCodeStr(int errorNum) {
 }
 
 
-EHF::ErrorHandlerFunc_t errorHandler(uint32_t errorNum, const char *errorText) {
+EHF::ErrorHandlerFunc_t errorHandler(uint32_t errorNum, std::string errorText) {
     std::cerr << "ERROR: " << getRSErrorCodeStr(errorNum)
               << " (" << errorNum << ")" << std::endl
               << "    " << errorText << std::endl;
@@ -405,6 +406,7 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem) {
     int height = img.height;
     int stride = img.stride;
 
+    std::copy(host_mem, host_mem + img.width*img.height, (T*)img.host);
     if (stride > width) {
         T* buff = new T[stride * height];
         for (size_t i=0; i<height; ++i) {
@@ -421,7 +423,7 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem) {
 
 // Read from allocation
 template<typename T>
-void hipaccReadMemory(T *host_mem, HipaccImage &img) {
+T *hipaccReadMemory(HipaccImage &img) {
     HipaccContext &Ctx = HipaccContext::getInstance();
 
     int width = img.width;
@@ -432,29 +434,31 @@ void hipaccReadMemory(T *host_mem, HipaccImage &img) {
         T* buff = new T[stride * height];
         COPYTO(T, (Allocation *)img.mem, 0, stride * height, buff);
         for (size_t i=0; i<height; ++i) {
-            memcpy(host_mem + (i * width), buff + (i * stride),
+            memcpy(&((T*)img.host)[i*width], buff + (i * stride),
                    sizeof(T) * width);
         }
         delete[] buff;
     } else {
-        COPYTO(T, (Allocation *)img.mem, 0, width * height, host_mem);
+        COPYTO(T, (Allocation *)img.mem, 0, width * height, (T*)img.host);
     }
+
+    return (T*)img.host;
 }
 
 
 // Infer non-const Domain from non-const Mask
 template<typename T>
 void hipaccWriteDomainFromMask(HipaccImage &dom, T* host_mem) {
-  int size = dom.width * dom.height;
-  uchar *dom_mem = new uchar[size];
+    size_t size = dom.width * dom.height;
+    uchar *dom_mem = new uchar[size];
 
-  for (int i = 0; i < size; ++i) {
-    dom_mem[i] = (host_mem[i] == T(0) ? 0 : 1);
-  }
+    for (size_t i=0; i<size; ++i) {
+        dom_mem[i] = (host_mem[i] == T(0) ? 0 : 1);
+    }
 
-  hipaccWriteMemory(dom, dom_mem);
+    hipaccWriteMemory(dom, dom_mem);
 
-  delete[] dom_mem;
+    delete[] dom_mem;
 }
 
 #ifndef EXCLUDE_IMPL
@@ -739,7 +743,7 @@ void hipaccLaunchScriptKernelExploration(
         std::cerr << "<HIPACC:> Kernel config: "
                   << std::setw(4) << std::right << work_size[0] << "x"
                   << std::setw(2) << std::left << work_size[1]
-                  << std::setw(5-floor(log10((float)(work_size[0]*work_size[1]))))
+                  << std::setw(5-floor(log10f((float)(work_size[0]*work_size[1]))))
                   << std::right << "(" << work_size[0]*work_size[1] << "): "
                   << std::setw(8) << std::fixed << std::setprecision(4)
                   << med_dt << " ms" << std::endl;

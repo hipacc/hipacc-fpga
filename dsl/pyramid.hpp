@@ -48,10 +48,6 @@ class PyramidBase {
     int level_;
     bool bound_;
 
-    void setLevel(int level) {
-      level_ = level;
-    }
-
     void increment() {
       ++level_;
     }
@@ -100,7 +96,7 @@ class PyramidBase {
 template<typename data_t>
 class Pyramid : public PyramidBase {
   private:
-    std::vector<Image<data_t> > imgs_;
+    std::vector<Image<data_t>> imgs_;
 
   public:
     Pyramid(Image<data_t> &img, const int depth)
@@ -108,8 +104,8 @@ class Pyramid : public PyramidBase {
       imgs_.push_back(img);
       int height = img.getHeight()/2;
       int width = img.getWidth()/2;
-      for (int i = 1; i < depth; ++i) {
-        assert(width * height > 0 && "Pyramid stages to deep for image size.");
+      for (int i=1; i<depth; ++i) {
+        assert(width * height > 0 && "Pyramid stages too deep for image size.");
         Image<data_t> img(width, height);
         imgs_.push_back(img);
         height /= 2;
@@ -125,7 +121,7 @@ class Pyramid : public PyramidBase {
     }
 
     void swap(Pyramid<data_t> &other) {
-      std::vector<Image<data_t> > tmp = other.imgs_;
+      std::vector<Image<data_t>> tmp = other.imgs_;
       other.imgs_ = this->imgs_;
       this->imgs_ = tmp;
     }
@@ -133,21 +129,21 @@ class Pyramid : public PyramidBase {
 
 
 std::vector<const std::function<void()>*> gTraverse;
-std::vector<std::vector<PyramidBase*> > gPyramids;
+std::vector<std::vector<PyramidBase*>> gPyramids;
 
 
 class Traversal {
   private:
-    std::function<void()> func_;
+    const std::function<void()> &func_;
     std::vector<PyramidBase*> pyrs_;
 
   public:
-    Traversal(const std::function<void()> func)
+    Traversal(const std::function<void()> &func)
         : func_(func) {
     }
 
     ~Traversal() {
-      for (unsigned int i = 0; i < pyrs_.size(); ++i) {
+      for (unsigned int i=0; i<pyrs_.size(); ++i) {
         pyrs_[i]->unbind();
       }
     }
@@ -163,49 +159,45 @@ class Traversal {
 
       (*gTraverse.back())();
 
-      gPyramids.pop_back();
       gTraverse.pop_back();
+      gPyramids.pop_back();
     }
 };
 
 
 class Recursion {
   private:
-    std::function<void()> func_;
+    const std::function<void()> &func_;
 
   public:
-    Recursion(const std::function<void()> func)
+    Recursion(const std::function<void()> &func)
         : func_(func) {
       std::vector<PyramidBase*> pyrs = gPyramids.back();
-      for (std::vector<PyramidBase*>::iterator it = pyrs.begin();
-           it != pyrs.end(); ++it) {
+      for (auto it = pyrs.begin(); it != pyrs.end(); ++it) {
         (*it)->increment();
       }
     }
 
     ~Recursion() {
       std::vector<PyramidBase*> pyrs = gPyramids.back();
-      for (std::vector<PyramidBase*>::iterator it = pyrs.begin();
-           it != pyrs.end(); ++it) {
+      for (auto it = pyrs.begin(); it != pyrs.end(); ++it) {
         (*it)->decrement();
       }
     }
 
     void run(int loop) {
       std::vector<PyramidBase*> pyrs = gPyramids.back();
-      if (pyrs.at(0)->getLevel() < pyrs.at(0)->getDepth()-1) {
-        for (int i = 0; i < loop; i++) {
-          (*gTraverse.back())();
-          if (i < loop-1) {
-            func_();
-          }
+      for (int i=0; i<loop; i++) {
+        (*gTraverse.back())();
+        if (i < loop-1) {
+          func_();
         }
       }
     }
 };
 
 
-void traverse(PyramidBase &p0, const std::function<void()> func) {
+void traverse(PyramidBase &p0, const std::function<void()> &func) {
     Traversal t(func);
     t.add(p0);
     t.run();
@@ -213,7 +205,7 @@ void traverse(PyramidBase &p0, const std::function<void()> func) {
 
 
 void traverse(PyramidBase &p0, PyramidBase &p1,
-              const std::function<void()> func) {
+              const std::function<void()> &func) {
     assert(p0.getDepth() == p1.getDepth() &&
            "Pyramid depths do not match.");
 
@@ -225,7 +217,7 @@ void traverse(PyramidBase &p0, PyramidBase &p1,
 
 
 void traverse(PyramidBase &p0, PyramidBase &p1, PyramidBase &p2,
-              const std::function<void()> func) {
+              const std::function<void()> &func) {
     assert(p0.getDepth() == p1.getDepth() &&
            p1.getDepth() == p2.getDepth() &&
            "Pyramid depths do not match.");
@@ -239,7 +231,7 @@ void traverse(PyramidBase &p0, PyramidBase &p1, PyramidBase &p2,
 
 
 void traverse(PyramidBase &p0, PyramidBase &p1, PyramidBase &p2,
-              PyramidBase &p3, const std::function<void()> func) {
+              PyramidBase &p3, const std::function<void()> &func) {
     assert(p0.getDepth() == p1.getDepth() &&
            p1.getDepth() == p2.getDepth() &&
            p2.getDepth() == p3.getDepth() &&
@@ -256,7 +248,7 @@ void traverse(PyramidBase &p0, PyramidBase &p1, PyramidBase &p2,
 
 void traverse(PyramidBase &p0, PyramidBase &p1, PyramidBase &p2,
               PyramidBase &p3, PyramidBase &p4,
-              const std::function<void()> func) {
+              const std::function<void()> &func) {
     assert(p0.getDepth() == p1.getDepth() &&
            p1.getDepth() == p2.getDepth() &&
            p2.getDepth() == p3.getDepth() &&
@@ -274,9 +266,9 @@ void traverse(PyramidBase &p0, PyramidBase &p1, PyramidBase &p2,
 
 
 void traverse(std::vector<PyramidBase*> pyrs,
-              const std::function<void()> func) {
+              const std::function<void()> &func) {
     Traversal t(func);
-    for (unsigned int i = 0; i < pyrs.size(); ++i) {
+    for (unsigned int i=0; i<pyrs.size(); ++i) {
       if (i < pyrs.size() - 1) {
         assert(pyrs[i]->getDepth() == pyrs[i+1]->getDepth() &&
                "Pyramid depths do not match.");
@@ -288,12 +280,16 @@ void traverse(std::vector<PyramidBase*> pyrs,
 }
 
 
-void traverse(unsigned int loop=1, const std::function<void()> func=[]{}) {
+void traverse(unsigned int loop=1, const std::function<void()> &func=[]{}) {
   assert(!gPyramids.empty() &&
          "Traverse recursion called outside of traverse.");
 
-  Recursion r(func);
-  r.run(loop);
+  std::vector<PyramidBase*> pyrs = gPyramids.back();
+
+  if (!pyrs.at(0)->isBottomLevel()) {
+    Recursion r(func);
+    r.run(loop);
+  }
 }
 
 } // end namespace hipacc

@@ -48,12 +48,12 @@ void CreateHostStrings::writeHeaders(std::string &resultStr) {
       // writing the file @see Rewrite::HandleTranslationUnit().
       break;
     case TARGET_CUDA:
-      resultStr += "#include \"hipacc_cuda.hpp\"\n\n";
+      resultStr += "#include \"hipacc_cu.hpp\"\n\n";
       break;
     case TARGET_OpenCLACC:
     case TARGET_OpenCLCPU:
     case TARGET_OpenCLGPU:
-      resultStr += "#include \"hipacc_ocl.hpp\"\n\n";
+      resultStr += "#include \"hipacc_cl.hpp\"\n\n";
       break;
     case TARGET_Renderscript:
     case TARGET_Filterscript:
@@ -130,14 +130,14 @@ void CreateHostStrings::writeKernelCompilation(HipaccKernel *K,
     case TARGET_OpenCLCPU:
     case TARGET_OpenCLGPU:
       writeCLCompilation(K->getFileName(), K->getKernelName(),
-          HipaccDevice(options).getOCLIncludes(), resultStr);
+          HipaccDevice(options).getCLIncludes(), resultStr);
       if (K->getKernelClass()->getReduceFunction()) {
         resultStr += indent;
         writeCLCompilation(K->getFileName(), K->getReduceName(),
-            HipaccDevice(options).getOCLIncludes(), resultStr, "2D");
+            HipaccDevice(options).getCLIncludes(), resultStr, "2D");
         resultStr += indent;
         writeCLCompilation(K->getFileName(), K->getReduceName(),
-            HipaccDevice(options).getOCLIncludes(), resultStr, "1D");
+            HipaccDevice(options).getCLIncludes(), resultStr, "1D");
       }
       break;
   }
@@ -288,9 +288,8 @@ void CreateHostStrings::writeMemoryTransfer(HipaccImage *Img, std::string mem,
       resultStr += ", " + mem + ");";
       break;
     case DEVICE_TO_HOST:
-      resultStr += "hipaccReadMemory(";
-      resultStr += mem;
-      resultStr += ", " + Img->getName() + ");";
+      resultStr += "hipaccReadMemory<" + Img->getTypeStr() + ">(";
+      resultStr += Img->getName() + ");";
       break;
     case DEVICE_TO_DEVICE:
       resultStr += "hipaccCopyMemory(";
@@ -314,9 +313,8 @@ void CreateHostStrings::writeMemoryTransfer(
       resultStr += ", " + mem + ");";
       break;
     case DEVICE_TO_HOST:
-      resultStr += "hipaccReadMemory(";
-      resultStr += mem;
-      resultStr += ", " + Pyr->getName() + "(" + idx + "));";
+      resultStr += "hipaccReadMemory<" + Pyr->getTypeStr() + ">(";
+      resultStr += Pyr->getName() + "(" + idx + "));";
       break;
     case DEVICE_TO_DEVICE:
       resultStr += "hipaccCopyMemory(";
@@ -351,8 +349,6 @@ void CreateHostStrings::writeMemoryTransferSymbol(HipaccMask *Mask, std::string
               resultStr += "hipaccWriteSymbol<" + Mask->getTypeStr() + ">(";
               resultStr += "(const void *)&";
               resultStr += Mask->getName() + K->getName() + ", ";
-              resultStr += "\"";
-              resultStr += Mask->getName() + K->getName() + "\", ";
               resultStr += "(" + Mask->getTypeStr() + " *)" + mem;
               resultStr += ", " + Mask->getSizeXStr() + ", " + Mask->getSizeYStr() + ");";
               break;
@@ -361,8 +357,6 @@ void CreateHostStrings::writeMemoryTransferSymbol(HipaccMask *Mask, std::string
               resultStr += "(" + Mask->getTypeStr() + " *)" + mem;
               resultStr += "(const void *)&";
               resultStr += Mask->getName() + K->getName() + ", ";
-              resultStr += "\"";
-              resultStr += Mask->getName() + K->getName() + "\", ";
               resultStr += ", " + Mask->getSizeXStr() + ", " + Mask->getSizeYStr() + ");";
               break;
             case DEVICE_TO_DEVICE:
@@ -401,8 +395,6 @@ void CreateHostStrings::writeMemoryTransferDomainFromMask(
           resultStr += Mask->getTypeStr() + ">(";
           resultStr += "(const void *)&";
           resultStr += Domain->getName() + K->getName() + ", ";
-          resultStr += "\"";
-          resultStr += Domain->getName() + K->getName() + "\", ";
           resultStr += "(" + Mask->getTypeStr() + " *)";
           resultStr += Mask->getHostMemName();
           resultStr += ", " + Mask->getSizeXStr();
@@ -492,11 +484,11 @@ void CreateHostStrings::writeKernelCall(std::string kernelName,
       case TARGET_CUDA:
         if (options.exploreConfig()) {
           resultStr += indent + "std::vector<void *> _args" + kernelName + ";\n";
+          resultStr += indent + "std::vector<hipacc_const_info> _consts" + kernelName + ";\n";
+          resultStr += indent + "std::vector<hipacc_tex_info*> _texs" + kernelName + ";\n";
         } else {
           resultStr += indent + "std::vector<std::pair<size_t, void *> > _args" + kernelName + ";\n";
         }
-        resultStr += indent + "std::vector<hipacc_const_info> _consts" + kernelName + ";\n";
-        resultStr += indent + "std::vector<hipacc_tex_info> _texs" + kernelName + ";\n";
         break;
       case TARGET_OpenCLACC:
       case TARGET_OpenCLCPU:
@@ -622,8 +614,11 @@ void CreateHostStrings::writeKernelCall(std::string kernelName,
             !(K->useTextureMemory(Acc) == Ldg)) {
           // bind texture
           if (options.exploreConfig()) {
-            resultStr += "_texs" + kernelName + ".push_back(";
-            resultStr += "hipacc_tex_info(std::string(\"_tex" + deviceArgNames[i] + K->getName() + "\"), ";
+            LSS.str(std::string());
+            LSS.clear();
+            LSS << literal_count++;
+            resultStr += "hipacc_tex_info tex_info" + LSS.str();
+            resultStr += "(std::string(\"_tex" + deviceArgNames[i] + K->getName() + "\"), ";
             resultStr += K->getImgFromMapping(FD)->getImage()->getTextureType() + ", ";
             resultStr += hostArgNames[i] + ", ";
             switch (K->useTextureMemory(Acc)) {
@@ -632,10 +627,23 @@ void CreateHostStrings::writeKernelCall(std::string kernelName,
               case Array2D:  resultStr += "Array2D";  break;
               default: assert(0 && "unsupported texture type!");
             }
-            resultStr += "));\n";
+            resultStr += ");\n";
+            resultStr += indent;
+            resultStr += "_texs" + kernelName + ".push_back(";
+            resultStr += "&tex_info" + LSS.str() + ");\n";
           } else {
-            resultStr += "hipaccBindTexture<" + argTypeNames[i] + ">(_tex";
-            resultStr += deviceArgNames[i] + K->getName() + ", ";
+            resultStr += "cudaGetTextureReference(&_tex";
+            resultStr += deviceArgNames[i] + K->getName() + "Ref, &_tex";
+            resultStr += deviceArgNames[i] + K->getName() + ");\n";
+            resultStr += indent;
+            resultStr += "hipaccBindTexture<" + argTypeNames[i] + ">(";
+            switch (K->useTextureMemory(Acc)) {
+              case Linear1D: resultStr += "Linear1D"; break;
+              case Linear2D: resultStr += "Linear2D"; break;
+              case Array2D:  resultStr += "Array2D";  break;
+              default: assert(0 && "unsupported texture type!");
+            }
+            resultStr += ", _tex" + deviceArgNames[i] + K->getName() + "Ref, ";
             resultStr += hostArgNames[i] + ");\n";
           }
           resultStr += indent;
@@ -671,14 +679,23 @@ void CreateHostStrings::writeKernelCall(std::string kernelName,
       options.getTextureType()==Array2D) {
     // bind surface
     if (options.exploreConfig()) {
-      resultStr += "_texs" + kernelName + ".push_back(";
-      resultStr += "hipacc_tex_info(std::string(\"_surfOutput" + K->getName() + "\"), ";
+      LSS.str(std::string());
+      LSS.clear();
+      LSS << literal_count++;
+      resultStr += "hipacc_tex_info tex_info" + LSS.str();
+      resultStr += "(std::string(\"_surfOutput" + K->getName() + "\"), ";
       resultStr += K->getIterationSpace()->getAccessor()->getImage()->getTextureType() + ", ";
-      resultStr += K->getIterationSpace()->getAccessor()->getImage()->getName() + ", Surface));\n";
+      resultStr += K->getIterationSpace()->getAccessor()->getImage()->getName() + ", Surface);\n";
+      resultStr += indent;
+      resultStr += "_texs" + kernelName + ".push_back(";
+      resultStr += "&tex_info" + LSS.str() + ");\n";
     } else {
+      resultStr += "cudaGetSurfaceReference(&_surfOutput" + K->getName() + "Ref, ";
+      resultStr += "&_surfOutput" + K->getName() + ");\n";
+      resultStr += indent;
       resultStr += "hipaccBindSurface<";
       resultStr += K->getIterationSpace()->getAccessor()->getImage()->getTypeStr();
-      resultStr += ">(_surfOutput" + K->getName() + ", ";
+      resultStr += ">(_surfOutput" + K->getName() + "Ref, ";
       resultStr += K->getIterationSpace()->getAccessor()->getImage()->getName() + ");\n";
     }
     resultStr += indent;
@@ -686,7 +703,7 @@ void CreateHostStrings::writeKernelCall(std::string kernelName,
 
   #if 0
   for (size_t i=0; i<KC->getNumImages(); ++i) {
-    HipaccAccessor *Acc = K->getImgFromMapping(KC->getImgFields().data()[i]);
+    HipaccAccessor *Acc = K->getImgFromMapping(KC->getImgFields()[i]);
     // emit assertion
     resultStr += "assert(" + Acc->getName() + ".width==" + K->getIterationSpace()->getName() + ".width && \"Acc width != IS width\");\n" + indent;
     resultStr += "assert(" + Acc->getName() + ".height==" + K->getIterationSpace()->getName() + ".height && \"Acc height != IS height\");\n" + indent;
@@ -727,7 +744,7 @@ void CreateHostStrings::writeKernelCall(std::string kernelName,
       continue;
     }
     std::string img_mem;
-    if (Acc || i==0) img_mem = ".mem";
+    if (Acc || i==0 || Mask) img_mem = ".mem";
 
     if (options.exploreConfig() || options.timeKernels()) {
       // add kernel argument
@@ -975,6 +992,13 @@ void CreateHostStrings::writeReduceCall(HipaccKernelClass *KC, HipaccKernel *K,
     case TARGET_Vivado:
       break;
     case TARGET_CUDA:
+      if (!options.exploreConfig()) {
+        // first get texture reference
+        resultStr += "cudaGetTextureReference(";
+        resultStr += "&_tex" + K->getIterationSpace()->getImage()->getName() + K->getName() + "Ref, ";
+        resultStr += "&_tex" + K->getIterationSpace()->getImage()->getName() + K->getName() + ");\n";
+        resultStr += indent;
+      }
       resultStr += red_decl;
       if (options.getTargetDevice() >= FERMI_20 && !options.exploreConfig()) {
         resultStr += "hipaccApplyReductionThreadFence<" + typeStr + ">(";
@@ -1041,8 +1065,7 @@ void CreateHostStrings::writeReduceCall(HipaccKernelClass *KC, HipaccKernel *K,
     if (options.exploreConfig()) {
       resultStr += ", hipacc_tex_info(std::string(\"_tex";
       resultStr += K->getIterationSpace()->getImage()->getName() + K->getName();
-      resultStr += "\"), ";
-      resultStr += K->getIterationSpace()->getImage()->getTextureType() + ", ";
+      resultStr += "\"), " + K->getIterationSpace()->getImage()->getTextureType() + ", ";
       resultStr += K->getIterationSpace()->getImage()->getName() + ", ";
       if (options.useTextureMemory() && options.getTextureType()==Array2D) {
         resultStr += "Array2D";
@@ -1053,6 +1076,7 @@ void CreateHostStrings::writeReduceCall(HipaccKernelClass *KC, HipaccKernel *K,
     } else {
       resultStr += ", _tex";
       resultStr += K->getIterationSpace()->getImage()->getName() + K->getName();
+      resultStr += "Ref";
     }
 
     if (options.exploreConfig()) {
@@ -1112,7 +1136,7 @@ void CreateHostStrings::writeInterpolationDefinition(HipaccKernel *K,
   std::string const_suffix;
   switch (bh_mode) {
     case BOUNDARY_CLAMP:
-      resultStr += "_clamp, BH_CONSTANT_LOWER, BH_CONSTANT_UPPER, "; break;
+      resultStr += "_clamp, BH_CLAMP_LOWER, BH_CLAMP_UPPER, "; break;
     case BOUNDARY_REPEAT:
       resultStr += "_repeat, BH_REPEAT_LOWER, BH_REPEAT_UPPER, "; break;
     case BOUNDARY_MIRROR:
