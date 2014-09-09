@@ -108,6 +108,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
     bool VisitDeclStmt(DeclStmt *D);
     bool VisitFunctionDecl(FunctionDecl *D);
     bool VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E);
+    bool VisitBinaryOperator(BinaryOperator *E);
     bool VisitCXXMemberCallExpr(CXXMemberCallExpr *E);
     bool VisitCallExpr (CallExpr *E);
 
@@ -1917,6 +1918,66 @@ bool Rewrite::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
 }
 
 
+bool Rewrite::VisitBinaryOperator(BinaryOperator *E) {
+  if (!compilerClasses.HipaccEoP || !compilerOptions.emitVivado()) return true;
+
+  // This function is Vivado only, because we need the right-hand-side.
+  // convert Image assignments to a variable into memory transfer,
+  // e.g. in_ptr = IN.getData();
+  if (E->getOpcode() == BO_Assign && isa<CXXMemberCallExpr>(E->getRHS())) {
+    CXXMemberCallExpr *MCE = dyn_cast<CXXMemberCallExpr>(E->getRHS());
+
+    // match only getData calls to Image instances
+    if (MCE->getDirectCallee()->getNameAsString() != "getData") return true;
+
+    if (isa<DeclRefExpr>(MCE->getImplicitObjectArgument())) {
+      DeclRefExpr *DRE =
+        dyn_cast<DeclRefExpr>(MCE->getImplicitObjectArgument());
+
+      // check if we have an Image
+      if (ImgDeclMap.count(DRE->getDecl())) {
+        HipaccImage *Img = ImgDeclMap[DRE->getDecl()];
+
+        std::string newStr;
+
+        // get the text string for the memory transfer dst
+        std::string dataStr;
+        llvm::raw_string_ostream DS(dataStr);
+        E->getLHS()->printPretty(DS, 0, PrintingPolicy(CI.getLangOpts()));
+
+        // create memory transfer string
+        std::string stream = dataDeps->getOutputStream(DRE->getDecl());
+        if (!stream.empty()) {
+          std::string typeCast;
+          if (isa<VectorType>(Img->getType()
+                .getCanonicalType().getTypePtr())) {
+            const VectorType *VT = dyn_cast<VectorType>(Img->getType()
+                .getCanonicalType().getTypePtr());
+            VectorTypeInfo info = createVectorTypeInfo(VT);
+            typeCast = "(" + getStdIntFromBitWidth(
+                  info.elementCount * info.elementWidth) + "*)";
+          }
+          // call entry function, which creates current output
+          newStr = dataDeps->printEntryCall(entryArguments, Img->getName());
+          // TODO: find better solution than embedding stream in mem string
+          stringCreator.writeMemoryTransfer(Img,
+              stream + ", " + typeCast + DS.str(), DEVICE_TO_HOST, newStr);
+        }
+
+        // rewrite Image assignment to memory transfer
+        // get the start location and compute the semi location.
+        SourceLocation startLoc = E->getLocStart();
+        const char *startBuf = SM.getCharacterData(startLoc);
+        const char *semiPtr = strchr(startBuf, ';');
+        TextRewriter.ReplaceText(startLoc, semiPtr-startBuf+1, newStr);
+      }
+    }
+  }
+
+  return true;
+}
+
+
 bool Rewrite::VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
   if (!compilerClasses.HipaccEoP) return true;
 
@@ -2008,7 +2069,8 @@ bool Rewrite::VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
       // get the Image from the DRE if we have one
       if (ImgDeclMap.count(DRE->getDecl())) {
         // match for supported member calls
-        if (ME->getMemberNameInfo().getAsString() == "getData") {
+        if (ME->getMemberNameInfo().getAsString() == "getData" &&
+           !compilerOptions.emitVivado()) {
           if (skipTransfer) {
             skipTransfer = false;
             return true;
@@ -2960,7 +3022,21 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
     // check if we have a Mask or Domain
     HipaccMask *Mask = K->getMaskFromMapping(FD);
     if (Mask) {
-      if (Mask->isConstant()) continue;
+      if (Mask->isConstant()) {
+        if (compilerOptions.emitVivado()) {
+          if (hasMask) {
+            assert(maskSizeX.compare(Mask->getSizeXStr()) == 0 &&
+                   maskSizeY.compare(Mask->getSizeYStr()) == 0 &&
+                   "All masks per kernel must have same size for Vivado");
+          }
+          if (param == Rewrite::VivadoParam::KernelDecl) {
+            maskSizeX = Mask->getSizeXStr();
+            maskSizeY = Mask->getSizeYStr();
+            hasMask = true;
+          }
+        }
+        continue;
+      }
       switch (compilerOptions.getTargetCode()) {
         case TARGET_OpenCLACC:
         case TARGET_OpenCLCPU:
@@ -2987,16 +3063,6 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           break;
         case TARGET_Vivado:
           assert(Mask->isConstant() && "Only constant mask are allowed for Vivado");
-          if (hasMask) {
-            assert(maskSizeX.compare(Mask->getSizeXStr()) == 0 &&
-                   maskSizeY.compare(Mask->getSizeYStr()) == 0 &&
-                   "All masks per kernel must have same size for Vivado");
-          }
-          if (param == Rewrite::VivadoParam::KernelDecl) {
-            maskSizeX = Mask->getSizeXStr();
-            maskSizeY = Mask->getSizeYStr();
-            hasMask = true;
-          }
           break;
       }
       continue;

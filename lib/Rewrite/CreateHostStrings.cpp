@@ -288,7 +288,12 @@ void CreateHostStrings::writeMemoryTransfer(HipaccImage *Img, std::string mem,
       resultStr += ", " + mem + ");";
       break;
     case DEVICE_TO_HOST:
-      resultStr += "hipaccReadMemory<" + Img->getTypeStr() + ">(";
+      resultStr += "hipaccReadMemory";
+      if (!options.emitVivado()) {
+        resultStr += "<" + Img->getTypeStr() + ">(";
+      } else {
+        resultStr += "(" + mem + ", ";
+      }
       resultStr += Img->getName() + ");";
       break;
     case DEVICE_TO_DEVICE:
