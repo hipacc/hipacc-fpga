@@ -304,8 +304,8 @@ void HipaccKernel::calcConfig() {
     }
     max_threads_for_kernel = num_threads;
 
-    int major = target_device/10;
-    int minor = target_device%10;
+    int major = getTargetCC()/10;
+    int minor = getTargetCC()%10;
     if (isAMDGPU()) {
       // set architecture to "Fermi"
       major = 2;
@@ -515,10 +515,10 @@ void HipaccKernel::createArgInfo() {
         break;
       case HipaccKernelClass::Image:
         // for textures use no pointer type
-        if (useTextureMemory(getImgFromMapping(arg.field)) &&
+        if (useTextureMemory(getImgFromMapping(arg.field))!=Texture::None &&
             KC->getImgAccess(arg.field) == READ_ONLY &&
             // no texture required for __ldg() intrinsic
-            !(useTextureMemory(getImgFromMapping(arg.field)) == Ldg)) {
+            !(useTextureMemory(getImgFromMapping(arg.field)) == Texture::Ldg)) {
           addParam(Ctx.getPointerType(QT), Ctx.getPointerType(QT),
               Ctx.getPointerType(Ctx.getConstantArrayType(QT, llvm::APInt(32,
                     getImgFromMapping(arg.field)->getImage()->getSizeX()),
@@ -667,18 +667,16 @@ void HipaccKernel::createHostArgInfo(ArrayRef<Expr *> hostArgs, std::string
           hostArgNames.push_back(SS.str());
         } else {
           // get the text string for the argument and create a temporary
-          std::stringstream LSS;
-          LSS << "_tmpLiteral" << literalCount;
-          literalCount++;
+          std::string tmp_lit("_tmpLiteral" + std::to_string(literalCount++));
 
           // use type of kernel class
           hostLiterals += arg.type.getAsString();
           hostLiterals += " ";
-          hostLiterals += LSS.str();
+          hostLiterals += tmp_lit;
           hostLiterals += " = ";
           hostLiterals += SS.str();
           hostLiterals += ";\n    ";
-          hostArgNames.push_back(LSS.str());
+          hostArgNames.push_back(tmp_lit);
         }
 
         break;

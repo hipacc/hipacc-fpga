@@ -193,24 +193,24 @@ Stmt *ASTTranslate::addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var,
   assert(domain_var && "Domain.");
 
   Expr *dom_acc = nullptr;
-  switch (compilerOptions.getTargetCode()) {
-    case TARGET_C:
-    case TARGET_Vivado:
-    case TARGET_CUDA:
+  switch (compilerOptions.getTargetLang()) {
+    case Language::Vivado:
+    case Language::C99:
+    case Language::CUDA:
       // array subscript: Domain[y][x]
       dom_acc = accessMem2DAt(domain_var, createIntegerLiteral(Ctx,
             redIdxX.back()), createIntegerLiteral(Ctx, redIdxY.back()));
       break;
-    case TARGET_OpenCLACC:
-    case TARGET_OpenCLCPU:
-    case TARGET_OpenCLGPU:
+    case Language::OpenCLACC:
+    case Language::OpenCLCPU:
+    case Language::OpenCLGPU:
       // array subscript: Domain[y*width + x]
       dom_acc = accessMemArrAt(domain_var, createIntegerLiteral(Ctx,
             (int)Domain->getSizeX()), createIntegerLiteral(Ctx, redIdxX.back()),
           createIntegerLiteral(Ctx, redIdxY.back()));
       break;
-    case TARGET_Renderscript:
-    case TARGET_Filterscript:
+    case Language::Renderscript:
+    case Language::Filterscript:
       // allocation access: rsGetElementAt(Domain, x, y)
       dom_acc = accessMemAllocAt(domain_var, READ_ONLY, createIntegerLiteral(Ctx,
             redIdxX.back()), createIntegerLiteral(Ctx, redIdxY.back()));
@@ -377,15 +377,14 @@ Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
 
   // introduce temporary for holding the convolution/reduction result
   CompoundStmt *outerCompountStmt = curCStmt;
-  std::stringstream LSST;
-  LSST << "_tmp" << literalCount++;
   Expr *init = nullptr;
   if (method==Reduce) {
     // init temporary variable depending on aggregation mode
     init = getInitExpr(redModes.back(),
         LE->getCallOperator()->getReturnType());
   }
-  VarDecl *tmp_decl = createVarDecl(Ctx, kernelDecl, LSST.str(),
+  std::string tmp_lit("_tmp" + std::to_string(literalCount++));
+  VarDecl *tmp_decl = createVarDecl(Ctx, kernelDecl, tmp_lit,
       LE->getCallOperator()->getReturnType(), init);
   DeclContext *DC = FunctionDecl::castToDeclContext(kernelDecl);
   DC->addDecl(tmp_decl);

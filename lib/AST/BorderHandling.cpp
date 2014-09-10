@@ -144,11 +144,9 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
   Expr *result = nullptr;
   DeclContext *DC = FunctionDecl::castToDeclContext(kernelDecl);
 
-  std::stringstream LSSX, LSSY, LSST;
-  LSSX << "_gid_x" << literalCount;
-  LSSY << "_gid_y" << literalCount;
-  LSST << "_tmp" << literalCount;
-  literalCount++;
+  std::string gidx_str("_gid_x" + std::to_string(literalCount));
+  std::string gidy_str("_gid_y" + std::to_string(literalCount));
+  std::string tmp_str("_tmp" + std::to_string(literalCount++));
 
   Expr *lowerX, *upperX, *lowerY, *upperY;
   if (Acc->getOffsetXDecl()) {
@@ -181,7 +179,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
       if (Acc!=Kernel->getIterationSpace()->getAccessor()) {
         idx_x = removeISOffsetX(idx_x, Acc);
       }
-      if ((compilerOptions.emitC() ||
+      if ((compilerOptions.emitC99() ||
            compilerOptions.emitRenderscript() ||
            compilerOptions.emitFilterscript()) &&
           Acc!=Kernel->getIterationSpace()->getAccessor()) {
@@ -207,7 +205,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
     idx_x = addGlobalOffsetX(idx_x, Acc);
     idx_y = addGlobalOffsetY(idx_y, Acc);
   } else {
-    if (!(compilerOptions.emitC() ||
+    if (!(compilerOptions.emitC99() ||
           compilerOptions.emitRenderscript() ||
           compilerOptions.emitFilterscript())) {
       idx_y = addGlobalOffsetY(idx_y, Acc);
@@ -216,8 +214,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
 
   // add temporary variables for updated idx_x and idx_y
   if (local_offset_x) {
-    VarDecl *tmp_x = createVarDecl(Ctx, kernelDecl, LSSX.str(), Ctx.IntTy,
-        idx_x);
+    VarDecl *tmp_x = createVarDecl(Ctx, kernelDecl, gidx_str, Ctx.IntTy, idx_x);
     DC->addDecl(tmp_x);
     idx_x = createDeclRefExpr(Ctx, tmp_x);
     bhStmts.push_back(createDeclStmt(Ctx, tmp_x));
@@ -225,8 +222,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
   }
 
   if (local_offset_y) {
-    VarDecl *tmp_y = createVarDecl(Ctx, kernelDecl, LSSY.str(), Ctx.IntTy,
-        idx_y);
+    VarDecl *tmp_y = createVarDecl(Ctx, kernelDecl, gidy_str, Ctx.IntTy, idx_y);
     DC->addDecl(tmp_y);
     idx_y = createDeclRefExpr(Ctx, tmp_y);
     bhStmts.push_back(createDeclStmt(Ctx, tmp_y));
@@ -237,7 +233,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
     // <type> _tmp<0> = const_val;
     Expr *RHS = nullptr;
     Expr *const_val = Acc->getConstExpr();
-    VarDecl *tmp_t = createVarDecl(Ctx, kernelDecl, LSST.str(),
+    VarDecl *tmp_t = createVarDecl(Ctx, kernelDecl, tmp_str,
         const_val->getType(), const_val);
 
     DC->addDecl(tmp_t);
@@ -263,28 +259,28 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
       bo_constant = addConstantLower(Acc, idx_y, lowerY, bo_constant);
     }
 
-    switch (compilerOptions.getTargetCode()) {
-      case TARGET_C:
-      case TARGET_Vivado:
+    switch (compilerOptions.getTargetLang()) {
+      case Language::Vivado:
+      case Language::C99:
           RHS = accessMem2DAt(LHS, idx_x, idx_y);
           break;
-      case TARGET_CUDA:
-        if (Kernel->useTextureMemory(Acc)) {
+      case Language::CUDA:
+        if (Kernel->useTextureMemory(Acc)!=Texture::None) {
           RHS = accessMemTexAt(LHS, Acc, READ_ONLY, idx_x, idx_y);
           break;
         }
         // fall through
-      case TARGET_OpenCLACC:
-      case TARGET_OpenCLCPU:
-      case TARGET_OpenCLGPU:
-        if (Kernel->useTextureMemory(Acc)) {
+      case Language::OpenCLACC:
+      case Language::OpenCLCPU:
+      case Language::OpenCLGPU:
+        if (Kernel->useTextureMemory(Acc)!=Texture::None) {
           RHS = accessMemImgAt(LHS, Acc, READ_ONLY, idx_x, idx_y);
           break;
         }
         RHS = accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
         break;
-      case TARGET_Renderscript:
-      case TARGET_Filterscript:
+      case Language::Renderscript:
+      case Language::Filterscript:
         RHS = accessMemAllocAt(LHS, READ_ONLY, idx_x, idx_y);
         break;
     }
@@ -353,28 +349,28 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
     }
 
     // get data
-    switch (compilerOptions.getTargetCode()) {
-      case TARGET_C:
-      case TARGET_Vivado:
+    switch (compilerOptions.getTargetLang()) {
+      case Language::Vivado:
+      case Language::C99:
           result = accessMem2DAt(LHS, idx_x, idx_y);
           break;
-      case TARGET_CUDA:
-        if (Kernel->useTextureMemory(Acc)) {
+      case Language::CUDA:
+        if (Kernel->useTextureMemory(Acc)!=Texture::None) {
           result = accessMemTexAt(LHS, Acc, READ_ONLY, idx_x, idx_y);
           break;
         }
         // fall through
-      case TARGET_OpenCLACC:
-      case TARGET_OpenCLCPU:
-      case TARGET_OpenCLGPU:
-        if (Kernel->useTextureMemory(Acc)) {
+      case Language::OpenCLACC:
+      case Language::OpenCLCPU:
+      case Language::OpenCLGPU:
+        if (Kernel->useTextureMemory(Acc)!=Texture::None) {
           result = accessMemImgAt(LHS, Acc, READ_ONLY, idx_x, idx_y);
           break;
         }
         result = accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
         break;
-      case TARGET_Renderscript:
-      case TARGET_Filterscript:
+      case Language::Renderscript:
+      case Language::Filterscript:
         result = accessMemAllocAt(LHS, READ_ONLY, idx_x, idx_y);
         break;
     }
