@@ -13,7 +13,7 @@ following commands in order to build provided test cases:
 
 ```bash
 cd $(CMAKE_INSTALL_PREFIX)/tests/vivado
-make vivado TEST_CASE=tests/lapalce_rgba
+make vivado TEST_CASE=tests/laplace_rgba
 make vivado TEST_CASE=tests/harris_corner
 make vivado TEST_CASE=tests/optical_flow
 ```
