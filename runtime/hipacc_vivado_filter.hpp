@@ -13,6 +13,8 @@
 #define ASSERTION_CHECK
 
 #define GROUP_DELAY  (KERNEL_SIZE/2)
+#define GDELAY_X     (KERNEL_SIZE_X/2)
+#define GDELAY_Y     (KERNEL_SIZE_Y/2)
 
 /**
  * LineBuffer
@@ -471,10 +473,10 @@ void handleBorders(
 	}
 }
 
-template<int KERNEL_SIZE, typename T>
+template<int KERNEL_SIZE_X, int KERNEL_SIZE_Y, typename T>
 void handleBorders2(
-		Window<KERNEL_SIZE, KERNEL_SIZE, T> &wnd,
-		Window<KERNEL_SIZE, KERNEL_SIZE, T> &wnd2,
+		Window<KERNEL_SIZE_X, KERNEL_SIZE_Y, T> &wnd,
+		Window<KERNEL_SIZE_X, KERNEL_SIZE_Y, T> &wnd2,
 		const int &x,
 		const int &y,
 		const int &width,
@@ -486,31 +488,31 @@ void handleBorders2(
 	/*
 	 * Border Handling: x-direction
 	 */
-	if (x == GROUP_DELAY) {
-		for (int xx = -GROUP_DELAY; xx < 0; ++xx) {
+	if (x == GDELAY_X) {
+		for (int xx = -GDELAY_X; xx < 0; ++xx) {
 			int ix;
 
 			if (borderPadding != BorderPadding::BORDER_CONST)
-				ix = getExtrapolationCoord(xx, KERNEL_SIZE, borderPadding);
+				ix = getExtrapolationCoord(xx, KERNEL_SIZE_X, borderPadding);
 
-			for (int yy = 0; yy < KERNEL_SIZE; ++yy) {
+			for (int yy = 0; yy < KERNEL_SIZE_Y; ++yy) {
 				if (borderPadding == BorderPadding::BORDER_CONST) {
-					wnd.setAt(BORDER_FILL_VALUE, xx+GROUP_DELAY, yy);
-					wnd2.setAt(BORDER_FILL_VALUE, xx+GROUP_DELAY, yy);
+					wnd.setAt(BORDER_FILL_VALUE, xx+GDELAY_X, yy);
+					wnd2.setAt(BORDER_FILL_VALUE, xx+GDELAY_X, yy);
 				} else {
-					wnd.setAt(wnd.getAt(ix+GROUP_DELAY, yy), xx+GROUP_DELAY, yy);
-					wnd2.setAt(wnd2.getAt(ix+GROUP_DELAY, yy), xx+GROUP_DELAY, yy);
+					wnd.setAt(wnd.getAt(ix+GDELAY_X, yy), xx+GDELAY_X, yy);
+					wnd2.setAt(wnd2.getAt(ix+GDELAY_X, yy), xx+GDELAY_X, yy);
 				}
 			}
 		}
 	} else if (x >= width) {
-		for (int xx = 0; xx < KERNEL_SIZE; ++xx) {
+		for (int xx = 0; xx < KERNEL_SIZE_X; ++xx) {
 			int ix;
 
 			if (borderPadding != BorderPadding::BORDER_CONST)
-				ix = getExtrapolationCoord(xx, KERNEL_SIZE - 1 - (x - width), borderPadding);
+				ix = getExtrapolationCoord(xx, KERNEL_SIZE_X - 1 - (x - width), borderPadding);
 
-			for (int yy = 0; yy < KERNEL_SIZE; ++yy)
+			for (int yy = 0; yy < KERNEL_SIZE_Y; ++yy)
 				if (borderPadding == BorderPadding::BORDER_CONST) {
 					wnd.setAt(BORDER_FILL_VALUE, xx, yy);
 					wnd2.setAt(BORDER_FILL_VALUE, xx, yy);
@@ -524,31 +526,31 @@ void handleBorders2(
 	/*
 	 * Border Handling: y-direction
 	 */
-	if ((y >= GROUP_DELAY) && (y < KERNEL_SIZE-1)) {
-		for (int yy = -GROUP_DELAY; yy < GROUP_DELAY; ++yy) {
+	if ((y >= GDELAY_Y) && (y < KERNEL_SIZE_Y-1)) {
+		for (int yy = -GDELAY_Y; yy < GDELAY_Y; ++yy) {
 			int iy;
 
 			if (borderPadding != BorderPadding::BORDER_CONST)
-				iy = getExtrapolationCoord(yy, KERNEL_SIZE, borderPadding);
+				iy = getExtrapolationCoord(yy, KERNEL_SIZE_Y, borderPadding);
 
-			for (int xx = 0; xx < KERNEL_SIZE; ++xx) {
+			for (int xx = 0; xx < KERNEL_SIZE_X; ++xx) {
 				if (borderPadding == BorderPadding::BORDER_CONST) {
-					wnd.setAt(BORDER_FILL_VALUE, xx, yy + GROUP_DELAY);
-					wnd2.setAt(BORDER_FILL_VALUE, xx, yy + GROUP_DELAY);
+					wnd.setAt(BORDER_FILL_VALUE, xx, yy + GDELAY_Y);
+					wnd2.setAt(BORDER_FILL_VALUE, xx, yy + GDELAY_Y);
 				} else {
-					wnd.setAt(wnd.getAt(xx, iy + GROUP_DELAY), xx, yy + GROUP_DELAY);
-					wnd2.setAt(wnd2.getAt(xx, iy + GROUP_DELAY), xx, yy + GROUP_DELAY);
+					wnd.setAt(wnd.getAt(xx, iy + GDELAY_Y), xx, yy + GDELAY_Y);
+					wnd2.setAt(wnd2.getAt(xx, iy + GDELAY_Y), xx, yy + GDELAY_Y);
 				}
 			}
 		}
 	} else if (y >= height) {
-		for (int yy = GROUP_DELAY+1; yy < KERNEL_SIZE; ++yy) {
+		for (int yy = GDELAY_Y+1; yy < KERNEL_SIZE_Y; ++yy) {
 			int iy;
 
 			if (borderPadding != BorderPadding::BORDER_CONST)
-				iy = getExtrapolationCoord(yy, KERNEL_SIZE - 1 - (y - height), borderPadding);
+				iy = getExtrapolationCoord(yy, KERNEL_SIZE_Y - 1 - (y - height), borderPadding);
 
-			for (int xx = 0; xx < KERNEL_SIZE; ++xx) {
+			for (int xx = 0; xx < KERNEL_SIZE_X; ++xx) {
 				if (borderPadding == BorderPadding::BORDER_CONST) {
 					wnd.setAt(BORDER_FILL_VALUE, xx, yy);
 					wnd2.setAt(BORDER_FILL_VALUE, xx, yy);
@@ -643,7 +645,7 @@ PRAGMA_HLS(HLS pipeline ii=II_TARGET)
 /*
  * Process (MISO)
  */
-template<int KERNEL_SIZE, typename IN, typename OUT, class Filter>
+template<int KERNEL_SIZE_X, int KERNEL_SIZE_Y, typename IN, typename OUT, class Filter>
 void process2(
 		hls::stream<IN> &in_s,
 		hls::stream<IN> &in_s2,
@@ -656,7 +658,8 @@ void process2(
 	// TODO fix this
 #ifdef ASSERTION_CHECK
 	assert( width <= MAX_WIDTH ); assert( height <= MAX_HEIGHT );
-	assert( (KERNEL_SIZE % 2) == 1 );
+	assert( (KERNEL_SIZE_X % 2) == 1 );
+	assert( (KERNEL_SIZE_Y % 2) == 1 );
 
 /*
 	// TODO strangest bug ever!!
@@ -667,19 +670,19 @@ void process2(
 */
 #endif
 
-	LineBuffer<MAX_WIDTH, KERNEL_SIZE - 1, IN> lb;
-	Window<KERNEL_SIZE, KERNEL_SIZE, IN> wnd;
-	LineBuffer<MAX_WIDTH, KERNEL_SIZE - 1, IN> lb2;
-	Window<KERNEL_SIZE, KERNEL_SIZE, IN> wnd2;
+	LineBuffer<MAX_WIDTH, KERNEL_SIZE_Y - 1, IN> lb;
+	Window<KERNEL_SIZE_X, KERNEL_SIZE_Y, IN> wnd;
+	LineBuffer<MAX_WIDTH, KERNEL_SIZE_Y - 1, IN> lb2;
+	Window<KERNEL_SIZE_X, KERNEL_SIZE_Y, IN> wnd2;
 
 process_main_loop:
-	for (int y = 0; y < height + GROUP_DELAY; ++y) {
-		for (int x = 0; x < MAX_WIDTH + GROUP_DELAY; ++x) {
+	for (int y = 0; y < height + GDELAY_Y; ++y) {
+		for (int x = 0; x < MAX_WIDTH + GDELAY_X; ++x) {
 PRAGMA_HLS(HLS pipeline ii=II_TARGET)
 #pragma HLS INLINE region
 
-			if (x >= width + GROUP_DELAY ||
-				y >= height + GROUP_DELAY)
+			if (x >= width + GDELAY_X ||
+				y >= height + GDELAY_Y)
 				continue;
 
 			wnd.shiftLeft();
@@ -690,16 +693,16 @@ PRAGMA_HLS(HLS pipeline ii=II_TARGET)
 				IN new_val2;
 
 				// The topmost value is not shifted, so just copy it separately
-				wnd.setAt(lb.getAt(x, 0), KERNEL_SIZE-1, 0);
-				wnd2.setAt(lb2.getAt(x, 0), KERNEL_SIZE-1, 0);
+				wnd.setAt(lb.getAt(x, 0), KERNEL_SIZE_X-1, 0);
+				wnd2.setAt(lb2.getAt(x, 0), KERNEL_SIZE_X-1, 0);
 
 				// Shift current column in LineBuffer one row up and copy it to the Window simultaneously
-				for (int yy = 0; yy < KERNEL_SIZE - 2; ++yy) {
+				for (int yy = 0; yy < KERNEL_SIZE_Y - 2; ++yy) {
 					const IN tmp = lb.getAt(x, yy+1);
 					const IN tmp2 = lb2.getAt(x, yy+1);
-					wnd.setAt(tmp, KERNEL_SIZE-1, yy+1);
+					wnd.setAt(tmp, KERNEL_SIZE_X-1, yy+1);
 					lb.setAt(tmp, x, yy);
-					wnd2.setAt(tmp2, KERNEL_SIZE-1, yy+1);
+					wnd2.setAt(tmp2, KERNEL_SIZE_X-1, yy+1);
 					lb2.setAt(tmp2, x, yy);
 				}
 
@@ -712,22 +715,22 @@ PRAGMA_HLS(HLS pipeline ii=II_TARGET)
 				}
 
 				// Insert new value at the bottom of both buffers
-				lb.setAt(new_val, x, KERNEL_SIZE-2);
-				wnd.setAt(new_val, KERNEL_SIZE-1, KERNEL_SIZE-1);
-				lb2.setAt(new_val2, x, KERNEL_SIZE-2);
-				wnd2.setAt(new_val2, KERNEL_SIZE-1, KERNEL_SIZE-1);
+				lb.setAt(new_val, x, KERNEL_SIZE_Y-2);
+				wnd.setAt(new_val, KERNEL_SIZE_X-1, KERNEL_SIZE_Y-1);
+				lb2.setAt(new_val2, x, KERNEL_SIZE_Y-2);
+				wnd2.setAt(new_val2, KERNEL_SIZE_X-1, KERNEL_SIZE_Y-1);
 			}
 
 			handleBorders2(wnd, wnd2, x, y, width, height, borderPadding);
 /*
-			if ((x >= GROUP_DELAY) && (y >= GROUP_DELAY)) {
+			if ((x >= GDELAY_X) && (y >= GDELAY_Y)) {
 				printf("x=%d, y=%d:\n", x, y);
 				wnd.print();
 				printf("\n");
 			}
 */
 			// Do the filtering
-			if ((x >= GROUP_DELAY && x < width+GROUP_DELAY) && (y >= GROUP_DELAY && height+GROUP_DELAY))
+			if ((x >= GDELAY_X && x < width+GDELAY_X) && (y >= GDELAY_Y && height+GDELAY_Y))
 				out_s << filter(wnd, wnd2);
 		}
 	}

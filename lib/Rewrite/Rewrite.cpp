@@ -2863,7 +2863,12 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     }
     if (KC->getImgFields().size() != 1) *OS << KC->getImgFields().size();
     if (KC->getMaskFields().size() > 0) {
-      *OS << "<" + K->getVivadoWindow()->getSizeXStr() + ">";
+      if (K->getVivadoWindow()->getSizeXStr().compare(K->getVivadoWindow()->getSizeYStr()) == 0) {
+        *OS << "<" + K->getVivadoWindow()->getSizeXStr() + ">";
+      } else {
+        *OS << "<" + K->getVivadoWindow()->getSizeXStr();
+        *OS << "," + K->getVivadoWindow()->getSizeYStr() + ">";
+      }
     } else {
       *OS << "<WINDOW_SIZE>";
     }
