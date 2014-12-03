@@ -210,9 +210,15 @@ void Rewrite::HandleTranslationUnit(ASTContext &Context) {
         while (*endPtr == ' ' || *endPtr == '\t')
           if (++endPtr == mainFileEnd)
             break;
-        if (*endPtr == '"') {
+        bool localInc = *endPtr == '"' ? true : false;
+        bool systemInc = *endPtr == '<' ? true : false;
+        if (localInc || systemInc) {
           if (!strncmp(endPtr+1, "hipacc.hpp", hipaccHdrLen)) {
-            endPtr = strchr(endPtr+1, '"');
+            if (localInc) {
+              endPtr = strchr(endPtr+1, '"');
+            } else if (systemInc) {
+              endPtr = strchr(endPtr+1, '>');
+            }
             // remove hipacc include
             SourceLocation includeLoc =
               locStart.getLocWithOffset(startPtr-mainFileStart);
