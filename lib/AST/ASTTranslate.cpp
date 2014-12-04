@@ -1919,12 +1919,20 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
     // 1. strip literal operand for Add, Sub, Mul, and Div.
     // 2. insert return stmt for Assign.
     Expr *newResult = nullptr;
+    bool opSub = false;
     switch (dyn_cast<BinaryOperator>(result)->getOpcode()) {
-      case BO_Add:
       case BO_Sub:
+        opSub = true;
+      case BO_Add:
         newResult = stripLiteralOperand(operand1, operand2, 0);
         if (newResult == nullptr) {
+          // floating
           newResult = stripLiteralOperand(operand1, operand2, 0.0);
+        }
+        if (opSub && newResult == operand2) {
+          // negate second operand if stripped operation is a subtraction
+          newResult = createUnaryOperator(Ctx, createParenExpr(Ctx, newResult),
+              UO_Minus, newResult->getType());
         }
         break;
       case BO_Mul:
@@ -1932,7 +1940,7 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
         // skip floating, because 1.0 can not be represented exactly
         break;
       case BO_Div:
-        result = stripLiteralOperand(operand1, operand2, 1);
+        newResult = stripLiteralOperand(operand1, operand2, 1);
         if (newResult == operand2) {
           newResult = nullptr;
         }
