@@ -29,8 +29,10 @@
 #define __HIPACC_VIVADO_TYPES_HPP__
 
 
-#define getWindowAt(wnd, x, y)      wnd.getAt(x, y)
-#define setWindowAt(wnd, val, x, y) wnd.setAt(val, x, y)
+#define PRAGMA_SUB(x) _Pragma (#x)
+#define PRAGMA_HLS(x) PRAGMA_SUB(x)
+#define getWindowAt(wnd, x, y)      wnd[y][x]
+#define setWindowAt(wnd, val, x, y) wnd[y][x]=val
 
 
 // TODO reiche: most of this code could be included from hipacc_types.hpp
@@ -438,9 +440,10 @@ MAKE_VEC_F(double4,   double,   long4)
 
 // conversion function
 #define MAKE_CONV_FUNC(BASIC_TYPE, RET_TYPE, VEC_TYPE) \
-ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
+  ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
+  PRAGMA_HLS(HLS inline) \
     return make_##RET_TYPE(vec.x, vec.y, vec.z, vec.w); \
-}
+  }
 
 // generate conversion functions for types
 #define MAKE_CONV(VEC_TYPE) \
@@ -457,6 +460,7 @@ ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
 
 #define VIVADO_IN_CONV(TYPE, WIDTH) \
 	TYPE ## 4 convert_ ## TYPE ## 4(ap_uint<WIDTH> val) { \
+	PRAGMA_HLS(HLS inline) \
 		return make_ ## TYPE ## 4( \
 			(TYPE)val(WIDTH/4*3, WIDTH-1), \
 			(TYPE)val(WIDTH/2,   WIDTH/4*3-1), \
@@ -466,6 +470,7 @@ ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
 
 #define VIVADO_OUT_CONV(TYPE, WIDTH, OUT_TYPE) \
 	ap_uint<WIDTH> convert_ ## OUT_TYPE ## 4(TYPE ## 4 val, bool output) { \
+	PRAGMA_HLS(HLS inline) \
 	  ap_uint<WIDTH> ret; \
 	  ret(WIDTH/4*3, WIDTH-1)     = (TYPE)val.x; \
 	  ret(WIDTH/2,   WIDTH/4*3-1) = (TYPE)val.y; \
@@ -476,6 +481,7 @@ ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
 
 #define VIVADO_VEC_FUNC(TYPE, FUNC) \
 	TYPE ## 4 FUNC(TYPE ## 4 a, TYPE b) { \
+	PRAGMA_HLS(HLS inline) \
 		return make_ ## TYPE ## 4( \
 			FUNC(a.x, b), \
 			FUNC(a.y, b), \
@@ -484,6 +490,7 @@ ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
 		); \
 	} \
 	TYPE ## 4 FUNC(TYPE a, TYPE ## 4 b) { \
+	PRAGMA_HLS(HLS inline) \
 		return make_ ## TYPE ## 4( \
 			FUNC(a, b.x), \
 			FUNC(a, b.y), \
@@ -492,6 +499,7 @@ ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
 		); \
 	} \
 	TYPE ## 4 FUNC(TYPE ## 4 a, TYPE ## 4 b) { \
+	PRAGMA_HLS(HLS inline) \
 		return make_ ## TYPE ## 4( \
 			FUNC(a.x, b.x), \
 			FUNC(a.y, b.y), \
@@ -502,12 +510,14 @@ ATTRIBUTES RET_TYPE convert_##RET_TYPE(VEC_TYPE vec) { \
 
 #define VIVADO_MIN_FUNC(TYPE) \
 	TYPE min(TYPE a, TYPE b) { \
+	PRAGMA_HLS(HLS inline) \
 		return (a > b ? b : a); \
 	} \
 	VIVADO_VEC_FUNC(TYPE, min)
 
 #define VIVADO_MAX_FUNC(TYPE) \
 	TYPE max(TYPE a, TYPE b) { \
+	PRAGMA_HLS(HLS inline) \
 		return (a < b ? b : a); \
 	} \
 	VIVADO_VEC_FUNC(TYPE, max)

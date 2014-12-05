@@ -1540,14 +1540,11 @@ void Rewrite::createVivadoEntry() {
   }
 
   OS = new llvm::raw_fd_ostream(fd, false);
-  *OS << "#define MAX_WIDTH    " << maxImageWidth << "\n";
-  *OS << "#define MAX_HEIGHT   " << maxImageHeight << "\n";
-  *OS << "#define WINDOW_SIZE  " << maxWindowSize << "\n";
-  *OS << "#define GROUP_DELAY  ((WINDOW_SIZE-1) / 2)\n";
+  *OS << "#define HIPACC_MAX_WIDTH    " << maxImageWidth << "\n";
+  *OS << "#define HIPACC_MAX_HEIGHT   " << maxImageHeight << "\n";
+  *OS << "#define HIPACC_WINDOW_SIZE  " << maxWindowSize << "\n";
   *OS << "#define BORDER_FILL_VALUE 0\n";
-  *OS << "#define PRAGMA_SUB(x) _Pragma (#x)\n";
-  *OS << "#define PRAGMA_HLS(x) PRAGMA_SUB(x)\n";
-  *OS << "#define II_TARGET  1\n\n";
+  *OS << "#define HIPACC_II_TARGET  1\n\n";
   *OS << "#include \"hipacc_vivado_types.hpp\"\n";
   *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
 
@@ -2862,15 +2859,12 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       *OS << "    processPixels";
     }
     if (KC->getImgFields().size() != 1) *OS << KC->getImgFields().size();
+    *OS << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT,";
     if (KC->getMaskFields().size() > 0) {
-      if (K->getVivadoWindow()->getSizeXStr().compare(K->getVivadoWindow()->getSizeYStr()) == 0) {
-        *OS << "<" + K->getVivadoWindow()->getSizeXStr() + ">";
-      } else {
-        *OS << "<" + K->getVivadoWindow()->getSizeXStr();
-        *OS << "," + K->getVivadoWindow()->getSizeYStr() + ">";
-      }
+      *OS << K->getVivadoWindow()->getSizeXStr() + ",";
+      *OS << K->getVivadoWindow()->getSizeYStr() + ">";
     } else {
-      *OS << "<WINDOW_SIZE>";
+      *OS << "HIPACC_WINDOW_SIZE>";
     }
     *OS << "(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
@@ -2878,10 +2872,10 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     if (KC->getMaskFields().size() > 0) {
       switch (vivadoBM) {
         case clang::hipacc::BOUNDARY_CLAMP:
-          *OS << ", BorderPadding::BORDER_REPEAT";
+          *OS << ", BorderPadding::BORDER_CLAMP";
           break;
         case clang::hipacc::BOUNDARY_MIRROR:
-          *OS << ", BorderPadding::BORDER_REFLECT";
+          *OS << ", BorderPadding::BORDER_MIRROR";
           break;
         default:
           assert(false && "Chosen BoundaryCondition not supported for Vivado");
@@ -3118,8 +3112,9 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         for (auto it = accs.begin(); it != accs.end(); ++it) {
             if (comma++) *OS << ", ";
             if (hasMask) {
-              *OS << "Window<" << maskSizeX << "," << maskSizeY << ","
-                  << it->type << " > &" << it->name;
+              *OS << it->type << " " << it->name
+                  << "[" << maskSizeY << "]"
+                  << "[" << maskSizeX << "]";
             } else {
               *OS << it->type << " " << it->name;
             }

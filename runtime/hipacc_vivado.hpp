@@ -146,7 +146,6 @@ void hipaccReadMemory(hls::stream<ap_uint<BW> > &s, T2 *host_mem, HipaccImage &i
     for (size_t i=0; i<width*height; ++i) {
         ap_uint<BW> data;
         s >> data;
-        printf("test: %d\n", data);
         host_mem[i] = hipaccInvertBits<T2,ap_uint<BW> >(data);
     }
 }
