@@ -3156,6 +3156,11 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           *OS << Name;
           break;
       }
+    } else {
+      // normal arguments
+      if (comma++) *OS << ", ";
+      T.getAsStringInternal(Name, Policy);
+      *OS << Name;
     }
 
     // default arguments ...
