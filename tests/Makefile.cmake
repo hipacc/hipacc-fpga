@@ -81,6 +81,9 @@ endif
 ifeq ($(HIPACC_TIMING),on)
     HIPACC_OPTS+= -time-kernels
 endif
+ifdef HIPACC_TARGET_II
+    HIPACC_OPTS+= -target-II $(HIPACC_TARGET_II)
+endif
 
 # set target GPU architecture to the compute capability encoded in target
 GPU_ARCH := $(shell echo $(HIPACC_TARGET) |cut -f2 -d-)

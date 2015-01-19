@@ -1544,7 +1544,7 @@ void Rewrite::createVivadoEntry() {
   *OS << "#define HIPACC_MAX_HEIGHT   " << maxImageHeight << "\n";
   *OS << "#define HIPACC_WINDOW_SIZE  " << maxWindowSize << "\n";
   *OS << "#define BORDER_FILL_VALUE 0\n";
-  *OS << "#define HIPACC_II_TARGET  1\n\n";
+  *OS << "#define HIPACC_II_TARGET  " << compilerOptions.getTargetII() << "\n\n";
   *OS << "#include \"hipacc_vivado_types.hpp\"\n";
   *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
 
@@ -2858,7 +2858,9 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     } else {
       *OS << "    processPixels";
     }
-    if (KC->getImgFields().size() != 1) *OS << KC->getImgFields().size();
+    if (KC->getImgFields().size() == 2) {
+      *OS << "MISO";
+    }
     *OS << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT,";
     if (KC->getMaskFields().size() > 0) {
       *OS << K->getVivadoWindow()->getSizeXStr() + ",";

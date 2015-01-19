@@ -650,6 +650,7 @@ std::string HostDataDeps::prettyPrint(
   std::string indent = "";
 
   retVal << indent << getEntrySignature(args, true) << " {" << std::endl;
+  retVal << "#pragma HLS dataflow" << std::endl;
 
   indent = "  ";
 
