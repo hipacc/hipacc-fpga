@@ -42,8 +42,8 @@
 #define WIDTH  24
 #define HEIGHT 24
 #else
-#define WIDTH  512
-#define HEIGHT 512
+#define WIDTH  1024
+#define HEIGHT 1024
 #endif
 #define WINDOW_SIZE_X 30
 #define WINDOW_SIZE_Y 30

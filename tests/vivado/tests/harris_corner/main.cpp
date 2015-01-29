@@ -38,7 +38,7 @@
 #include "hipacc.hpp"
 
 
-#define TEST
+//#define TEST
 
 
 // variables set by Makefile
@@ -46,8 +46,8 @@
 #define WIDTH  24
 #define HEIGHT 24
 #else
-#define WIDTH  512
-#define HEIGHT 512
+#define WIDTH  1024
+#define HEIGHT 1024
 #endif
 #define SIZE_X 3
 #define SIZE_Y 3
@@ -61,20 +61,22 @@ class Sobel : public Kernel<float> {
   private:
     Accessor<uchar> &Input;
     Mask<float> &cMask;
+    Domain &dom;
 
   public:
     Sobel(IterationSpace<float> &IS,
-            Accessor<uchar> &Input, Mask<float> &cMask)
+            Accessor<uchar> &Input, Mask<float> &cMask, Domain &dom)
           : Kernel(IS),
             Input(Input),
-            cMask(cMask) {
+            cMask(cMask),
+            dom(dom) {
       addAccessor(&Input);
     }
 
     void kernel() {
       float sum = 0.0f;
-      sum += convolve(cMask, HipaccSUM, [&] () -> float {
-          return Input(cMask) * cMask();
+      sum += reduce(dom, HipaccSUM, [&] () -> float {
+          return Input(dom) * cMask(dom);
       });
       output() = sum;
     }
@@ -277,6 +279,8 @@ int main(int argc, const char **argv) {
     Mask<float> G(filter_xy);
     Mask<float> MX(mask_x);
     Mask<float> MY(mask_y);
+    Domain DomX(MX);
+    Domain DomY(MY);
 
     IterationSpace<uchar> IsOut(OUT);
     IterationSpace<float> IsDx(DX);
@@ -292,11 +296,11 @@ int main(int argc, const char **argv) {
     BoundaryCondition<uchar> BcInClamp(IN, MX, BOUNDARY_CLAMP);
     Accessor<uchar> AccInClamp(BcInClamp);
 
-    Sobel DerivX(IsDx, AccInClamp, MX);
+    Sobel DerivX(IsDx, AccInClamp, MX, DomX);
     DerivX.execute();
     timing += hipaccGetLastKernelTiming();
 
-    Sobel DerivY(IsDy, AccInClamp, MY);
+    Sobel DerivY(IsDy, AccInClamp, MY, DomY);
     DerivY.execute();
     timing += hipaccGetLastKernelTiming();
 

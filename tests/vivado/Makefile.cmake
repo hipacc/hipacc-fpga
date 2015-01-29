@@ -15,7 +15,7 @@ COMPILER_INC   ?= -std=c++11 \
                   -I$(HIPACC_DIR)/include/dsl \
                   $(COMMON_INC)
 TEST_CASE      ?= ./tests/laplace_rgba
-MYFLAGS        ?= -DWIDTH=512 -DHEIGHT=512 -DSIZE_X=$(SIZE_X) -DSIZE_Y=$(SIZE_Y)
+MYFLAGS        ?= -DWIDTH=1024 -DHEIGHT=1024 -DSIZE_X=$(SIZE_X) -DSIZE_Y=$(SIZE_Y)
 NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" \
                   -Xptxas -v @NVCC_COMP@ #-keep
 OFLAGS          = -O3
@@ -83,6 +83,9 @@ ifeq ($(HIPACC_EXPLORE),on)
 endif
 ifeq ($(HIPACC_TIMING),on)
     HIPACC_OPTS+= -time-kernels
+endif
+ifdef HIPACC_TARGET_II
+    HIPACC_OPTS+= -target-II $(HIPACC_TARGET_II)
 endif
 
 # set target GPU architecture to the compute capability encoded in target
