@@ -2943,14 +2943,10 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
     if (Mask) {
       if (Mask->isConstant()) {
         if (compilerOptions.emitVivado()) {
-          if (hasMask) {
-            assert(maskSizeX.compare(Mask->getSizeXStr()) == 0 &&
-                   maskSizeY.compare(Mask->getSizeYStr()) == 0 &&
-                   "All masks per kernel must have same size for Vivado");
-          }
           if (vivadoParam == Rewrite::VivadoParam::KernelDecl) {
-            maskSizeX = Mask->getSizeXStr();
-            maskSizeY = Mask->getSizeYStr();
+            // Union of all mask/domain regions
+            maskSizeX = max(maskSizeX, Mask->getSizeXStr());
+            maskSizeY = max(maskSizeY, Mask->getSizeYStr());
             hasMask = true;
           }
         }
