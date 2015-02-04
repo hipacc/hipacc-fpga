@@ -50,6 +50,7 @@ class Kernel {
         Accessor<data_t> out_acc;
         std::vector<AccessorBase *> images;
         data_t reduction_result;
+        bool break_iteration;
 
     public:
         Kernel(IterationSpace<data_t> &iteration_space) :
@@ -153,11 +154,15 @@ class Kernel {
         auto reduce(Domain &domain, HipaccConvolutionMode mode, const Function &fun) -> decltype(fun());
         template <typename Function>
         void iterate(Domain &domain, const Function &fun);
+        void break_iterate() {
+          break_iteration = true;
+        }
 };
 
 
 template <typename data_t> template <typename data_m, typename Function>
 auto Kernel<data_t>::convolve(Mask<data_m> &mask, HipaccConvolutionMode mode, const Function& fun) -> decltype(fun()) {
+    break_iteration = false;
     auto end  = mask.end();
     auto iter = mask.begin();
 
@@ -168,7 +173,7 @@ auto Kernel<data_t>::convolve(Mask<data_m> &mask, HipaccConvolutionMode mode, co
     auto result = fun();
 
     // advance iterator and apply kernel to remaining iteration space
-    while (++iter != end) {
+    while (++iter != end && !break_iteration) {
         switch (mode) {
             case HipaccSUM:
                 result += fun();
@@ -204,6 +209,7 @@ auto Kernel<data_t>::convolve(Mask<data_m> &mask, HipaccConvolutionMode mode, co
 template <typename data_t> template <typename Function>
 auto Kernel<data_t>::reduce(Domain &domain, HipaccConvolutionMode mode,
             const Function &fun) -> decltype(fun()) {
+    break_iteration = false;
     auto end  = domain.end();
     auto iter = domain.begin();
 
@@ -214,7 +220,7 @@ auto Kernel<data_t>::reduce(Domain &domain, HipaccConvolutionMode mode,
     auto result = fun();
 
     // advance iterator and apply kernel to remaining iteration space
-    while (++iter != end) {
+    while (++iter != end && !break_iteration) {
         switch (mode) {
             case HipaccSUM:
                 result += fun();
@@ -247,6 +253,7 @@ auto Kernel<data_t>::reduce(Domain &domain, HipaccConvolutionMode mode,
 
 template <typename data_t> template <typename Function>
 void Kernel<data_t>::iterate(Domain &domain, const Function &fun) {
+    break_iteration = false;
     auto end  = domain.end();
     auto iter = domain.begin();
 
@@ -254,7 +261,7 @@ void Kernel<data_t>::iterate(Domain &domain, const Function &fun) {
     domain.setDI(&iter);
 
     // advance iterator and apply kernel to iteration space
-    while (iter != end) {
+    while (iter != end && !break_iteration) {
         fun();
         ++iter;
     }

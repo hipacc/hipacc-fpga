@@ -2608,6 +2608,18 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
     return result;
   }
 
+  // break_iterate() method -> goto current break label
+  if (ME->getMemberNameInfo().getAsString() == "break_iterate") {
+    CompoundStmt *CS = new (Ctx) CompoundStmt(Stmt::EmptyShell());
+    StmtExpr *SE = new (Ctx) StmtExpr(Stmt::EmptyShell());
+    Stmt *S = createGotoStmt(Ctx, breakLabels.back());
+    CS->setStmts(Ctx, &S, 1);
+    SE->setSubStmt(CS);
+    result = SE;
+
+    return result;
+  }
+
   assert(0 && "Hipacc: Stumbled upon unsupported expression: CXXMemberCallExpr");
   return nullptr;
 }

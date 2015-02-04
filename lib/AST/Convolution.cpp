@@ -225,6 +225,46 @@ Stmt *ASTTranslate::addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var,
 }
 
 
+// add check if the current iteration has been exited early
+Stmt *ASTTranslate::addBreakCheck(DeclRefExpr *break_var, Stmt *stmt) {
+
+  BinaryOperator *check_break = createBinaryOperator(Ctx, break_var,
+      createCXXBoolLiteral(Ctx, false), BO_EQ, Ctx.BoolTy);
+
+  return createIfStmt(Ctx, check_break, stmt);
+}
+
+
+// recursively search for break_iterate through body
+// don't follow convole/reduce/iterate
+bool ASTTranslate::searchForBreakIterate(Stmt *S) {
+  bool found = false;
+
+  if (S != nullptr) {
+    if (isa<CXXMemberCallExpr>(S)) {
+      CXXMemberCallExpr *MCE = dyn_cast<CXXMemberCallExpr>(S);
+      MemberExpr *ME = dyn_cast<MemberExpr>(MCE->getCallee());
+      if (isa<CXXThisExpr>(ME->getBase()->IgnoreImpCasts()) &&
+          MCE->getDirectCallee()) {
+        if (MCE->getDirectCallee()->getName().equals("convolve") ||
+            MCE->getDirectCallee()->getName().equals("reduce") ||
+            MCE->getDirectCallee()->getName().equals("iterate")) {
+          return false;
+        } else if (MCE->getDirectCallee()->getName().equals("break_iterate")) {
+          found = true;
+        }
+      }
+    }
+
+    for (auto it = S->child_begin(); !found && it != S->child_end(); ++it) {
+      found = searchForBreakIterate(*it);
+    }
+  }
+
+  return found;
+}
+
+
 // check if we have a convolve/reduce/iterate method and convert it
 Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
   // check if this is a convolve function call
@@ -390,6 +430,15 @@ Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
   DC->addDecl(tmp_decl);
   DeclRefExpr *tmp_dre = createDeclRefExpr(Ctx, tmp_decl);
 
+  // check if current lambda expression contains an break_iterate
+  containsBreak.push_back(searchForBreakIterate(LE->getBody()));
+  if (containsBreak.back()) {
+    // create and store _break label
+    std::string break_lit("_break" + std::to_string(literalCount++));
+    LabelDecl *LD = createLabelDecl(Ctx, kernelDecl, break_lit);
+    breakLabels.push_back(LD);
+  }
+
   switch (method) {
     case Convolve:
       convTmp = tmp_dre;
@@ -470,6 +519,14 @@ Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
       redTmps.pop_back();
       break;
   }
+
+  if (containsBreak.back()) {
+    // insert break label
+    preStmts.push_back(createLabelStmt(Ctx, breakLabels.back(), nullptr));
+    preCStmt.push_back(outerCompountStmt);
+    breakLabels.pop_back();
+  }
+  containsBreak.pop_back();
 
   // result of convolution
   switch (method) {

@@ -106,6 +106,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     SmallVector<DeclRefExpr *, 4> redTmps;
     SmallVector<ConvolutionMode, 4> redModes;
     SmallVector<int, 4> redIdxX, redIdxY;
+    SmallVector<LabelDecl *, 4> breakLabels;
+    SmallVector<bool, 4> containsBreak;
 
     DeclRefExpr *bh_start_left, *bh_start_right, *bh_start_top,
                 *bh_start_bottom, *bh_fall_back;
@@ -253,6 +255,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *getInitExpr(ConvolutionMode mode, QualType QT);
     Stmt *addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var, Stmt
         *stmt);
+    Stmt *addBreakCheck(DeclRefExpr *break_var, Stmt *stmt);
+    bool searchForBreakIterate(Stmt *S);
     Expr *convertConvolution(CXXMemberCallExpr *E);
 
     // Interpolation.cpp
