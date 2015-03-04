@@ -1919,32 +1919,52 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
     // 1. strip literal operand for Add, Sub, Mul, and Div.
     // 2. insert return stmt for Assign.
     Expr *newResult = nullptr;
-    bool opSub = false;
-    switch (dyn_cast<BinaryOperator>(result)->getOpcode()) {
+    bool negate = false;
+    enum BinaryOperatorKind op = dyn_cast<BinaryOperator>(result)->getOpcode();
+    switch (op) {
       case BO_Sub:
-        opSub = true;
       case BO_Add:
         newResult = stripLiteralOperand(operand1, operand2, 0);
         if (newResult == nullptr) {
           // floating
           newResult = stripLiteralOperand(operand1, operand2, 0.0);
         }
-        if (opSub && newResult == operand2) {
+        if (op == BO_Sub && newResult == operand2) {
           // negate second operand if stripped operation is a subtraction
           newResult = createUnaryOperator(Ctx, createParenExpr(Ctx, newResult),
               UO_Minus, newResult->getType());
         }
         break;
-      case BO_Mul:
-        newResult = stripLiteralOperand(operand1, operand2, 1);
-        // skip floating, because 1.0 can not be represented exactly
-        break;
       case BO_Div:
+      case BO_Mul:
+        if (isa<UnaryOperator>(operand1) &&
+            dyn_cast<UnaryOperator>(operand1)->getOpcode() == UO_Minus) {
+          operand1 = dyn_cast<UnaryOperator>(operand1)->getSubExpr();
+          negate = (negate == false);
+        }
+        if (isa<UnaryOperator>(operand2) &&
+            dyn_cast<UnaryOperator>(operand2)->getOpcode() == UO_Minus) {
+          operand2 = dyn_cast<UnaryOperator>(operand2)->getSubExpr();
+          negate = (negate == false);
+        }
         newResult = stripLiteralOperand(operand1, operand2, 1);
-        if (newResult == operand2) {
+        if (op == BO_Div && newResult == operand2) {
+          // don't strip first operand for division
           newResult = nullptr;
         }
-        // skip floating, because 1.0 can not be represented exactly
+        if (newResult == nullptr) {
+          // floating
+          newResult = stripLiteralOperand(operand1, operand2, 1.0);
+        }
+        if (op == BO_Div && newResult == operand2) {
+          // don't strip first operand for division
+          newResult = nullptr;
+        }
+        if (newResult != nullptr && negate) {
+          // negate remaining operand
+          newResult = createUnaryOperator(Ctx, createParenExpr(Ctx, newResult),
+              UO_Minus, newResult->getType());
+        }
         break;
       case BO_Assign:
         if (operand1 != nullptr && isa<DeclRefExpr>(operand1)) {
