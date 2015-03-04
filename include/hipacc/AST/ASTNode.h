@@ -115,9 +115,10 @@ typedef struct {
   size_t elementWidth;
 } VectorTypeInfo;
 
+size_t getBuiltinTypeSize(const BuiltinType *BT);
 VectorTypeInfo createVectorTypeInfo(const VectorType *VT);
 std::string getStdIntFromBitWidth(int bitwidth);
-std::string createVivadoTypeStr(HipaccImage *Img);
+std::string createVivadoTypeStr(HipaccImage *Img, size_t ppt);
 
 // create label/goto statements
 LabelDecl *createLabelDecl(ASTContext &Ctx, DeclContext *DC, StringRef Name);

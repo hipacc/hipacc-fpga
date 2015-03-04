@@ -841,6 +841,16 @@ class HipaccKernel : public HipaccKernelFeatures {
         return nullptr;
       }
     }
+
+    HipaccAccessor *getVivadoAccessor() {
+      if (imgMap.size() > 0) {
+        // All images must be of same type, therefore it doesn't matter which to
+        // return.
+        return imgMap.begin()->second;
+      } else {
+        return nullptr;
+      }
+    }
 };
 } // end namespace hipacc
 } // end namespace clang

@@ -78,15 +78,16 @@ void hipaccReleaseMemory(HipaccImage &img) {
 }
 
 
-template<typename T1, typename T2>
-T1 hipaccInvertBits(T2 in) {
-  T1 out = 0;
-  size_t size = sizeof(T2) * 8;
+template<typename T>
+T hipaccReverseBits(T in) {
+  T out = 0;
+  T one = 1;
+  size_t size = sizeof(T) * 8;
   for (int i = 0; i < size; ++i) {
     if (i < size/2) {
-      out |= (in & (1 << i)) << (size - 1 - (2*i));
+      out |= (in & (one << i)) << (size - 1 - (2*i));
     } else {
-      out |= (in & (1 << i)) >> (size - 1 - (2*(size - 1 - i)));
+      out |= (in & (one << i)) >> (size - 1 - (2*(size - 1 - i)));
     }
   }
   return out;
@@ -127,10 +128,19 @@ template<int BW, typename T2>
 void hipaccWriteMemory(HipaccImage &img, hls::stream<ap_uint<BW> > &s, T2 *host_mem) {
     int width = img.width;
     int height = img.height;
+    int vect = BW/8/sizeof(T2);
 
-    for (size_t i=0; i<width*height; ++i) {
-        ap_uint<BW> data = host_mem[i];
-        s << hipaccInvertBits<T2,ap_uint<BW> >(data);
+    for (size_t i=0; i<width*height; i+=vect) {
+        ap_uint<BW> data;
+        if (vect > 1) {
+            for (size_t v=0; v<vect; ++v) {
+              data(v*BW/vect, ((v+1)*BW/vect)-1) = host_mem[i+v];
+            }
+            s << data;
+        } else {
+            data = host_mem[i];
+            s << hipaccReverseBits<ap_uint<BW> >(data);
+        }
     }
 }
 
@@ -142,11 +152,20 @@ template<int BW, typename T2>
 void hipaccReadMemory(hls::stream<ap_uint<BW> > &s, T2 *host_mem, HipaccImage &img) {
     int width = img.width;
     int height = img.height;
+    int vect = BW/8/sizeof(T2);
 
-    for (size_t i=0; i<width*height; ++i) {
+    for (size_t i=0; i<width*height; i+=vect) {
         ap_uint<BW> data;
         s >> data;
-        host_mem[i] = hipaccInvertBits<T2,ap_uint<BW> >(data);
+        if (vect > 1) {
+            ap_uint<BW> temp = data;
+            for (size_t v=0; v<vect; ++v) {
+                host_mem[i+v] = temp(v*BW/vect, ((v+1)*BW/vect)-1);
+            }
+        } else {
+            ap_uint<BW> temp = hipaccReverseBits<ap_uint<BW> >(data);
+            host_mem[i] = *(T2*)&temp;
+        }
     }
 }
 

@@ -613,7 +613,7 @@ std::string HostDataDeps::getEntrySignature(
       retVal << ", ";
     }
     if (withTypes) {
-      retVal << "hls::stream<" << (*it)->getTypeStr() << " > &";
+      retVal << "hls::stream<" << getTypeStr(*it) << " > &";
     }
     retVal << (*it)->stream;
   }
@@ -622,7 +622,7 @@ std::string HostDataDeps::getEntrySignature(
   for (auto it = in.begin(); it != in.end(); ++it) {
     retVal << ", ";
     if (withTypes) {
-      retVal << "hls::stream<" << (*it)->getTypeStr() << " > &";
+      retVal << "hls::stream<" << getTypeStr(*it) << " > &";
     }
     retVal << (*it)->stream;
   }
@@ -661,13 +661,19 @@ std::string HostDataDeps::prettyPrint(
       if (s->cpyStreams.size() > 0) {
         for (auto it2 = s->cpyStreams.begin();
                   it2 != s->cpyStreams.end(); ++it2) {
-          retVal << indent << "hls::stream<" << s->getTypeStr() << "> " << *it2 << ";"
+          retVal << indent << "hls::stream<" << getTypeStr(s) << " > " << *it2 << ";"
                  << std::endl;
         }
 #define NICO_LIB
 #ifdef NICO_LIB
         retVal << indent << "splitStream";
+        if (compilerOptions.getPixelsPerThread() > 1) {
+          retVal << "VECT";
+        }
         retVal << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT,HIPACC_WINDOW_SIZE_X,HIPACC_WINDOW_SIZE_Y";
+        if (compilerOptions.getPixelsPerThread() > 1) {
+          retVal << ",HIPACC_PPT";
+        }
         retVal << ">(" << s->stream;
         for (auto it2 = s->cpyStreams.begin();
                   it2 != s->cpyStreams.end(); ++it2) {
@@ -677,7 +683,7 @@ std::string HostDataDeps::prettyPrint(
 #else // NICO_LIB
         retVal << indent << "for (int i = 0; i < HIPACC_MAX_WIDTH*HIPACC_MAX_HEIGHT; ++i) {"
                << std::endl;
-        retVal << indent << indent << s->getTypeStr() << " val;"
+        retVal << indent << indent << getTypeStr(s) << " val;"
                << std::endl;
         retVal << indent << indent << s->stream << " >> val;" << std::endl;
         for (auto it2 = s->cpyStreams.begin();
@@ -692,13 +698,13 @@ std::string HostDataDeps::prettyPrint(
         //var << "_strmCpy" << cpyId;
         //++cpyId;
 
-        //retVal << indent << s->getTypeStr() << " " << var.str() << ";"
+        //retVal << indent << getTypeStr(s) << " " << var.str() << ";"
         //       << std::endl;
         //retVal << indent << s->stream << " >> " << var.str() << ";"
         //       << std::endl;
         //for (auto it2 = s->cpyStreams.begin();
         //          it2 != s->cpyStreams.end(); ++it2) {
-        //  retVal << indent << "stream<" << s->getTypeStr() << "> " << *it2 << ";"
+        //  retVal << indent << "stream<" << getTypeStr(s) << "> " << *it2 << ";"
         //         << std::endl;
         //  retVal << indent << *it2 << " << " << var.str() << ";"
         //         << std::endl;
@@ -709,7 +715,7 @@ std::string HostDataDeps::prettyPrint(
       if (!t->getOutSpace()->getDstProcesses().empty()) {
         // do not print out stream (because it is function argument)
         retVal << indent << "hls::stream<"
-               << t->getOutSpace()->getTypeStr() << "> " << t->outStream << ";"
+               << getTypeStr(t->getOutSpace()) << " > " << t->outStream << ";"
                << std::endl;
       }
       retVal << indent << "cc" << t->getKernel()->getName() << "Kernel(";
@@ -805,7 +811,7 @@ std::string HostDataDeps::getStreamDecl(ValueDecl *VD) {
   for (auto it = spaces.begin(); it != spaces.end(); it++) {
     Space *s = *it;
     if (s->getImage()->getName() == img) {
-      retVal = "hls::stream<" + s->getTypeStr() + " > " + s->stream + ";";
+      retVal = "hls::stream<" + getTypeStr(s) + " > " + s->stream + ";";
       break;
     }
   }

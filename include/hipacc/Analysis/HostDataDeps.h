@@ -42,6 +42,7 @@
 #include <clang/Basic/Diagnostic.h>
 
 #include "hipacc/Device/TargetDescription.h"
+#include "hipacc/Config/CompilerOptions.h"
 #include "hipacc/DSL/CompilerKnownClasses.h"
 #include "hipacc/DSL/ClassRepresentation.h"
 #include "hipacc/AST/ASTNode.h"
@@ -116,6 +117,7 @@ class HostDataDeps : public ManagedAnalysis {
 
     // member variables
     CompilerKnownClasses compilerClasses;
+    CompilerOptions compilerOptions;
 
     llvm::DenseMap<ValueDecl *, Accessor *> accMap_;
     llvm::DenseMap<ValueDecl *, Image *> imgMap_;
@@ -205,8 +207,8 @@ class HostDataDeps : public ManagedAnalysis {
           return img->getName();
         }
 
-        std::string getTypeStr() {
-          return ASTNode::createVivadoTypeStr(img);
+        std::string getTypeStr(size_t ppt) {
+          return ASTNode::createVivadoTypeStr(img, ppt);
         }
     };
 
@@ -318,8 +320,8 @@ class HostDataDeps : public ManagedAnalysis {
           dstProcess.push_back(proc);
         }
 
-        std::string getTypeStr() {
-          return image->getTypeStr();
+        std::string getTypeStr(size_t ppt) {
+          return image->getTypeStr(ppt);
         }
     };
 
@@ -395,6 +397,9 @@ class HostDataDeps : public ManagedAnalysis {
     std::string prettyPrint(
         std::map<std::string,std::vector<std::pair<std::string,std::string>>> args,
         bool print=false);
+    std::string getTypeStr(Space *s) {
+      return s->getTypeStr(compilerOptions.getPixelsPerThread());
+    }
 
   public:
     std::string printEntryDecl(
@@ -410,9 +415,11 @@ class HostDataDeps : public ManagedAnalysis {
 
     static HostDataDeps *parse(ASTContext &Context,
         AnalysisDeclContext &analysisContext,
-        CompilerKnownClasses &compilerClasses) {
+        CompilerKnownClasses &compilerClasses,
+        CompilerOptions &compilerOptions) {
       static HostDataDeps dataDeps;
       dataDeps.compilerClasses = compilerClasses;
+      dataDeps.compilerOptions = compilerOptions;
       DependencyTracker DT(Context, analysisContext, compilerClasses, dataDeps);
 
       if (DEBUG) {

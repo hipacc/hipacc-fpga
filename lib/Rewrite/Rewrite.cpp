@@ -762,9 +762,19 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           } else {
             newStr += "hls::stream<";
 
-            if (isVector) {
-              newStr += "ap_uint<" + std::to_string(
-                  info.elementCount * info.elementWidth) + "> ";
+            if (isVector || compilerOptions.getPixelsPerThread() > 1) {
+              std::stringstream TSS;
+              size_t size = 1;
+              if (isVector) {
+                size = info.elementCount * info.elementWidth;
+              } else {
+                size = getBuiltinTypeSize(QT->getAs<BuiltinType>());
+              }
+              if (compilerOptions.getPixelsPerThread() > 1) {
+                size *= compilerOptions.getPixelsPerThread();
+              }
+              TSS << size;
+              newStr += "ap_uint<" + TSS.str() + "> ";
             } else {
               newStr += QT.getAsString();
             }
@@ -1550,6 +1560,7 @@ void Rewrite::createVivadoEntry() {
   *OS << "#define HIPACC_WINDOW_SIZE_Y " << maxWindowSizeY << "\n";
   *OS << "#define BORDER_FILL_VALUE    0\n";
   *OS << "#define HIPACC_II_TARGET     " << compilerOptions.getTargetII() << "\n";
+  *OS << "#define HIPACC_PPT           " << compilerOptions.getPixelsPerThread() << "\n";
   *OS << "\n";
   *OS << "#include \"hipacc_vivado_types.hpp\"\n";
   *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
@@ -1574,7 +1585,8 @@ bool Rewrite::VisitFunctionDecl(FunctionDecl *D) {
 
     if (compilerOptions.emitVivado()) {
       AnalysisDeclContext AC(0, mainFD);
-      dataDeps = HostDataDeps::parse(Context, AC, compilerClasses);
+      dataDeps = HostDataDeps::parse(Context, AC, compilerClasses,
+          compilerOptions);
     }
   }
 
@@ -2819,8 +2831,9 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       *OS << ") {\n";
       printKernelArguments(D, KC, K, Policy, OS, Rewrite::CTorBody);
       *OS << "  }\n\n";
-      *OS << "  " << createVivadoTypeStr(K->getIterationSpace()->getAccessor()->getImage())
-          << " operator()(";
+      *OS << "  " <<
+        createVivadoTypeStr(K->getIterationSpace()->getAccessor()->getImage(), 1);
+      *OS << " operator()(";
       printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelDecl);
       *OS << ") ";
       break;
@@ -2868,8 +2881,19 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         *OS << KC->getImgFields().size();
       }
     }
+    if (compilerOptions.getPixelsPerThread() > 1) {
+      *OS << "VECT";
+      if (K->getVivadoAccessor()->getImage()->getType()->isRealFloatingType()) {
+        *OS << "F";
+      }
+    }
     *OS << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT";
     *OS << ",HIPACC_WINDOW_SIZE_X,HIPACC_WINDOW_SIZE_Y";
+    if (compilerOptions.getPixelsPerThread() > 1) {
+      *OS << ",HIPACC_PPT,"
+          << K->getVivadoAccessor()->getImage()->getTypeStr()
+          << " ";
+    }
     *OS << ">(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
     *OS << ", Output, is_width, is_height, kernel";
@@ -3016,7 +3040,8 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         case Language::Vivado:
           if (vivadoParam == Rewrite::VivadoParam::Entry) {
             std::string typeStr =
-              createVivadoTypeStr(K->getIterationSpace()->getAccessor()->getImage());
+              createVivadoTypeStr(K->getIterationSpace()->getAccessor()->getImage(),
+                  compilerOptions.getPixelsPerThread());
             *OS << "hls::stream<" << typeStr << " > &Output";
             comma++;
           }
@@ -3079,14 +3104,19 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         case Language::Filterscript:
           break;
         case Language::Vivado: {
-          std::string typeStr = createVivadoTypeStr(Acc->getImage());
           switch (vivadoParam) {
             case Rewrite::VivadoParam::KernelDecl:
-              accs.push_back( { Name, typeStr } );
+              accs.push_back( {
+                  Name,
+                  (compilerOptions.getPixelsPerThread() > 1 ?
+                    Acc->getImage()->getTypeStr() :
+                    createVivadoTypeStr(Acc->getImage(), 1))
+              } );
             break;
             case Rewrite::VivadoParam::Entry:
               if (comma++) *OS << ", ";
-              *OS << "hls::stream<" << typeStr << " > &"
+              *OS << "hls::stream<" << createVivadoTypeStr(Acc->getImage(),
+                  compilerOptions.getPixelsPerThread()) << " > &"
                   << Name;
             break;
             case Rewrite::VivadoParam::KernelCall:

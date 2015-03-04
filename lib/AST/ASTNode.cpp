@@ -179,6 +179,49 @@ CXXBoolLiteralExpr *createCXXBoolLiteral(ASTContext &Ctx, bool val) {
 }
 
 
+size_t getBuiltinTypeSize(const BuiltinType *BT) {
+  size_t size = 1;
+
+  switch (BT->getKind()) {
+    case BuiltinType::Char_U:
+    case BuiltinType::UChar:
+    case BuiltinType::Char_S:
+    case BuiltinType::SChar:
+      size = 8;
+      break;
+    case BuiltinType::Char16:
+    case BuiltinType::Short:
+    case BuiltinType::UShort:
+    case BuiltinType::Half:
+      size = 16;
+      break;
+    case BuiltinType::Char32:
+    case BuiltinType::Int:
+    case BuiltinType::UInt:
+    case BuiltinType::Float:
+      size = 32;
+      break;
+    case BuiltinType::Long:
+    case BuiltinType::ULong:
+    case BuiltinType::Double:
+      size = 64;
+      break;
+    case BuiltinType::LongLong:
+    case BuiltinType::ULongLong:
+    case BuiltinType::Int128:
+    case BuiltinType::UInt128:
+    //case BuiltinType::LongDouble: //???
+      size = 128;
+      break;
+    default:
+      assert(false && "Type not supported");
+      break;
+  }
+
+  return size;
+}
+
+
 VectorTypeInfo createVectorTypeInfo(const VectorType *VT) {
   VectorTypeInfo info;
   info.elementType = VT->getElementType().getAsString();
@@ -186,41 +229,8 @@ VectorTypeInfo createVectorTypeInfo(const VectorType *VT) {
   info.elementWidth = 0;
 
   if (isa<BuiltinType>(VT->getElementType())) {
-    const BuiltinType *BT = dyn_cast<BuiltinType>(VT->getElementType());
-    switch (BT->getKind()) {
-      case BuiltinType::Char_U:
-      case BuiltinType::UChar:
-      case BuiltinType::Char_S:
-      case BuiltinType::SChar:
-        info.elementWidth = 8;
-        break;
-      case BuiltinType::Char16:
-      case BuiltinType::Short:
-      case BuiltinType::UShort:
-      case BuiltinType::Half:
-        info.elementWidth = 16;
-        break;
-      case BuiltinType::Char32:
-      case BuiltinType::Int:
-      case BuiltinType::UInt:
-      case BuiltinType::Float:
-        info.elementWidth = 32;
-        break;
-      case BuiltinType::Long:
-      case BuiltinType::ULong:
-      case BuiltinType::Double:
-        info.elementWidth = 64;
-        break;
-      case BuiltinType::LongLong:
-      case BuiltinType::ULongLong:
-      case BuiltinType::Int128:
-      case BuiltinType::UInt128:
-      //case BuiltinType::LongDouble: //???
-        info.elementWidth = 128;
-        break;
-      default:
-        break;
-    }
+    info.elementWidth =
+      getBuiltinTypeSize(dyn_cast<BuiltinType>(VT->getElementType()));
   }
 
   return info;
@@ -247,7 +257,7 @@ std::string getStdIntFromBitWidth(int bitwidth) {
 }
 
 
-std::string createVivadoTypeStr(HipaccImage *Img) {
+std::string createVivadoTypeStr(HipaccImage *Img, size_t ppt) {
   QualType QT = Img->getType();
   bool isVector = false;
   VectorTypeInfo info;
@@ -259,9 +269,18 @@ std::string createVivadoTypeStr(HipaccImage *Img) {
   }
 
   std::string typeStr;
-  std::stringstream TSS;
-  if (isVector) {
-    TSS << info.elementCount * info.elementWidth;
+  if (isVector || ppt > 1) {
+    std::stringstream TSS;
+    size_t size = 1;
+    if (isVector) {
+      size = info.elementCount * info.elementWidth;
+    } else {
+      size = getBuiltinTypeSize(QT->getAs<BuiltinType>());
+    }
+    if (ppt > 1) {
+      size *= ppt;
+    }
+    TSS << size;
     typeStr = "ap_uint<" + TSS.str() + ">";
   } else {
     typeStr = Img->getTypeStr();
