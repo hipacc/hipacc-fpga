@@ -140,9 +140,10 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
     };
 
     BoundaryMode vivadoBM = (BoundaryMode)-1;
-    size_t maxWindowSize = 0;
-    size_t maxImageWidth = 0;
-    size_t maxImageHeight = 0;
+    size_t maxWindowSizeX = 1;
+    size_t maxWindowSizeY = 1;
+    size_t maxImageWidth = 1;
+    size_t maxImageHeight = 1;
 
     void printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         HipaccKernel *K, PrintingPolicy &Policy, llvm::raw_ostream *OS,
@@ -1405,8 +1406,11 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
         }
 
         if (compilerOptions.emitVivado()) {
-          if (maxWindowSize < Buf->getSizeX()) {
-            maxWindowSize = Buf->getSizeX();
+          if (maxWindowSizeX < Buf->getSizeX()) {
+            maxWindowSizeX = Buf->getSizeX();
+          }
+          if (maxWindowSizeY < Buf->getSizeY()) {
+            maxWindowSizeY = Buf->getSizeY();
           }
         }
 
@@ -1540,11 +1544,13 @@ void Rewrite::createVivadoEntry() {
   }
 
   OS = new llvm::raw_fd_ostream(fd, false);
-  *OS << "#define HIPACC_MAX_WIDTH    " << maxImageWidth << "\n";
-  *OS << "#define HIPACC_MAX_HEIGHT   " << maxImageHeight << "\n";
-  *OS << "#define HIPACC_WINDOW_SIZE  " << maxWindowSize << "\n";
-  *OS << "#define BORDER_FILL_VALUE 0\n";
-  *OS << "#define HIPACC_II_TARGET  " << compilerOptions.getTargetII() << "\n\n";
+  *OS << "#define HIPACC_MAX_WIDTH     " << maxImageWidth << "\n";
+  *OS << "#define HIPACC_MAX_HEIGHT    " << maxImageHeight << "\n";
+  *OS << "#define HIPACC_WINDOW_SIZE_X " << maxWindowSizeX << "\n";
+  *OS << "#define HIPACC_WINDOW_SIZE_Y " << maxWindowSizeY << "\n";
+  *OS << "#define BORDER_FILL_VALUE    0\n";
+  *OS << "#define HIPACC_II_TARGET     " << compilerOptions.getTargetII() << "\n";
+  *OS << "\n";
   *OS << "#include \"hipacc_vivado_types.hpp\"\n";
   *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
 
@@ -2844,9 +2850,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
   // print vivado entry function
   if (compilerOptions.emitVivado()) {
     *OS << "};\n\n";
-    *OS << "void ";
-    *OS << K->getKernelName();
-    *OS << "(";
+    *OS << "void " << K->getKernelName() << "(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
     *OS << ") {\n"
         << "    struct " << K->getKernelName() << "Kernel kernel";
@@ -2855,20 +2859,18 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
     if (KC->getMaskFields().size() > 0) {
       *OS << "    process";
+      if (KC->getImgFields().size() == 2) {
+        *OS << "MISO";
+      }
     } else {
       *OS << "    processPixels";
+      if (KC->getImgFields().size() > 1) {
+        *OS << KC->getImgFields().size();
+      }
     }
-    if (KC->getImgFields().size() == 2) {
-      *OS << "MISO";
-    }
-    *OS << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT,";
-    if (KC->getMaskFields().size() > 0) {
-      *OS << K->getVivadoWindow()->getSizeXStr() + ",";
-      *OS << K->getVivadoWindow()->getSizeYStr() + ">";
-    } else {
-      *OS << "HIPACC_WINDOW_SIZE>";
-    }
-    *OS << "(";
+    *OS << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT";
+    *OS << ",HIPACC_WINDOW_SIZE_X,HIPACC_WINDOW_SIZE_Y";
+    *OS << ">(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
     *OS << ", Output, is_width, is_height, kernel";
     if (KC->getMaskFields().size() > 0) {

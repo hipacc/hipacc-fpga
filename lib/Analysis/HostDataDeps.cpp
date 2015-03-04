@@ -666,7 +666,9 @@ std::string HostDataDeps::prettyPrint(
         }
 #define NICO_LIB
 #ifdef NICO_LIB
-        retVal << indent << "splitStream<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT,HIPACC_WINDOW_SIZE>(" << s->stream;
+        retVal << indent << "splitStream";
+        retVal << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT,HIPACC_WINDOW_SIZE_X,HIPACC_WINDOW_SIZE_Y";
+        retVal << ">(" << s->stream;
         for (auto it2 = s->cpyStreams.begin();
                   it2 != s->cpyStreams.end(); ++it2) {
           retVal << ", " << *it2;
