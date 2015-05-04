@@ -1848,7 +1848,7 @@ Expr* ASTTranslate::stripLiteralOperand(Expr *operand1, Expr *operand2, double v
     }
   } else
   if (operand1 != nullptr && isa<FloatingLiteral>(operand1)) {
-    llvm::APFloat val1 = dyn_cast<FloatingLiteral>(operand2)->getValue();
+    llvm::APFloat val1 = dyn_cast<FloatingLiteral>(operand1)->getValue();
     if (&val1.getSemantics() == (const llvm::fltSemantics*)&llvm::APFloat::IEEEsingle) {
       if (val1.compare(llvm::APFloat((float)val)) == llvm::APFloat::cmpEqual) {
         return operand2;
