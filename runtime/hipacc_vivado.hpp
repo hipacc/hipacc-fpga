@@ -130,16 +130,24 @@ void hipaccWriteMemory(HipaccImage &img, hls::stream<ap_uint<BW> > &s, T2 *host_
     int height = img.height;
     int vect = BW/8/sizeof(T2);
 
-    for (size_t i=0; i<width*height; i+=vect) {
-        ap_uint<BW> data;
-        if (vect > 1) {
-            for (size_t v=0; v<vect; ++v) {
-              data(v*BW/vect, ((v+1)*BW/vect)-1) = host_mem[i+v];
+    for (size_t y=0; y<height; ++y) {
+        for (size_t x=0; x<width; x+=vect) {
+            size_t i = (y*width)+x;
+            ap_uint<BW> data;
+            if (vect > 1) {
+                for (size_t v=0; v<vect; ++v) {
+                    if (x+v >= width) {
+                        // padding
+                        data(v*BW/vect, ((v+1)*BW/vect)-1) = (T2)0;
+                    } else {
+                        data(v*BW/vect, ((v+1)*BW/vect)-1) = host_mem[i+v];
+                    }
+                }
+                s << data;
+            } else {
+                data = host_mem[i];
+                s << hipaccReverseBits<ap_uint<BW> >(data);
             }
-            s << data;
-        } else {
-            data = host_mem[i];
-            s << hipaccReverseBits<ap_uint<BW> >(data);
         }
     }
 }
@@ -154,17 +162,22 @@ void hipaccReadMemory(hls::stream<ap_uint<BW> > &s, T2 *host_mem, HipaccImage &i
     int height = img.height;
     int vect = BW/8/sizeof(T2);
 
-    for (size_t i=0; i<width*height; i+=vect) {
-        ap_uint<BW> data;
-        s >> data;
-        if (vect > 1) {
-            ap_uint<BW> temp = data;
-            for (size_t v=0; v<vect; ++v) {
-                host_mem[i+v] = temp(v*BW/vect, ((v+1)*BW/vect)-1);
+    for (size_t y=0; y<height; ++y) {
+        for (size_t x=0; x<width; x+=vect) {
+            size_t i = (y*width)+x;
+            ap_uint<BW> data;
+            s >> data;
+            if (vect > 1) {
+                ap_uint<BW> temp = data;
+                for (size_t v=0; v<vect; ++v) {
+                    if (x+v < width) {
+                        host_mem[i+v] = temp(v*BW/vect, ((v+1)*BW/vect)-1);
+                    }
+                }
+            } else {
+                ap_uint<BW> temp = hipaccReverseBits<ap_uint<BW> >(data);
+                host_mem[i] = *(T2*)&temp;
             }
-        } else {
-            ap_uint<BW> temp = hipaccReverseBits<ap_uint<BW> >(data);
-            host_mem[i] = *(T2*)&temp;
         }
     }
 }

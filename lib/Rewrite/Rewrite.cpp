@@ -149,6 +149,8 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
         HipaccKernel *K, PrintingPolicy &Policy, llvm::raw_ostream *OS,
         VivadoParam=None);
     std::map<std::string,std::vector<std::pair<std::string, std::string>>> entryArguments;
+    std::string vivadoSizeX;
+    std::string vivadoSizeY;
 };
 }
 ASTConsumer *CreateRewrite(CompilerInstance &CI, CompilerOptions &options,
@@ -1553,6 +1555,13 @@ void Rewrite::createVivadoEntry() {
     }
   }
 
+  if (compilerOptions.getPixelsPerThread() > 1) {
+    // consider image padding
+    maxImageWidth = (((maxImageWidth - 1) /
+          compilerOptions.getPixelsPerThread()) + 1) *
+      compilerOptions.getPixelsPerThread();
+  }
+
   OS = new llvm::raw_fd_ostream(fd, false);
   *OS << "#define HIPACC_MAX_WIDTH     " << maxImageWidth << "\n";
   *OS << "#define HIPACC_MAX_HEIGHT    " << maxImageHeight << "\n";
@@ -2888,11 +2897,13 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       }
     }
     *OS << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT";
-    *OS << ",HIPACC_WINDOW_SIZE_X,HIPACC_WINDOW_SIZE_Y";
+    *OS << "," << vivadoSizeX << "," << vivadoSizeY;
     if (compilerOptions.getPixelsPerThread() > 1) {
-      *OS << ",HIPACC_PPT,"
-          << K->getVivadoAccessor()->getImage()->getTypeStr()
-          << " ";
+      *OS << ",HIPACC_PPT";
+    }
+    if (compilerOptions.getPixelsPerThread() > 1 ||
+        isa<VectorType>(K->getVivadoAccessor()->getImage()->getType().getCanonicalType().getTypePtr())) {
+      *OS << "," << K->getVivadoAccessor()->getImage()->getTypeStr() << " ";
     }
     *OS << ">(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
@@ -3108,7 +3119,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
             case Rewrite::VivadoParam::KernelDecl:
               accs.push_back( {
                   Name,
-                  (compilerOptions.getPixelsPerThread() > 1 ?
+                  (compilerOptions.getPixelsPerThread() > 1 || true /*vector type*/ ?
                     Acc->getImage()->getTypeStr() :
                     createVivadoTypeStr(Acc->getImage(), 1))
               } );
@@ -3145,6 +3156,8 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
               *OS << it->type << " " << it->name
                   << "[" << maskSizeY << "]"
                   << "[" << maskSizeX << "]";
+              vivadoSizeX = maskSizeX;
+              vivadoSizeY = maskSizeY;
             } else {
               *OS << it->type << " " << it->name;
             }
