@@ -4417,13 +4417,13 @@ void processVECT(
 
   ap_uint<BW_IN> in_pixel, temp_lb;
   ap_uint<BW_OUT> out_pixel;
-  int row, col, i, j;
+  int row, col, i, j, colv;
 
   IMG_ROWS:
   for(row = 0; row < MAX_HEIGHT+GDELAY_Y; ++row){
     //std::cout << "ROW: " << row << std::endl;
     IMG_COLS:
-    for(col = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT){
+    for(col = 0, colv = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT, ++colv){
       PRAGMA_HLS(HLS pipeline ii=II_TARGET)
       #pragma HLS INLINE region
       //**********************************************************
@@ -4454,15 +4454,15 @@ void processVECT(
         for(i = 0; i < KERNEL_SIZE_Y-1; i++){
         #pragma HLS unroll
           if (i == 0) {
-            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][col/VECT];
+            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][colv];
           } else {
-            temp_lb = lineBuff[i][col/VECT];
+            temp_lb = lineBuff[i][colv];
             win_tmp[i][KERNEL_SIZE_X_V-1] = temp_lb;
-            lineBuff[i-1][col/VECT] = temp_lb;
+            lineBuff[i-1][colv] = temp_lb;
           }
         }
         if (KERNEL_SIZE_Y > 1) {
-          lineBuff[KERNEL_SIZE_Y-2][col/VECT] = in_pixel;
+          lineBuff[KERNEL_SIZE_Y-2][colv] = in_pixel;
         }
         win_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in_pixel;
 
@@ -4549,13 +4549,13 @@ void processVECTF(
 
   ap_uint<BW_IN> in_pixel, temp_lb;
   ap_uint<BW_OUT> out_pixel;
-  int row, col, i, j;
+  int row, col, i, j, colv;
 
   IMG_ROWS:
   for(row = 0; row < MAX_HEIGHT+GDELAY_Y; ++row){
     //std::cout << "ROW: " << row << std::endl;
     IMG_COLS:
-    for(col = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT){
+    for(col = 0, colv = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT, ++colv){
       PRAGMA_HLS(HLS pipeline ii=II_TARGET)
       #pragma HLS INLINE region
       //**********************************************************
@@ -4586,15 +4586,15 @@ void processVECTF(
         for(i = 0; i < KERNEL_SIZE_Y-1; i++){
         #pragma HLS unroll
           if (i == 0) {
-            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][col/VECT];
+            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][colv];
           } else {
-            temp_lb = lineBuff[i][col/VECT];
+            temp_lb = lineBuff[i][colv];
             win_tmp[i][KERNEL_SIZE_X_V-1] = temp_lb;
-            lineBuff[i-1][col/VECT] = temp_lb;
+            lineBuff[i-1][colv] = temp_lb;
           }
         }
         if (KERNEL_SIZE_Y > 1) {
-          lineBuff[KERNEL_SIZE_Y-2][col/VECT] = in_pixel;
+          lineBuff[KERNEL_SIZE_Y-2][colv] = in_pixel;
         }
         win_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in_pixel;
 
@@ -4682,13 +4682,13 @@ void processSIMOVECT(
 
   ap_uint<BW_IN> in_pixel, temp_lb;
   ap_uint<BW_OUT> out_pixel;
-  int row, col, i, j;
+  int row, col, i, j, colv;
 
   IMG_ROWS:
   for(row = 0; row < MAX_HEIGHT+GDELAY_Y; ++row){
     //std::cout << "ROW: " << row << std::endl;
     IMG_COLS:
-    for(col = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT){
+    for(col = 0, colv = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT, ++colv){
       PRAGMA_HLS(HLS pipeline ii=II_TARGET)
       #pragma HLS INLINE region
       //**********************************************************
@@ -4719,15 +4719,15 @@ void processSIMOVECT(
         for(i = 0; i < KERNEL_SIZE_Y-1; i++){
         #pragma HLS unroll
           if (i == 0) {
-            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][col/VECT];
+            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][colv];
           } else {
-            temp_lb = lineBuff[i][col/VECT];
+            temp_lb = lineBuff[i][colv];
             win_tmp[i][KERNEL_SIZE_X_V-1] = temp_lb;
-            lineBuff[i-1][col/VECT] = temp_lb;
+            lineBuff[i-1][colv] = temp_lb;
           }
         }
         if (KERNEL_SIZE_Y > 1) {
-          lineBuff[KERNEL_SIZE_Y-2][col/VECT] = in_pixel;
+          lineBuff[KERNEL_SIZE_Y-2][colv] = in_pixel;
         }
         win_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in_pixel;
 
@@ -4816,13 +4816,13 @@ void processSIMOVECTF(
 
   ap_uint<BW_IN> in_pixel, temp_lb;
   ap_uint<BW_OUT> out_pixel;
-  int row, col, i, j;
+  int row, col, i, j, colv;
 
   IMG_ROWS:
   for(row = 0; row < MAX_HEIGHT+GDELAY_Y; ++row){
     //std::cout << "ROW: " << row << std::endl;
     IMG_COLS:
-    for(col = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT){
+    for(col = 0, colv = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT, ++colv){
       PRAGMA_HLS(HLS pipeline ii=II_TARGET)
       #pragma HLS INLINE region
       //**********************************************************
@@ -4853,15 +4853,15 @@ void processSIMOVECTF(
         for(i = 0; i < KERNEL_SIZE_Y-1; i++){
         #pragma HLS unroll
           if (i == 0) {
-            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][col/VECT];
+            win_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff[i][colv];
           } else {
-            temp_lb = lineBuff[i][col/VECT];
+            temp_lb = lineBuff[i][colv];
             win_tmp[i][KERNEL_SIZE_X_V-1] = temp_lb;
-            lineBuff[i-1][col/VECT] = temp_lb;
+            lineBuff[i-1][colv] = temp_lb;
           }
         }
         if (KERNEL_SIZE_Y > 1) {
-          lineBuff[KERNEL_SIZE_Y-2][col/VECT] = in_pixel;
+          lineBuff[KERNEL_SIZE_Y-2][colv] = in_pixel;
         }
         win_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in_pixel;
 
@@ -4959,13 +4959,13 @@ void processMISOVECT(
   ap_uint<BW_IN> in1_pixel, temp1_lb;
   ap_uint<BW_IN> in2_pixel, temp2_lb;
   ap_uint<BW_OUT> out_pixel;
-  int row, col, i, j;
+  int row, col, i, j, colv;
 
   IMG_ROWS:
   for(row = 0; row < MAX_HEIGHT+GDELAY_Y; ++row){
     //std::cout << "ROW: " << row << std::endl;
     IMG_COLS:
-    for(col = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT){
+    for(col = 0, colv = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT, ++colv){
       PRAGMA_HLS(HLS pipeline ii=II_TARGET)
       #pragma HLS INLINE region
       //**********************************************************
@@ -4998,20 +4998,20 @@ void processMISOVECT(
         for(i = 0; i < KERNEL_SIZE_Y-1; i++){
         #pragma HLS unroll
           if (i == 0) {
-            win1_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff1[i][col/VECT];
-            win2_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff2[i][col/VECT];
+            win1_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff1[i][colv];
+            win2_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff2[i][colv];
           } else {
-            temp1_lb = lineBuff1[i][col/VECT];
-            temp2_lb = lineBuff2[i][col/VECT];
+            temp1_lb = lineBuff1[i][colv];
+            temp2_lb = lineBuff2[i][colv];
             win1_tmp[i][KERNEL_SIZE_X_V-1] = temp1_lb;
             win2_tmp[i][KERNEL_SIZE_X_V-1] = temp2_lb;
-            lineBuff1[i-1][col/VECT] = temp1_lb;
-            lineBuff2[i-1][col/VECT] = temp2_lb;
+            lineBuff1[i-1][colv] = temp1_lb;
+            lineBuff2[i-1][colv] = temp2_lb;
           }
         }
         if (KERNEL_SIZE_Y > 1) {
-          lineBuff1[KERNEL_SIZE_Y-2][col/VECT] = in1_pixel;
-          lineBuff2[KERNEL_SIZE_Y-2][col/VECT] = in2_pixel;
+          lineBuff1[KERNEL_SIZE_Y-2][colv] = in1_pixel;
+          lineBuff2[KERNEL_SIZE_Y-2][colv] = in2_pixel;
         }
         win1_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in1_pixel;
         win2_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in2_pixel;
@@ -5115,13 +5115,13 @@ void processMISOVECTF(
   ap_uint<BW_IN> in1_pixel, temp1_lb;
   ap_uint<BW_IN> in2_pixel, temp2_lb;
   ap_uint<BW_OUT> out_pixel;
-  int row, col, i, j;
+  int row, col, i, j, colv;
 
   IMG_ROWS:
   for(row = 0; row < MAX_HEIGHT+GDELAY_Y; ++row){
     //std::cout << "ROW: " << row << std::endl;
     IMG_COLS:
-    for(col = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT){
+    for(col = 0, colv = 0; col < MAX_WIDTH+GDELAY_X; col+=VECT, ++colv){
       PRAGMA_HLS(HLS pipeline ii=II_TARGET)
       #pragma HLS INLINE region
       //**********************************************************
@@ -5154,20 +5154,20 @@ void processMISOVECTF(
         for(i = 0; i < KERNEL_SIZE_Y-1; i++){
         #pragma HLS unroll
           if (i == 0) {
-            win1_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff1[i][col/VECT];
-            win2_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff2[i][col/VECT];
+            win1_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff1[i][colv];
+            win2_tmp[i][KERNEL_SIZE_X_V-1] = lineBuff2[i][colv];
           } else {
-            temp1_lb = lineBuff1[i][col/VECT];
-            temp2_lb = lineBuff2[i][col/VECT];
+            temp1_lb = lineBuff1[i][colv];
+            temp2_lb = lineBuff2[i][colv];
             win1_tmp[i][KERNEL_SIZE_X_V-1] = temp1_lb;
             win2_tmp[i][KERNEL_SIZE_X_V-1] = temp2_lb;
-            lineBuff1[i-1][col/VECT] = temp1_lb;
-            lineBuff2[i-1][col/VECT] = temp2_lb;
+            lineBuff1[i-1][colv] = temp1_lb;
+            lineBuff2[i-1][colv] = temp2_lb;
           }
         }
         if (KERNEL_SIZE_Y > 1) {
-          lineBuff1[KERNEL_SIZE_Y-2][col/VECT] = in1_pixel;
-          lineBuff2[KERNEL_SIZE_Y-2][col/VECT] = in2_pixel;
+          lineBuff1[KERNEL_SIZE_Y-2][colv] = in1_pixel;
+          lineBuff2[KERNEL_SIZE_Y-2][colv] = in2_pixel;
         }
         win1_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in1_pixel;
         win2_tmp[KERNEL_SIZE_Y-1][KERNEL_SIZE_X_V-1] = in2_pixel;
