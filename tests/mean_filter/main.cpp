@@ -25,8 +25,12 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+
 #include <sys/time.h>
 
 #include "hipacc.hpp"
@@ -131,7 +135,7 @@ void vertical_mean_filter(float *in, float *out, int d, int t, int width, int he
 }
 
 
-// Kernel description in HIPAcc
+// Kernel description in Hipacc
 class HorizontalMeanFilter : public Kernel<float> {
     private:
         Accessor<float> &input;
@@ -145,7 +149,7 @@ class HorizontalMeanFilter : public Kernel<float> {
             d(d),
             nt(nt),
             width(width)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
             float sum = 0.0f;
@@ -157,20 +161,20 @@ class HorizontalMeanFilter : public Kernel<float> {
 
             output() = sum/(float)d;
             #else
-            int t0 = getX();
+            int t0 = x();
 
             // first phase: convolution
             for (int k=0; k<d; ++k) {
-                sum += input.getPixel(k + t0*nt, input.getY());
+                sum += input.pixel_at(k + t0*nt, input.y());
             }
-            outputAtPixel(t0*nt, getY()) = sum/(float)d;
+            output_at(t0*nt, y()) = sum/(float)d;
 
             // second phase: rolling sum
             for (int dt=1; dt<min(nt, width-d-(t0*nt)); ++dt) {
                 int t = t0*nt + dt;
-                sum -= input.getPixel(t-1, input.getY());
-                sum += input.getPixel(t-1+d, input.getY());
-                outputAtPixel(t, getY()) = sum/(float)d;
+                sum -= input.pixel_at(t-1,   input.y());
+                sum += input.pixel_at(t-1+d, input.y());
+                output_at(t, y()) = sum/(float)d;
             }
             #endif
         }
@@ -189,7 +193,7 @@ class VerticalMeanFilter : public Kernel<float> {
             d(d),
             nt(nt),
             height(height)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
             float sum = 0;
@@ -201,20 +205,20 @@ class VerticalMeanFilter : public Kernel<float> {
 
             output() = sum/(float)d;
             #else
-            int t0 = getY();
+            int t0 = y();
 
             // first phase: convolution
             for (int k=0; k<d; ++k) {
-                sum += input.getPixel(input.getX(), k + t0*nt);
+                sum += input.pixel_at(input.x(), k + t0*nt);
             }
-            outputAtPixel(getX(), t0*nt) = sum/(float)d;
+            output_at(x(), t0*nt) = sum/(float)d;
 
             // second phase: rolling sum
             for (int dt=1; dt<min(nt, height-d-(t0*nt)); ++dt) {
                 int t = t0*nt + dt;
-                sum -= input.getPixel(input.getX(), t-1);
-                sum += input.getPixel(input.getX(), t-1+d);
-                outputAtPixel(getX(), t) = sum/(float)d;
+                sum -= input.pixel_at(input.x(), t-1);
+                sum += input.pixel_at(input.x(), t-1+d);
+                output_at(x(), t) = sum/(float)d;
             }
             #endif
         }
@@ -230,14 +234,9 @@ int main(int argc, const char **argv) {
     float timing = 0.0f;
 
     // host memory for image of width x height pixels
-    float *input = (float *)malloc(sizeof(float)*width*height);
-    float *reference_in = (float *)malloc(sizeof(float)*width*height);
-    float *reference_out = (float *)malloc(sizeof(float)*width*height);
-
-    // input and output image of width x height pixels
-    Image<float> IN(width, height);
-    Image<float> OUT(width, height);
-    Accessor<float> AccIN(IN);
+    float *input = new float[width*height];
+    float *reference_in = new float[width*height];
+    float *reference_out = new float[width*height];
 
     // initialize data
     #define DELTA 0.001f
@@ -248,6 +247,11 @@ int main(int argc, const char **argv) {
             reference_out[y*width + x] = (float) (3.12451);
         }
     }
+
+    // input and output image of width x height pixels
+    Image<float> IN(width, height, input);
+    Image<float> OUT(width, height);
+    Accessor<float> AccIN(IN);
 
 
     #ifdef HSCAN
@@ -266,28 +270,26 @@ int main(int argc, const char **argv) {
     VerticalMeanFilter VMF(VIS, AccIN, d, t, height);
     #endif
 
-    IN = input;
-
-    fprintf(stderr, "Calculating mean filter ...\n");
+    std::cerr << "Calculating mean filter ..." << std::endl;
 
     #ifdef HSCAN
     HMF.execute();
     #else
     VMF.execute();
     #endif
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
 
     // get pointer to result data
-    float *output = OUT.getData();
+    float *output = OUT.data();
 
     #ifdef HSCAN
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, ((width-d)*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << ((width-d)*height/timing)/1000 << " Mpixel/s" << std::endl;
     #else
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*(height-d)/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*(height-d)/timing)/1000 << " Mpixel/s" << std::endl;
     #endif
 
 
-    fprintf(stderr, "\nCalculating reference ...\n");
+    std::cerr << std::endl << "Calculating reference ..." << std::endl;
     time0 = time_ms();
 
     // calculate reference
@@ -300,60 +302,56 @@ int main(int argc, const char **argv) {
     time1 = time_ms();
     dt = time1 - time0;
     #ifdef HSCAN
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, ((width-d)*height/dt)/1000);
+    std::cerr << "Reference: " << timing << " ms, " << ((width-d)*height/timing)/1000 << " Mpixel/s" << std::endl;
     #else
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, (width*(height-d)/dt)/1000);
+    std::cerr << "Reference: " << timing << " ms, " << (width*(height-d)/timing)/1000 << " Mpixel/s" << std::endl;
     #endif
 
-    fprintf(stderr, "\nComparing results ...\n");
+    std::cerr << std::endl << "Comparing results ..." << std::endl;
     // compare results
+    float rms_err = 0;   // RMS error
     #ifdef HSCAN
-    float rms_err = 0.0f;   // RMS error
     for (int y=0; y<height; y++) {
         for (int x=0; x<width-d; x++) {
             float derr = reference_out[y*width + x] - output[y*width + x];
             rms_err += derr*derr;
 
             if (fabs(derr) > EPS) {
-                fprintf(stderr, "Test FAILED, at (%d,%d): %f vs. %f\n", x, y,
-                        reference_out[y*width + x], output[y*width + x]);
+                std::cerr << "Test FAILED, at (" << x << "," << y << "): "
+                          << reference_out[y*width + x] << " vs. "
+                          << output[y*width + x] << std::endl;
                 exit(EXIT_FAILURE);
             }
         }
     }
     rms_err = sqrtf(rms_err / (float((width-d)*height)));
-    // check RMS error
-    if (rms_err > EPS) {
-        fprintf(stderr, "Test FAILED: RMS error in image: %.3f > %.3f, aborting...\n", rms_err, EPS);
-        exit(EXIT_FAILURE);
-    }
     #else
-    float rms_err = 0.0f;   // RMS error
     for (int y=0; y<height-d; y++) {
         for (int x=0; x<width; x++) {
             float derr = reference_out[y*width + x] - output[y*width + x];
             rms_err += derr*derr;
 
             if (fabs(derr) > EPS) {
-                fprintf(stderr, "Test FAILED, at (%d,%d): %f vs. %f\n", x, y,
-                        reference_out[y*width + x], output[y*width + x]);
+                std::cerr << "Test FAILED, at (" << x << "," << y << "): "
+                          << reference_out[y*width + x] << " vs. "
+                          << output[y*width + x] << std::endl;
                 exit(EXIT_FAILURE);
             }
         }
     }
     rms_err = sqrtf(rms_err / (float(width*(height-d))));
+    #endif
     // check RMS error
     if (rms_err > EPS) {
-        fprintf(stderr, "Test FAILED: RMS error in image: %.3f > %.3f, aborting...\n", rms_err, EPS);
+        std::cerr << "Test FAILED: RMS error in image: " << rms_err << " > " << EPS << ", aborting..." << std::endl;
         exit(EXIT_FAILURE);
     }
-    #endif
-    fprintf(stderr, "Test PASSED\n");
+    std::cerr << "Test PASSED" << std::endl;
 
     // memory cleanup
-    free(input);
-    free(reference_in);
-    free(reference_out);
+    delete[] input;
+    delete[] reference_in;
+    delete[] reference_out;
 
     return EXIT_SUCCESS;
 }

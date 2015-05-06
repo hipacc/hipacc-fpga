@@ -45,19 +45,12 @@ std::string ASTTranslate::getInterpolationName(ASTContext &Ctx,
     HipaccKernel *Kernel, HipaccAccessor *Acc, border_variant bh_variant) {
   std::string name = "interpolate_";
 
-  switch (Acc->getInterpolation()) {
-    case InterpolateNO:
-    case InterpolateNN:
-      break;
-    case InterpolateLF:
-      name += "lf_";
-      break;
-    case InterpolateCF:
-      name += "cf_";
-      break;
-    case InterpolateL3:
-      name += "l3_";
-      break;
+  switch (Acc->getInterpolationMode()) {
+    case Interpolate::NO:
+    case Interpolate::NN:                break;
+    case Interpolate::LF: name += "lf_"; break;
+    case Interpolate::CF: name += "cf_"; break;
+    case Interpolate::L3: name += "l3_"; break;
   }
 
   switch (compilerOptions.getTargetLang()) {
@@ -106,7 +99,7 @@ std::string ASTTranslate::getInterpolationName(ASTContext &Ctx,
 // calculate index using nearest neighbor interpolation
 Expr *ASTTranslate::addNNInterpolationX(HipaccAccessor *Acc, Expr *idx_x) {
   // acc_scale_x * (gid_x - is_offset_x)
-  idx_x = removeISOffsetX(idx_x, Acc);
+  idx_x = removeISOffsetX(idx_x);
 
   return createBinaryOperator(Ctx, Acc->getScaleXDecl(), createParenExpr(Ctx,
         idx_x), BO_Mul, Ctx.FloatTy);
@@ -114,7 +107,7 @@ Expr *ASTTranslate::addNNInterpolationX(HipaccAccessor *Acc, Expr *idx_x) {
 Expr *ASTTranslate::addNNInterpolationY(HipaccAccessor *Acc, Expr *idx_y) {
   // acc_scale_y * (gid_y)
   if (compilerOptions.emitFilterscript()) {
-    idx_y = removeISOffsetY(idx_y, Acc);
+    idx_y = removeISOffsetY(idx_y);
   }
   return createBinaryOperator(Ctx, Acc->getScaleYDecl(), createParenExpr(Ctx,
         idx_y), BO_Mul, Ctx.FloatTy);
@@ -136,24 +129,15 @@ FunctionDecl *ASTTranslate::getInterpolationFunction(HipaccAccessor *Acc) {
   // for local operators only add support if the code variant requires this
   // for point, global, and user operators add boundary handling for all borders
   if (KernelClass->getKernelType()!=LocalOperator || bh_variant.borderVal) {
-    switch (Acc->getBoundaryHandling()) {
-      case BOUNDARY_UNDEFINED:
-        break;
-      case BOUNDARY_CLAMP:
-        name += "_clamp_";
-        break;
-      case BOUNDARY_REPEAT:
-        name += "_repeat_";
-        break;
-      case BOUNDARY_MIRROR:
-        name += "_mirror_";
-        break;
-      case BOUNDARY_CONSTANT:
-        name += "_constant_";
-        break;
+    switch (Acc->getBoundaryMode()) {
+      case Boundary::UNDEFINED:                      break;
+      case Boundary::CLAMP:    name += "_clamp_";    break;
+      case Boundary::REPEAT:   name += "_repeat_";   break;
+      case Boundary::MIRROR:   name += "_mirror_";   break;
+      case Boundary::CONSTANT: name += "_constant_"; break;
     }
 
-    if (Acc->getBoundaryHandling()!=BOUNDARY_UNDEFINED) {
+    if (Acc->getBoundaryMode() != Boundary::UNDEFINED) {
       if (KernelClass->getKernelType()!=LocalOperator) {
         name+= "tblr";
       } else {
@@ -183,7 +167,7 @@ FunctionDecl *ASTTranslate::getInterpolationFunction(HipaccAccessor *Acc) {
   if (!interpolateDecl) {
     std::string funcTypeSpecifier = typeSpecifier + typeSpecifier + "*C"
       + "iCfCfCiCiCiCiC";
-    if (bh_variant.borderVal && Acc->getBoundaryHandling()==BOUNDARY_CONSTANT) {
+    if (bh_variant.borderVal && Acc->getBoundaryMode() == Boundary::CONSTANT) {
       funcTypeSpecifier += typeSpecifier + "C";
     }
 
@@ -234,8 +218,7 @@ Expr *ASTTranslate::addInterpolationCall(DeclRefExpr *LHS, HipaccAccessor
     args.push_back(createIntegerLiteral(Ctx, 0));
   }
   // const val
-  if (Acc->getBoundaryHandling()==BOUNDARY_CONSTANT &&
-      bh_variant.borderVal!=0) {
+  if (Acc->getBoundaryMode() == Boundary::CONSTANT && bh_variant.borderVal!=0) {
     args.push_back(Acc->getConstExpr());
   }
 

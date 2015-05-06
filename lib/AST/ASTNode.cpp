@@ -35,6 +35,7 @@
 #include "hipacc/AST/ASTNode.h"
 #include "hipacc/DSL/CompilerKnownClasses.h"
 
+#include <sstream>
 
 namespace clang {
 namespace hipacc {

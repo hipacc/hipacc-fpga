@@ -45,10 +45,6 @@ class CompilerKnownClasses {
     CXXRecordDecl *BoundaryCondition;
     CXXRecordDecl *AccessorBase;
     CXXRecordDecl *Accessor;
-    CXXRecordDecl *AccessorNN;
-    CXXRecordDecl *AccessorLF;
-    CXXRecordDecl *AccessorCF;
-    CXXRecordDecl *AccessorL3;
     CXXRecordDecl *IterationSpaceBase;
     CXXRecordDecl *IterationSpace;
     CXXRecordDecl *ElementIterator;
@@ -65,10 +61,6 @@ class CompilerKnownClasses {
       BoundaryCondition(nullptr),
       AccessorBase(nullptr),
       Accessor(nullptr),
-      AccessorNN(nullptr),
-      AccessorLF(nullptr),
-      AccessorCF(nullptr),
-      AccessorL3(nullptr),
       IterationSpaceBase(nullptr),
       IterationSpace(nullptr),
       ElementIterator(nullptr),
@@ -103,8 +95,7 @@ class CompilerKnownClasses {
 
       // class<type> ...
       if (QT->getTypeClass() == Type::TemplateSpecialization) {
-        const TemplateSpecializationType *TST =
-          dyn_cast<TemplateSpecializationType>(QT);
+        auto TST = dyn_cast<TemplateSpecializationType>(QT);
 
         ClassTemplateDecl *reference = CRD->getDescribedClassTemplate();
         ClassTemplateDecl *current;
@@ -137,8 +128,7 @@ class CompilerKnownClasses {
       // class<type> ...
       assert(QT->getTypeClass() == Type::TemplateSpecialization &&
           "instance of template class expected");
-      const TemplateSpecializationType *TST =
-        dyn_cast<TemplateSpecializationType>(QT);
+      auto TST = dyn_cast<TemplateSpecializationType>(QT);
 
       return TST->getArg(0).getAsType();
     }

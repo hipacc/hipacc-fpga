@@ -25,9 +25,9 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-//===--- CreateHostStrings.h - OpenCL/CUDA helper for the Rewriter --------===//
+//===--- CreateHostStrings.h - Runtime string creator for the Rewriter ----===//
 //
-// This file implements functionality for printing OpenCL/CUDA host code to
+// This file implements functionality for printing HIPAcc runtime code to
 // strings.
 //
 //===----------------------------------------------------------------------===//
@@ -35,10 +35,9 @@
 #ifndef _CREATE_HOST_STRINGS_H_
 #define _CREATE_HOST_STRINGS_H_
 
-#include "hipacc/Config/CompilerOptions.h"
-#include "hipacc/Device/TargetDescription.h"
 #include "hipacc/DSL/ClassRepresentation.h"
 
+#include <string>
 
 namespace clang {
 namespace hipacc {
@@ -77,10 +76,9 @@ class CreateHostStrings {
     void addReductionArgument(HipaccKernel *K, std::string device_name,
         std::string host_name, std::string &resultStr);
     void writeReductionDeclaration(HipaccKernel *K, std::string &resultStr);
-    void writeMemoryAllocation(std::string memName, std::string type,
-        std::string width, std::string height, std::string &resultStr);
-    void writeMemoryAllocationConstant(std::string memName, std::string type,
-        std::string width, std::string height, std::string &resultStr);
+    void writeMemoryAllocation(HipaccImage *Img, std::string width, std::string
+        height, std::string host, std::string &resultStr);
+    void writeMemoryAllocationConstant(HipaccMask *Buf, std::string &resultStr);
     void writeMemoryTransfer(HipaccImage *Img, std::string mem,
         MemoryTransferDirection direction, std::string &resultStr);
     void writeMemoryTransfer(HipaccPyramid *Pyr, std::string idx,
@@ -99,8 +97,8 @@ class CreateHostStrings {
     void writeReduceCall(HipaccKernelClass *KC, HipaccKernel *K, std::string
         &resultStr);
     void writeInterpolationDefinition(HipaccKernel *K, HipaccAccessor *Acc,
-        std::string function_name, std::string type_suffix, InterpolationMode
-        ip_mode, BoundaryMode bh_mode, std::string &resultStr);
+        std::string function_name, std::string type_suffix, Interpolate ip_mode,
+        Boundary bh_mode, std::string &resultStr);
     void writePyramidAllocation(std::string pyrName, std::string type,
         std::string img, std::string depth, std::string &resultStr);
 };

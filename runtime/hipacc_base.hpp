@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <list>
 #include <vector>
 #include <algorithm>
 #if defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L
@@ -47,14 +48,14 @@
 
 extern float total_time;
 extern float last_gpu_timing;
-float hipaccGetLastKernelTiming();
+float hipacc_last_kernel_timing();
 unsigned int nextPow2(unsigned int x);
 
 #ifndef EXCLUDE_IMPL
 float total_time = 0.0f;
 float last_gpu_timing = 0.0f;
 // get GPU timing of last executed Kernel in ms
-float hipaccGetLastKernelTiming() {
+float hipacc_last_kernel_timing() {
     return last_gpu_timing;
 }
 
@@ -88,20 +89,19 @@ enum hipaccMemoryType {
 
 class HipaccImage {
     public:
-        int32_t width, height;
-        int32_t stride, alignment;
-        int32_t pixel_size;
+        size_t width, height;
+        size_t stride, alignment;
+        size_t pixel_size;
         void *mem;
         hipaccMemoryType mem_type;
         char *host;
         uint32_t *refcount;
 
     public:
-        HipaccImage(int32_t width, int32_t height, int32_t stride, int32_t
-                alignment, int32_t pixel_size, void *mem, hipaccMemoryType
-                mem_type=Global) :
-            width(width),
-            height(height),
+        HipaccImage(size_t width, size_t height, size_t stride,
+                    size_t alignment, size_t pixel_size, void *mem,
+                    hipaccMemoryType mem_type=Global) :
+            width(width), height(height),
             stride(stride),
             alignment(alignment),
             pixel_size(pixel_size),
@@ -137,7 +137,7 @@ class HipaccImage {
             }
         }
 
-        bool operator==(HipaccImage &other) const {
+        bool operator==(HipaccImage other) const {
             return mem==other.mem;
         }
 };
@@ -145,11 +145,11 @@ class HipaccImage {
 class HipaccAccessor {
     public:
         HipaccImage &img;
-        int32_t width, height;
+        size_t width, height;
         int32_t offset_x, offset_y;
 
     public:
-        HipaccAccessor(HipaccImage &img, int32_t width, int32_t height, int32_t offset_x=0, int32_t offset_y=0) :
+        HipaccAccessor(HipaccImage &img, size_t width, size_t height, int32_t offset_x=0, int32_t offset_y=0) :
             img(img),
             width(width),
             height(height),
@@ -167,16 +167,21 @@ class HipaccAccessor {
 
 class HipaccContextBase {
     protected:
-        std::vector<HipaccImage*> imgs;
+        std::list<HipaccImage> imgs;
 
         HipaccContextBase() {};
         HipaccContextBase(HipaccContextBase const &);
         void operator=(HipaccContextBase const &);
 
     public:
-        void add_image(HipaccImage &img) { imgs.push_back(&img); }
+        void add_image(HipaccImage &img) { imgs.push_back(img); }
         void del_image(HipaccImage &img) {
-            imgs.erase(std::remove(imgs.begin(), imgs.end(), &img), imgs.end());
+            for (std::list<HipaccImage>::iterator i=imgs.begin(); i!=imgs.end(); ++i) {
+                if (*i == img) {
+                    imgs.erase(i);
+                    return;
+                }
+            }
         }
 };
 
@@ -256,19 +261,19 @@ class HipaccPyramid {
       return imgs_.at(level_+relative);
     }
 
-    int getDepth() {
+    int depth() {
       return depth_;
     }
 
-    int getLevel() {
+    int level() {
       return level_;
     }
 
-    bool isTopLevel() {
+    bool is_top_level() {
       return level_ == 0;
     }
 
-    bool isBottomLevel() {
+    bool is_bottom_level() {
       return level_ == depth_-1;
     }
 
@@ -296,23 +301,23 @@ class HipaccPyramid {
 
 // forward declarations
 template<typename T>
-HipaccImage hipaccCreatePyramidImage(HipaccImage &base, int width, int height);
+HipaccImage hipaccCreatePyramidImage(HipaccImage &base, size_t width, size_t height);
 void hipaccReleaseMemory(HipaccImage &Img);
 
 template<typename data_t>
 HipaccPyramid hipaccCreatePyramid(HipaccImage &img, size_t depth) {
-  HipaccPyramid p(depth);
-  p.add(img);
+    HipaccPyramid p(depth);
+    p.add(img);
 
-  int height = img.height/2;
-  int width = img.width/2;
-  for (size_t i=1; i<depth; ++i) {
-    assert(width * height > 0 && "Pyramid stages too deep for image size");
-    p.add(hipaccCreatePyramidImage<data_t>(img, width, height));
-    height /= 2;
-    width /= 2;
-  }
-  return p;
+    size_t width  = img.width  / 2;
+    size_t height = img.height / 2;
+    for (size_t i=1; i<depth; ++i) {
+        assert(width * height > 0 && "Pyramid stages too deep for image size");
+        p.add(hipaccCreatePyramidImage<data_t>(img, width, height));
+        width  /= 2;
+        height /= 2;
+    }
+    return p;
 }
 
 
@@ -503,7 +508,7 @@ void hipaccTraverse(unsigned int loop=1,
 
   std::vector<HipaccPyramid*> pyrs = hipaccPyramids.back();
 
-  if (!pyrs.at(0)->isBottomLevel()) {
+  if (!pyrs.at(0)->is_bottom_level()) {
     for (auto it = pyrs.begin(); it != pyrs.end(); ++it) {
       ++((*it)->level_);
     }

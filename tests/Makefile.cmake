@@ -1,23 +1,20 @@
 # Configuration
 HIPACC_DIR     ?= @CMAKE_INSTALL_PREFIX@
 COMPILER       ?= $(HIPACC_DIR)/bin/hipacc
-COMMON_INC     ?= -I@OPENCV_INCLUDE_DIR@ \
-                  -I$(TEST_CASE) \
-                  -I/usr/include
-COMPILER_INC   ?= -std=c++11 \
-                  -resource-dir `@CLANG_EXECUTABLE@ -print-file-name=` \
+COMMON_INC     ?= -I@OPENCV_INCLUDE_DIRS@ \
+                  -I$(TEST_CASE)
+COMPILER_INC   ?= -std=c++11 $(COMMON_INC) \
                   -I`@CLANG_EXECUTABLE@ -print-file-name=include` \
                   -I`@LLVM_CONFIG_EXECUTABLE@ --includedir` \
                   -I`@LLVM_CONFIG_EXECUTABLE@ --includedir`/c++/v1 \
-                  -I$(HIPACC_DIR)/include/dsl \
-                  $(COMMON_INC)
+                  -I$(HIPACC_DIR)/include/dsl
 TEST_CASE      ?= ./tests/opencv_blur_8uc1
 MYFLAGS        ?= -DWIDTH=2048 -DHEIGHT=2048 -DSIZE_X=5 -DSIZE_Y=5
 NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" \
                   -Xptxas -v @NVCC_COMP@ #-keep
 OFLAGS          = -O3
 
-CC_CC           = @CMAKE_CXX_COMPILER@ -std=c++11 -Wall -Wunused
+CC_CC           = @CMAKE_CXX_COMPILER@ -std=c++11 ${CMAKE_THREAD_LIBS_INIT} -Wall -Wunused
 CU_CC           = @NVCC@ $(NVCC_FLAGS) -Xcompiler -Wall -Xcompiler -Wunused
 CC_LINK         = -lm -ldl -lstdc++ @TIME_LINK@
 CU_LINK         = $(CC_LINK) @CUDA_LINK@
@@ -91,15 +88,15 @@ run:
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC)
 
 cpu:
-	@echo 'Executing HIPAcc Compiler for C++:'
+	@echo 'Executing Hipacc Compiler for C++:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-cpu $(HIPACC_OPTS) -o main.cc
-	@echo 'Compiling C++ file using g++:'
+	@echo 'Compiling C++ file using c++:'
 	$(CC_CC) -I$(HIPACC_DIR)/include $(COMMON_INC) $(MYFLAGS) $(OFLAGS) -o main_cpu main.cc $(CC_LINK)
 	@echo 'Executing C++ binary'
 	./main_cpu
 
 cuda:
-	@echo 'Executing HIPAcc Compiler for CUDA:'
+	@echo 'Executing Hipacc Compiler for CUDA:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-cuda $(HIPACC_OPTS) -o main.cu
 	@echo 'Compiling CUDA file using nvcc:'
 	$(CU_CC) -I$(HIPACC_DIR)/include $(COMMON_INC) $(MYFLAGS) $(OFLAGS) -o main_cuda main.cu $(CU_LINK)
@@ -107,9 +104,9 @@ cuda:
 	./main_cuda
 
 opencl-acc opencl-cpu opencl-gpu:
-	@echo 'Executing HIPAcc Compiler for OpenCL:'
+	@echo 'Executing Hipacc Compiler for OpenCL:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-$@ $(HIPACC_OPTS) -o main.cc
-	@echo 'Compiling OpenCL file using g++:'
+	@echo 'Compiling OpenCL file using c++:'
 	$(CL_CC) -I$(HIPACC_DIR)/include $(COMMON_INC) $(MYFLAGS) $(OFLAGS) -o main_opencl main.cc $(CL_LINK)
 ifneq ($(HIPACC_TARGET),Midgard)
 	@echo 'Executing OpenCL binary'
@@ -118,7 +115,7 @@ endif
 
 filterscript renderscript:
 	rm -f *.rs *.fs
-	@echo 'Executing HIPAcc Compiler for $@:'
+	@echo 'Executing Hipacc Compiler for $@:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-$@ $(HIPACC_OPTS) -o main.cc
 	mkdir -p build_$@
 ifeq ($(call ifge, $(RS_TARGET_API), 19), true) # build using ndk-build
@@ -126,7 +123,7 @@ ifeq ($(call ifge, $(RS_TARGET_API), 19), true) # build using ndk-build
 	mkdir -p build_$@/jni
 	cp @CMAKE_CURRENT_SOURCE_DIR@/tests/Android.mk.cmake build_$@/jni/Android.mk
 	cp main.cc *.$(subst renderscript,rs,$(subst filterscript,fs,$@)) build_$@
-	@echo 'Compiling $@ file using llvm-rs-cc and g++:'
+	@echo 'Compiling $@ file using llvm-rs-cc and c++:'
 	export CASE_FLAGS="$(MYFLAGS)"; \
 	export RS_TARGET_API=$(RS_TARGET_API); \
 	export HIPACC_INCLUDE=$(HIPACC_DIR)/include; \
@@ -135,7 +132,7 @@ ifeq ($(call ifge, $(RS_TARGET_API), 19), true) # build using ndk-build
 else
 	@echo 'Generating build system current test case:'
 	cd build_$@; cmake .. -DANDROID_SOURCE_DIR=@ANDROID_SOURCE_DIR@ -DTARGET_NAME=@TARGET_NAME@ -DHOST_TYPE=@HOST_TYPE@ -DNDK_TOOLCHAIN_DIR=@NDK_TOOLCHAIN_DIR@ -DRS_TARGET_API=$(RS_TARGET_API) $(MYFLAGS)
-	@echo 'Compiling $@ file using llvm-rs-cc and g++:'
+	@echo 'Compiling $@ file using llvm-rs-cc and c++:'
 	cd build_$@; make
 	cp build_$@/main_renderscript ./main_$@
 endif

@@ -25,7 +25,7 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-//===--- ASTTranslate.h - C to CL Translation of the AST ------------------===//
+//===--- ASTTranslate.h - Translation of the AST --------------------------===//
 //
 // This file implements translation of statements and expressions.
 //
@@ -94,17 +94,12 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     HipaccMask *convMask;
     HipaccMask *vivadoWindow;
     DeclRefExpr *convTmp;
-    ConvolutionMode convMode;
+    Reduce convMode;
     int convIdxX, convIdxY;
-    enum ConvolveMethod {
-      Convolve,
-      Reduce,
-      Iterate
-    };
 
     SmallVector<HipaccMask *, 4> redDomains;
     SmallVector<DeclRefExpr *, 4> redTmps;
-    SmallVector<ConvolutionMode, 4> redModes;
+    SmallVector<Reduce, 4> redModes;
     SmallVector<int, 4> redIdxX, redIdxY;
     SmallVector<LabelDecl *, 4> breakLabels;
     SmallVector<bool, 4> containsBreak;
@@ -250,9 +245,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
         *cond);
 
     // Convolution.cpp
-    Stmt *getConvolutionStmt(ConvolutionMode mode, DeclRefExpr *tmp_var, Expr
-        *ret_val);
-    Expr *getInitExpr(ConvolutionMode mode, QualType QT);
+    Stmt *getConvolutionStmt(Reduce mode, DeclRefExpr *tmp_var, Expr *ret_val);
+    Expr *getInitExpr(Reduce mode, QualType QT);
     Stmt *addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var, Stmt
         *stmt);
     Stmt *addBreakCheck(DeclRefExpr *break_var, Stmt *stmt);
@@ -263,10 +257,10 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *addNNInterpolationX(HipaccAccessor *Acc, Expr *idx_x);
     Expr *addNNInterpolationY(HipaccAccessor *Acc, Expr *idx_y);
     FunctionDecl *getInterpolationFunction(HipaccAccessor *Acc);
-    FunctionDecl *getTextureFunction(HipaccAccessor *Acc, MemoryAccess memAcc);
-    FunctionDecl *getImageFunction(HipaccAccessor *Acc, MemoryAccess memAcc);
+    FunctionDecl *getTextureFunction(HipaccAccessor *Acc, MemoryAccess mem_acc);
+    FunctionDecl *getImageFunction(HipaccAccessor *Acc, MemoryAccess mem_acc);
     FunctionDecl *getAllocationFunction(const BuiltinType *BT, bool isVecType,
-                                        MemoryAccess memAcc);
+                                        MemoryAccess mem_acc);
     FunctionDecl *getConvertFunction(QualType QT, bool isVecType);
     FunctionDecl *getVivadoReturnConvertFunction(std::string name);
     FunctionDecl *getWindowFunction(MemoryAccess memAcc);
@@ -277,20 +271,20 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *addLocalOffset(Expr *idx, Expr *local_offset);
     Expr *addGlobalOffsetX(Expr *idx_x, HipaccAccessor *Acc);
     Expr *addGlobalOffsetY(Expr *idx_y, HipaccAccessor *Acc);
-    Expr *removeISOffsetX(Expr *idx_x, HipaccAccessor *Acc);
-    Expr *removeISOffsetY(Expr *idx_y, HipaccAccessor *Acc);
-    Expr *accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc, MemoryAccess memAcc,
+    Expr *removeISOffsetX(Expr *idx_x);
+    Expr *removeISOffsetY(Expr *idx_y);
+    Expr *accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc, MemoryAccess mem_acc,
         Expr *offset_x=nullptr, Expr *offset_y=nullptr);
     Expr *accessMem2DAt(DeclRefExpr *LHS, Expr *idx_x, Expr *idx_y);
     Expr *accessMemArrAt(DeclRefExpr *LHS, Expr *stride, Expr *idx_x, Expr
         *idx_y);
-    Expr *accessMemAllocAt(DeclRefExpr *LHS, MemoryAccess memAcc,
+    Expr *accessMemAllocAt(DeclRefExpr *LHS, MemoryAccess mem_acc,
                            Expr *idx_x, Expr *idx_y);
     Expr *accessMemAllocPtr(DeclRefExpr *LHS);
     Expr *accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc, MemoryAccess
-        memAcc, Expr *idx_x, Expr *idx_y);
+        mem_acc, Expr *idx_x, Expr *idx_y);
     Expr *accessMemImgAt(DeclRefExpr *LHS, HipaccAccessor *Acc, MemoryAccess
-        memAcc, Expr *idx_x, Expr *idx_y);
+        mem_acc, Expr *idx_x, Expr *idx_y);
     Expr *accessMemShared(DeclRefExpr *LHS, Expr *offset_x=nullptr, Expr
         *offset_y=nullptr);
     Expr *accessMemSharedAt(DeclRefExpr *LHS, Expr *idx_x, Expr *idx_y);
@@ -357,19 +351,16 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       lidYRef(nullptr),
       gidYRef(nullptr) {
         // get 'hipacc' namespace context for lookups
-        for (auto Lookup =
-            Ctx.getTranslationUnitDecl()->lookup(&Ctx.Idents.get("hipacc"));
-            !Lookup.empty(); Lookup=Lookup.slice(1)) {
-          hipaccNS = cast_or_null<NamespaceDecl>(Lookup.front());
-          if (hipaccNS) break;
+        auto hipacc_ident = &Ctx.Idents.get("hipacc");
+        for (auto *decl : Ctx.getTranslationUnitDecl()->lookup(hipacc_ident)) {
+          if ((hipaccNS = cast_or_null<NamespaceDecl>(decl))) break;
         }
         assert(hipaccNS && "could not lookup 'hipacc' namespace");
 
-        // get 'hipacc::' namespace context for lookups
-        for (auto Lookup = hipaccNS->lookup(&Ctx.Idents.get("math"));
-            !Lookup.empty(); Lookup=Lookup.slice(1)) {
-          hipaccMathNS = cast_or_null<NamespaceDecl>(Lookup.front());
-          if (hipaccMathNS) break;
+        // get 'hipacc::math' namespace context for lookups
+        auto math_ident = &Ctx.Idents.get("math");
+        for (auto *decl : hipaccNS->lookup(math_ident)) {
+          if ((hipaccMathNS = cast_or_null<NamespaceDecl>(decl))) break;
         }
         assert(hipaccMathNS && "could not lookup 'hipacc::math' namespace");
 
@@ -553,6 +544,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     HIPACC_UNSUPPORTED_EXPR( FunctionParmPackExpr )
     Expr *VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E);
     Expr *VisitLambdaExpr(LambdaExpr *E);
+    HIPACC_UNSUPPORTED_EXPR( CXXFoldExpr )
 
     // Obj-C Expressions
     HIPACC_UNSUPPORTED_EXPR( ObjCStringLiteral )
@@ -581,6 +573,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *VisitConvertVectorExpr(ConvertVectorExpr *E);
     HIPACC_UNSUPPORTED_EXPR( BlockExpr )
     HIPACC_UNSUPPORTED_EXPR( OpaqueValueExpr )
+    HIPACC_UNSUPPORTED_EXPR( TypoExpr )
 
     // Microsoft Extensions
     HIPACC_UNSUPPORTED_EXPR( MSPropertyRefExpr )
@@ -596,21 +589,28 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
 
     // OpenMP Directives
     HIPACC_UNSUPPORTED_STMT( OMPExecutableDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPLoopDirective )
     HIPACC_UNSUPPORTED_STMT( OMPParallelDirective )
     HIPACC_UNSUPPORTED_STMT( OMPSimdDirective )
     HIPACC_UNSUPPORTED_STMT( OMPForDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPForSimdDirective )
     HIPACC_UNSUPPORTED_STMT( OMPSectionsDirective )
     HIPACC_UNSUPPORTED_STMT( OMPSectionDirective )
     HIPACC_UNSUPPORTED_STMT( OMPSingleDirective )
     HIPACC_UNSUPPORTED_STMT( OMPMasterDirective )
     HIPACC_UNSUPPORTED_STMT( OMPCriticalDirective )
     HIPACC_UNSUPPORTED_STMT( OMPParallelForDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPParallelForSimdDirective )
     HIPACC_UNSUPPORTED_STMT( OMPParallelSectionsDirective )
     HIPACC_UNSUPPORTED_STMT( OMPTaskDirective )
     HIPACC_UNSUPPORTED_STMT( OMPTaskyieldDirective )
     HIPACC_UNSUPPORTED_STMT( OMPBarrierDirective )
     HIPACC_UNSUPPORTED_STMT( OMPTaskwaitDirective )
     HIPACC_UNSUPPORTED_STMT( OMPFlushDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPOrderedDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPAtomicDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTeamsDirective )
 };
 } // end namespace hipacc
 } // end namespace clang

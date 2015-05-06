@@ -67,10 +67,10 @@ class LaplaceFilter : public Kernel<uchar4> {
             Input(Input),
             cDom(cDom),
             cMask(cMask)
-        { addAccessor(&Input); }
+        { add_accessor(&Input); }
 
         void kernel() {
-            int4 sum = reduce(cDom, HipaccSUM, [&] () -> int4 {
+            int4 sum = reduce(cDom, Reduce::SUM, [&] () -> int4 {
                     return cMask(cDom) * convert_int4(Input(cDom));
                     });
             sum = min(sum, 255);
@@ -165,14 +165,14 @@ int main(int argc, const char **argv) {
 
 
     // BOUNDARY_CLAMP
-    BoundaryCondition<uchar4> BcInClamp(IN, M, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar4> BcInClamp(IN, M, Boundary::CLAMP);
     Accessor<uchar4> AccInClamp(BcInClamp);
     LaplaceFilter LFC(IsOut, AccInClamp, D, M);
 
     LFC.execute();
 
     // get results
-    host_out = OUT.getData();
+    host_out = OUT.data();
 
 #ifdef TEST
     int i,j;

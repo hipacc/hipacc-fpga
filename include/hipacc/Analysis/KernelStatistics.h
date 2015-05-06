@@ -38,14 +38,10 @@
 #ifndef _KERNELSTATISTICS_H_
 #define _KERNELSTATISTICS_H_
 
-#include <clang/AST/ASTContext.h>
-#include <clang/AST/StmtVisitor.h>
-#include <clang/Analysis/AnalysisContext.h>
-#include <clang/Analysis/Analyses/PostOrderCFGView.h>
-#include <clang/Basic/Diagnostic.h>
-
 #include "hipacc/Device/TargetDescription.h"
 #include "hipacc/DSL/CompilerKnownClasses.h"
+
+#include <clang/Analysis/AnalysisContext.h>
 
 namespace clang {
 namespace hipacc {
@@ -58,7 +54,7 @@ enum MemoryAccess {
 };
 
 // stride analysis of image accesses
-enum MemoryAccessDetail {
+enum MemoryPattern {
   NO_STRIDE   = 0x1,
   STRIDE_X    = 0x2,
   STRIDE_Y    = 0x4,
@@ -80,20 +76,21 @@ class KernelStatistics : public ManagedAnalysis {
 
   public:
     MemoryAccess getMemAccess(const FieldDecl *FD);
-    MemoryAccessDetail getMemAccessDetail(const FieldDecl *FD);
-    MemoryAccessDetail getOutAccessDetail();
+    MemoryPattern getMemPattern(const FieldDecl *FD);
     VectorInfo getVectorizeInfo(const VarDecl *VD);
     KernelType getKernelType();
 
     virtual ~KernelStatistics();
 
     static KernelStatistics *computeKernelStatistics(AnalysisDeclContext
-        &analysisContext, StringRef name, CompilerKnownClasses
-        &compilerClasses);
+        &analysisContext, StringRef name, FieldDecl *output_image,
+        CompilerKnownClasses &compilerClasses);
 
-    static KernelStatistics *create(AnalysisDeclContext &analysisContext,
-        StringRef name, CompilerKnownClasses &compilerClasses) {
-      return computeKernelStatistics(analysisContext, name, compilerClasses);
+    static KernelStatistics *create(FunctionDecl *fun, StringRef name, FieldDecl
+        *output_image, CompilerKnownClasses &compilerClasses) {
+      AnalysisDeclContext AC(/* AnalysisDeclContextManager */ 0, fun);
+      KernelStatistics::setAnalysisOptions(AC);
+      return computeKernelStatistics(AC, name, output_image, compilerClasses);
     }
 
     static void setAnalysisOptions(AnalysisDeclContext &AC) {

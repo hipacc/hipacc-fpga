@@ -34,18 +34,16 @@
 #ifndef _CLASS_REPRESENTATION_H_
 #define _CLASS_REPRESENTATION_H_
 
-#include <clang/AST/Decl.h>
-#include <clang/AST/DeclCXX.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Format.h>
-
-#include <map>
-#include <sstream>
-#include <algorithm>
-
 #include "hipacc/Analysis/KernelStatistics.h"
 #include "hipacc/Config/CompilerOptions.h"
 #include "hipacc/Device/TargetDescription.h"
+
+#include <clang/AST/ASTContext.h>
+
+#include <locale>
+#include <map>
+#include <set>
+#include <string>
 
 namespace clang {
 namespace hipacc {
@@ -61,30 +59,30 @@ enum MemoryTransferDirection {
 };
 
 // boundary handling modes for images
-enum BoundaryMode {
-  BOUNDARY_UNDEFINED,
-  BOUNDARY_CLAMP,
-  BOUNDARY_REPEAT,
-  BOUNDARY_MIRROR,
-  BOUNDARY_CONSTANT
+enum class Boundary : uint8_t {
+  UNDEFINED = 0,
+  CLAMP,
+  REPEAT,
+  MIRROR,
+  CONSTANT
 };
 
 // reduction modes for convolutions
-enum ConvolutionMode {
-  HipaccSUM,
-  HipaccMIN,
-  HipaccMAX,
-  HipaccPROD,
-  HipaccMEDIAN
+enum class Reduce : uint8_t {
+  SUM = 0,
+  MIN,
+  MAX,
+  PROD,
+  MEDIAN
 };
 
 // interpolation modes for accessors
-enum InterpolationMode {
-  InterpolateNO,
-  InterpolateNN,
-  InterpolateLF,
-  InterpolateCF,
-  InterpolateL3
+enum class Interpolate : uint8_t {
+  NO = 0,
+  NN,
+  LF,
+  CF,
+  L3
 };
 
 
@@ -101,18 +99,12 @@ class HipaccSize {
     {}
 
     void setSizeX(unsigned x) {
-      std::string Str;
-      llvm::raw_string_ostream SS(Str);
-      SS << x;
-      size_x_str = SS.str();
       size_x = x;
+      size_x_str = std::to_string(x);
     }
     void setSizeY(unsigned y) {
-      std::string Str;
-      llvm::raw_string_ostream SS(Str);
-      SS << y;
-      size_y_str = SS.str();
       size_y = y;
+      size_y_str = std::to_string(y);
     }
     unsigned getSizeX() { return size_x; }
     unsigned getSizeY() { return size_y; }
@@ -174,19 +166,19 @@ class HipaccPyramid : public HipaccImage {
 
 class HipaccBoundaryCondition : public HipaccSize {
   private:
-    HipaccImage *img;
     VarDecl *VD;
-    BoundaryMode boundaryHandling;
+    HipaccImage *img;
+    Boundary mode;
     std::string pyr_idx_str;
     bool is_pyramid;
     Expr *constExpr;
 
   public:
-    HipaccBoundaryCondition(HipaccImage *img, VarDecl *VD) :
+    HipaccBoundaryCondition(VarDecl *VD, HipaccImage *img) :
       HipaccSize(),
-      img(img),
       VD(VD),
-      boundaryHandling(BOUNDARY_UNDEFINED),
+      img(img),
+      mode(Boundary::UNDEFINED),
       pyr_idx_str(),
       is_pyramid(false),
       constExpr(nullptr)
@@ -196,11 +188,11 @@ class HipaccBoundaryCondition : public HipaccSize {
       is_pyramid = true;
       pyr_idx_str = idx;
     }
-    void setBoundaryHandling(BoundaryMode m) { boundaryHandling = m; }
+    void setBoundaryMode(Boundary m) { mode = m; }
     void setConstVal(APValue &val, ASTContext &Ctx);
     VarDecl *getDecl() { return VD; }
     HipaccImage *getImage() { return img; }
-    BoundaryMode getBoundaryHandling() { return boundaryHandling; }
+    Boundary getBoundaryMode() { return mode; }
     std::string getPyramidIndex() { return pyr_idx_str; }
     bool isPyramid() { return is_pyramid; }
     Expr *getConstExpr() { return constExpr; }
@@ -209,26 +201,29 @@ class HipaccBoundaryCondition : public HipaccSize {
 
 class HipaccAccessor {
   private:
-    HipaccBoundaryCondition *bc;
-    InterpolationMode interpolation;
     VarDecl *VD;
+    HipaccBoundaryCondition *bc;
+    Interpolate mode;
     std::string name;
     bool crop;
     // kernel parameter name for width, height, and stride
     DeclRefExpr *widthDecl, *heightDecl, *strideDecl, *scaleXDecl, *scaleYDecl;
     DeclRefExpr *offsetXDecl, *offsetYDecl;
 
+  protected:
+    bool iterspace;
+
   public:
-    HipaccAccessor(HipaccBoundaryCondition *bc, InterpolationMode mode, VarDecl
-        *VD) :
-      bc(bc),
-      interpolation(mode),
+    HipaccAccessor(VarDecl *VD, HipaccBoundaryCondition *bc, Interpolate mode, bool crop) :
       VD(VD),
+      bc(bc),
+      mode(mode),
       name(VD->getNameAsString()),
-      crop(true),
+      crop(crop),
       widthDecl(nullptr), heightDecl(nullptr), strideDecl(nullptr),
       scaleXDecl(nullptr), scaleYDecl(nullptr),
-      offsetXDecl(nullptr), offsetYDecl(nullptr)
+      offsetXDecl(nullptr), offsetYDecl(nullptr),
+      iterspace(false)
     {}
 
     void setWidthDecl(DeclRefExpr *width) { widthDecl = width; }
@@ -238,11 +233,10 @@ class HipaccAccessor {
     void setScaleYDecl(DeclRefExpr *scale) { scaleYDecl = scale; }
     void setOffsetXDecl(DeclRefExpr *ox) { offsetXDecl = ox; }
     void setOffsetYDecl(DeclRefExpr *oy) { offsetYDecl = oy; }
-    void setNoCrop() { crop = false; }
     VarDecl *getDecl() { return VD; }
     const std::string &getName() const { return name; }
     HipaccBoundaryCondition *getBC() { return bc; }
-    InterpolationMode getInterpolation() { return interpolation; }
+    Interpolate getInterpolationMode() { return mode; }
     HipaccImage *getImage() { return bc->getImage(); }
     unsigned getSizeX() { return bc->getSizeX(); }
     unsigned getSizeY() { return bc->getSizeY(); }
@@ -260,47 +254,33 @@ class HipaccAccessor {
       scaleXDecl = scaleYDecl = offsetXDecl = offsetYDecl = nullptr;
     }
     bool isCrop() { return crop; }
-    BoundaryMode getBoundaryHandling() {
-      return bc->getBoundaryHandling();
+    Boundary getBoundaryMode() {
+      return bc->getBoundaryMode();
     }
     Expr *getConstExpr() { return bc->getConstExpr(); }
+    bool isIterationSpace() { return iterspace; }
 };
 
 
-class HipaccIterationSpace {
+class HipaccIterationSpace : public HipaccAccessor {
   private:
     HipaccImage *img;
-    VarDecl *VD;
-    std::string name;
-    bool crop;
-    // Accessor used during ASTTranslate to access the Output image
-    HipaccAccessor *acc;
-
-    void createOutputAccessor();
 
   public:
-    HipaccIterationSpace(HipaccImage *img, VarDecl *VD) :
-      img(img),
-      VD(VD),
-      name(VD->getNameAsString()),
-      crop(true),
-      acc(nullptr)
+    HipaccIterationSpace(VarDecl *VD, HipaccImage *img, bool crop) :
+      HipaccAccessor(VD, new HipaccBoundaryCondition(VD, img), Interpolate::NO, crop),
+      img(img)
     {
-      createOutputAccessor();
+      iterspace = true;
     }
 
-    void setNoCrop() { crop = false; }
-    VarDecl *getDecl() { return VD; }
-    const std::string &getName() const { return name; }
     HipaccImage *getImage() { return img; }
-    HipaccAccessor *getAccessor() { return acc; }
-    bool isCrop() { return crop; }
 };
 
 
 class HipaccMask : public HipaccMemory {
   public:
-    enum MaskType {
+    enum class MaskType : uint8_t {
       Mask,
       Domain
     };
@@ -339,7 +319,7 @@ class HipaccMask : public HipaccMemory {
     void setIsConstant(bool c) { is_constant = c; }
     void setIsPrinted(bool p) { is_printed = p; }
     void setInitList(InitListExpr *il) { init_list = il; }
-    bool isDomain() { return (mask_type & Domain); }
+    bool isDomain() { return mask_type==MaskType::Domain; }
     bool isConstant() { return is_constant; }
     bool isPrinted() { return is_printed; }
     Expr *getInitExpr(size_t x, size_t y) {
@@ -394,16 +374,15 @@ class HipaccMask : public HipaccMemory {
 
 class HipaccKernelClass {
   private:
-    // type of argument
-    enum ArgumentKind {
+    // type of kernel member
+    enum class FieldKind : uint8_t {
       Normal,
       IterationSpace,
       Image,
       Mask
     };
-    // argument information
-    struct argumentInfo {
-      ArgumentKind kind;
+    struct KernelMemberInfo {
+      FieldKind kind;
       FieldDecl *field;
       QualType type;
       std::string name;
@@ -412,11 +391,12 @@ class HipaccKernelClass {
     std::string name;
     CXXMethodDecl *kernelFunction, *reduceFunction;
     KernelStatistics *kernelStatistics;
-    // kernel parameter information
-    SmallVector<argumentInfo, 16> arguments;
+    // kernel member information
+    SmallVector<KernelMemberInfo, 16> members;
     SmallVector<FieldDecl *, 16> imgFields;
     SmallVector<FieldDecl *, 16> maskFields;
     SmallVector<FieldDecl *, 16> domainFields;
+    FieldDecl *output_image;
 
   public:
     HipaccKernelClass(std::string name) :
@@ -424,31 +404,34 @@ class HipaccKernelClass {
       kernelFunction(nullptr),
       reduceFunction(nullptr),
       kernelStatistics(nullptr),
-      arguments(0),
+      members(0),
       imgFields(0),
       maskFields(0),
-      domainFields(0)
+      domainFields(0),
+      output_image(nullptr)
     {}
 
     const std::string &getName() const { return name; }
 
-    void setKernelFunction(CXXMethodDecl *fun) { kernelFunction = fun; }
+    void setKernelFunction(CXXMethodDecl *fun, CompilerKnownClasses &classes) {
+      kernelFunction = fun;
+      kernelStatistics = KernelStatistics::create(fun, name, output_image,
+          classes);
+    }
+
     void setReduceFunction(CXXMethodDecl *fun) { reduceFunction = fun; }
     CXXMethodDecl *getKernelFunction() { return kernelFunction; }
     CXXMethodDecl *getReduceFunction() { return reduceFunction; }
 
-    void setKernelStatistics(KernelStatistics *stats) {
-      kernelStatistics = stats;
-    }
     KernelStatistics &getKernelStatistics(void) {
       return *kernelStatistics;
     }
 
-    MemoryAccess getImgAccess(FieldDecl *decl) {
+    MemoryAccess getMemAccess(FieldDecl *decl) {
       return kernelStatistics->getMemAccess(decl);
     }
-    MemoryAccessDetail getImgAccessDetail(FieldDecl *decl) {
-      return kernelStatistics->getMemAccessDetail(decl);
+    MemoryPattern getMemPattern(FieldDecl *decl) {
+      return kernelStatistics->getMemPattern(decl);
     }
     VectorInfo getVectorizeInfo(VarDecl *decl) {
       return kernelStatistics->getVectorizeInfo(decl);
@@ -458,27 +441,30 @@ class HipaccKernelClass {
     }
 
     void addArg(FieldDecl *FD, QualType QT, StringRef Name) {
-      argumentInfo a = {Normal, FD, QT, Name};
-      arguments.push_back(a);
+      KernelMemberInfo info = { FieldKind::Normal, FD, QT, Name };
+      members.push_back(info);
     }
     void addImgArg(FieldDecl *FD, QualType QT, StringRef Name) {
-      argumentInfo a = {Image, FD, QT, Name};
-      arguments.push_back(a);
+      KernelMemberInfo info = { FieldKind::Image, FD, QT, Name };
+      members.push_back(info);
       imgFields.push_back(FD);
     }
     void addMaskArg(FieldDecl *FD, QualType QT, StringRef Name) {
-      argumentInfo a = {Mask, FD, QT, Name};
-      arguments.push_back(a);
+      KernelMemberInfo info = { FieldKind::Mask, FD, QT, Name};
+      members.push_back(info);
       maskFields.push_back(FD);
     }
     void addISArg(FieldDecl *FD, QualType QT, StringRef Name) {
-      argumentInfo a = {IterationSpace, FD, QT, Name};
-      arguments.push_back(a);
+      KernelMemberInfo info = { FieldKind::IterationSpace, FD, QT, Name };
+      members.push_back(info);
+      imgFields.push_back(FD);
+      output_image = FD;
     }
 
-    ArrayRef<argumentInfo> getArguments() { return arguments; }
+    ArrayRef<KernelMemberInfo> getMembers() { return members; }
     ArrayRef<FieldDecl *>  getImgFields() { return imgFields; }
     ArrayRef<FieldDecl *>  getMaskFields() { return maskFields; }
+    FieldDecl *getOutField() { return output_image; }
 
     friend class HipaccKernel;
 };
@@ -499,24 +485,10 @@ class HipaccKernelFeatures : public HipaccDevice {
     std::map<HipaccAccessor *, MemoryType> memMap;
     std::map<HipaccAccessor *, Texture> texMap;
 
-    void calcISFeature(HipaccAccessor *acc) {
-      MemoryType mem_type = Global;
-      Texture tex_type = Texture::None;
-
-      if (options.useTextureMemory() &&
-          options.getTextureType()==Texture::Array2D) {
-        mem_type = Texture_;
-        tex_type = Texture::Array2D;
-      }
-
-      memMap[acc] = mem_type;
-      texMap[acc] = tex_type;
-    }
-
     void calcImgFeature(FieldDecl *decl, HipaccAccessor *acc) {
       MemoryType mem_type = Global;
       Texture tex_type = Texture::None;
-      MemoryAccessDetail memAccessDetail = KC->getImgAccessDetail(decl);
+      MemoryPattern mem_pattern = KC->getMemPattern(decl);
 
       if (options.useTextureMemory() &&
           options.getTextureType()==Texture::Array2D) {
@@ -527,21 +499,21 @@ class HipaccKernelFeatures : public HipaccDevice {
         // textures all the time otherwise, use texture memory only in case the
         // image is accessed with an offset to the x-coordinate
         if (options.emitCUDA()) {
-          if (memAccessDetail & NO_STRIDE) {
+          if (mem_pattern & NO_STRIDE) {
             if (require_textures[PointOperator]!=Texture::None) {
               mem_type = Texture_;
               tex_type = require_textures[PointOperator];
             }
           }
-          if ((memAccessDetail & STRIDE_X) ||
-              (memAccessDetail & STRIDE_Y) ||
-              (memAccessDetail & STRIDE_XY)) {
+          if ((mem_pattern & STRIDE_X) ||
+              (mem_pattern & STRIDE_Y) ||
+              (mem_pattern & STRIDE_XY)) {
             // possibly use textures only for stride_x ?
             if (require_textures[LocalOperator]!=Texture::None) {
               mem_type = Texture_;
               tex_type = require_textures[LocalOperator];
             }
-          } else if (memAccessDetail & USER_XY) {
+          } else if (mem_pattern & USER_XY) {
             if (require_textures[UserOperator]!=Texture::None) {
               mem_type = Texture_;
               tex_type = require_textures[LocalOperator];
@@ -603,11 +575,8 @@ class HipaccKernel : public HipaccKernelFeatures {
     HipaccIterationSpace *iterationSpace;
     std::map<FieldDecl *, HipaccAccessor *> imgMap;
     std::map<FieldDecl *, HipaccMask *> maskMap;
-    SmallVector<QualType, 16> argTypesC;
-    SmallVector<QualType, 16> argTypesCUDA;
-    SmallVector<QualType, 16> argTypesOpenCL;
+    SmallVector<QualType, 16> argTypes;
     SmallVector<std::string, 16> argTypeNames;
-    SmallVector<std::string, 16> argTypeNamesOpenCL;
     SmallVector<std::string, 16> hostArgNames;
     SmallVector<std::string, 16> deviceArgNames;
     SmallVector<FieldDecl *, 16> deviceArgFields;
@@ -624,6 +593,9 @@ class HipaccKernel : public HipaccKernelFeatures {
     void createArgInfo();
     void addParam(QualType QT1, QualType QT2, QualType QT3, std::string typeC,
         std::string typeO, std::string name, FieldDecl *fd);
+    void addParam(QualType QT, std::string name, FieldDecl *fd) {
+      addParam(QT, QT, QT, QT.getAsString(), QT.getAsString(), name, fd);
+    }
     void createHostArgInfo(ArrayRef<Expr *> hostArgs, std::string &hostLiterals,
         unsigned &literalCount);
 
@@ -642,11 +614,8 @@ class HipaccKernel : public HipaccKernelFeatures {
       iterationSpace(nullptr),
       imgMap(),
       maskMap(),
-      argTypesC(),
-      argTypesCUDA(),
-      argTypesOpenCL(),
+      argTypes(),
       argTypeNames(),
-      argTypeNamesOpenCL(),
       hostArgNames(),
       deviceArgNames(),
       deviceArgFields(),
@@ -703,19 +672,20 @@ class HipaccKernel : public HipaccKernelFeatures {
     void addFunctionCall(FunctionDecl *FD) { deviceFuncs.push_back(FD); }
     ArrayRef<FunctionDecl *> getFunctionCalls() { return deviceFuncs; }
 
-    void setIterationSpace(HipaccIterationSpace *IS) {
-      iterationSpace = IS;
-      calcISFeature(iterationSpace->getAccessor());
-    }
     HipaccIterationSpace *getIterationSpace() { return iterationSpace; }
 
+    void insertMapping(FieldDecl *decl, HipaccIterationSpace *iter) {
+      imgMap.emplace(decl, iter);
+      calcImgFeature(decl, iter);
+      iterationSpace = iter;
+    }
     void insertMapping(FieldDecl *decl, HipaccAccessor *acc) {
-      imgMap.insert(std::pair<FieldDecl *, HipaccAccessor *>(decl, acc));
+      imgMap.emplace(decl, acc);
       calcImgFeature(decl, acc);
       calcSizes();
     }
     void insertMapping(FieldDecl *decl, HipaccMask *mask) {
-      maskMap.insert(std::pair<FieldDecl *, HipaccMask *>(decl, mask));
+      maskMap.emplace(decl, mask);
     }
 
     HipaccAccessor *getImgFromMapping(FieldDecl *decl) {
@@ -731,39 +701,28 @@ class HipaccKernel : public HipaccKernelFeatures {
       else return iter->second;
     }
 
-    ArrayRef<QualType> getArgTypes(ASTContext &Ctx, Language lang) {
+    ArrayRef<QualType> getArgTypes() {
       createArgInfo();
-
-      switch (lang) {
-        case Language::Vivado:
-        case Language::C99:          return argTypesC;
-        case Language::CUDA:         return argTypesCUDA;
-        case Language::OpenCLACC:
-        case Language::OpenCLCPU:
-        case Language::OpenCLGPU:
-        case Language::Renderscript:
-        case Language::Filterscript: return argTypesOpenCL;
-      }
+      return argTypes;
     }
-    ArrayRef<std::string>getArgTypeNames() {
+    ArrayRef<std::string> getArgTypeNames() {
       createArgInfo();
-      if (options.emitOpenCL()) return argTypeNamesOpenCL;
-      else return argTypeNames;
+      return argTypeNames;
     }
     ArrayRef<std::string> getDeviceArgNames() {
       createArgInfo();
       return deviceArgNames;
     }
-    void setHostArgNames(ArrayRef<Expr *>hostArgs, std::string
-        &hostLiterals, unsigned &literalCount) {
+    void setHostArgNames(ArrayRef<Expr *> hostArgs, std::string &hostLiterals,
+        unsigned &literalCount) {
       createArgInfo();
       createHostArgInfo(hostArgs, hostLiterals, literalCount);
     }
-    ArrayRef<std::string>getHostArgNames() {
+    ArrayRef<std::string> getHostArgNames() {
       assert(hostArgNames.size() && "host argument names not set");
       return hostArgNames;
     }
-    ArrayRef<FieldDecl *>getDeviceArgFields() {
+    ArrayRef<FieldDecl *> getDeviceArgFields() {
       createArgInfo();
       return deviceArgFields;
     }
@@ -782,11 +741,8 @@ class HipaccKernel : public HipaccKernelFeatures {
       calcConfig();
       // reset parameter information since the tiling and corresponding
       // variables may have been changed
-      argTypesC.clear();
-      argTypesCUDA.clear();
-      argTypesOpenCL.clear();
+      argTypes.clear();
       argTypeNames.clear();
-      argTypeNamesOpenCL.clear();
       // hostArgNames are set later on
       deviceArgNames.clear();
       deviceArgFields.clear();

@@ -23,20 +23,20 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <float.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <sys/time.h>
-
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
 #include <vector>
+
+#include <sys/time.h>
 
 //#define CPU
 #ifdef OpenCV
-#include "opencv2/opencv.hpp"
+#include <opencv2/opencv.hpp>
 #ifndef CPU
-#include "opencv2/gpu/gpu.hpp"
+#include <opencv2/gpu/gpu.hpp>
 #endif
 #endif
 
@@ -148,7 +148,7 @@ void sobel_filter_column(short4 *in, short4 *out, int *filter, int size_y,
 }
 
 
-// Sobel filter in HIPAcc
+// Sobel filter in Hipacc
 #ifdef NO_SEP
 class SobelFilterMask : public Kernel<short4> {
     private:
@@ -165,11 +165,11 @@ class SobelFilterMask : public Kernel<short4> {
             dom(dom),
             mask(mask),
             size(size)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         #ifdef USE_LAMBDA
         void kernel() {
-            int4 sum = reduce(dom, HipaccSUM, [&] () -> int4 {
+            int4 sum = reduce(dom, Reduce::SUM, [&] () -> int4 {
                     return mask(dom) * convert_int4(input(dom));
                     });
             output() = convert_short4(sum);
@@ -203,11 +203,11 @@ class SobelFilterMaskRow : public Kernel<short4> {
             input(input),
             mask(mask),
             size(size)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         #ifdef USE_LAMBDA
         void kernel() {
-            int4 sum = convolve(mask, HipaccSUM, [&] () -> int4 {
+            int4 sum = convolve(mask, Reduce::SUM, [&] () -> int4 {
                     return mask() * convert_int4(input(mask));
                     });
             output() = convert_short4(sum);
@@ -238,11 +238,11 @@ class SobelFilterMaskColumn : public Kernel<short4> {
             input(input),
             mask(mask),
             size(size)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         #ifdef USE_LAMBDA
         void kernel() {
-            int4 sum = convolve(mask, HipaccSUM, [&] () -> int4 {
+            int4 sum = convolve(mask, Reduce::SUM, [&] () -> int4 {
                     return mask() * convert_int4(input(mask));
                     });
             output() = convert_short4(sum);
@@ -278,7 +278,7 @@ int main(int argc, const char **argv) {
 
     // only filter kernel sizes 3x3, 5x5, and 7x7 implemented
     if (size_x != size_y || !(size_x == 3 || size_x == 5 || size_x == 7)) {
-        fprintf(stderr, "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!\n");
+        std::cerr << "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!" << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -396,10 +396,10 @@ int main(int argc, const char **argv) {
     #endif
 
     // host memory for image of width x height pixels
-    uchar4 *input = (uchar4 *)malloc(sizeof(uchar4)*width*height);
-    uchar4 *reference_in = (uchar4 *)malloc(sizeof(uchar4)*width*height);
-    short4 *reference_out = (short4 *)malloc(sizeof(short4)*width*height);
-    short4 *reference_tmp = (short4 *)malloc(sizeof(short4)*width*height);
+    uchar4 *input = new uchar4[width*height];
+    uchar4 *reference_in = new uchar4[width*height];
+    short4 *reference_out = new short4[width*height];
+    short4 *reference_tmp = new short4[width*height];
 
     // initialize data
     for (int y=0; y<height; ++y) {
@@ -414,7 +414,7 @@ int main(int argc, const char **argv) {
 
 
     // input and output image of width x height pixels
-    Image<uchar4> IN(width, height);
+    Image<uchar4> IN(width, height, input);
     Image<short4> OUT(width, height);
     Image<short4> TMP(width, height);
 
@@ -428,156 +428,154 @@ int main(int argc, const char **argv) {
     IterationSpace<short4> IsOut(OUT);
     IterationSpace<short4> IsTmp(TMP);
 
-    IN = input;
-
 
     #ifndef OpenCV
-    fprintf(stderr, "Calculating Sobel filter ...\n");
+    std::cerr << "Calculating Hipacc Sobel filter ..." << std::endl;
     float timing = 0.0f;
 
-    // BOUNDARY_UNDEFINED
+    // UNDEFINED
     #ifdef RUN_UNDEF
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInUndef2(IN, M, BOUNDARY_UNDEFINED);
+    BoundaryCondition<uchar4> BcInUndef2(IN, M, Boundary::UNDEFINED);
     Accessor<uchar4> AccInUndef2(BcInUndef2);
     SobelFilterMask SFU(IsOut, AccInUndef2, D, M, size_x);
 
     SFU.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInUndef(IN, MX, BOUNDARY_UNDEFINED);
+    BoundaryCondition<uchar4> BcInUndef(IN, MX, Boundary::UNDEFINED);
     Accessor<uchar4> AccInUndef(BcInUndef);
     SobelFilterMaskRow SFRU(IsTmp, AccInUndef, MX, size_x);
 
-    BoundaryCondition<short4> BcTmpUndef(TMP, MY, BOUNDARY_UNDEFINED);
+    BoundaryCondition<short4> BcTmpUndef(TMP, MY, Boundary::UNDEFINED);
     Accessor<short4> AccTmpUndef(BcTmpUndef);
     SobelFilterMaskColumn SFCU(IsOut, AccTmpUndef, MY, size_y);
 
     SFRU.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     SFCU.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (UNDEFINED): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (UNDEFINED): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_CLAMP
+    // CLAMP
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInClamp2(IN, M, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar4> BcInClamp2(IN, M, Boundary::CLAMP);
     Accessor<uchar4> AccInClamp2(BcInClamp2);
     SobelFilterMask SFC(IsOut, AccInClamp2, D, M, size_x);
 
     SFC.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInClamp(IN, MX, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar4> BcInClamp(IN, MX, Boundary::CLAMP);
     Accessor<uchar4> AccInClamp(BcInClamp);
     SobelFilterMaskRow SFRC(IsTmp, AccInClamp, MX, size_x);
 
-    BoundaryCondition<short4> BcTmpClamp(TMP, MY, BOUNDARY_CLAMP);
+    BoundaryCondition<short4> BcTmpClamp(TMP, MY, Boundary::CLAMP);
     Accessor<short4> AccTmpClamp(BcTmpClamp);
     SobelFilterMaskColumn SFCC(IsOut, AccTmpClamp, MY, size_y);
 
     SFRC.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     SFCC.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (CLAMP): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (CLAMP): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_REPEAT
+    // REPEAT
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInRepeat2(IN, M, BOUNDARY_REPEAT);
+    BoundaryCondition<uchar4> BcInRepeat2(IN, M, Boundary::REPEAT);
     Accessor<uchar4> AccInRepeat2(BcInRepeat2);
     SobelFilterMask SFR(IsOut, AccInRepeat2, D, M, size_x);
 
     SFR.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInRepeat(IN, MX, BOUNDARY_REPEAT);
+    BoundaryCondition<uchar4> BcInRepeat(IN, MX, Boundary::REPEAT);
     Accessor<uchar4> AccInRepeat(BcInRepeat);
     SobelFilterMaskRow SFRR(IsTmp, AccInRepeat, MX, size_x);
 
-    BoundaryCondition<short4> BcTmpRepeat(TMP, MY, BOUNDARY_REPEAT);
+    BoundaryCondition<short4> BcTmpRepeat(TMP, MY, Boundary::REPEAT);
     Accessor<short4> AccTmpRepeat(BcTmpRepeat);
     SobelFilterMaskColumn SFCR(IsOut, AccTmpRepeat, MY, size_y);
 
     SFRR.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     SFCR.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (REPEAT): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (REPEAT): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_MIRROR
+    // MIRROR
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInMirror2(IN, M, BOUNDARY_MIRROR);
+    BoundaryCondition<uchar4> BcInMirror2(IN, M, Boundary::MIRROR);
     Accessor<uchar4> AccInMirror2(BcInMirror2);
     SobelFilterMask SFM(IsOut, AccInMirror2, D, M, size_x);
 
     SFM.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInMirror(IN, MX, BOUNDARY_MIRROR);
+    BoundaryCondition<uchar4> BcInMirror(IN, MX, Boundary::MIRROR);
     Accessor<uchar4> AccInMirror(BcInMirror);
     SobelFilterMaskRow SFRM(IsTmp, AccInMirror, MX, size_x);
 
-    BoundaryCondition<short4> BcTmpMirror(TMP, MY, BOUNDARY_MIRROR);
+    BoundaryCondition<short4> BcTmpMirror(TMP, MY, Boundary::MIRROR);
     Accessor<short4> AccTmpMirror(BcTmpMirror);
     SobelFilterMaskColumn SFCM(IsOut, AccTmpMirror, MY, size_y);
 
     SFRM.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     SFCM.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (MIRROR): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (MIRROR): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_CONSTANT
+    // CONSTANT
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInConst2(IN, M, BOUNDARY_CONSTANT, '1');
+    BoundaryCondition<uchar4> BcInConst2(IN, M, Boundary::CONSTANT, '1');
     Accessor<uchar4> AccInConst2(BcInConst2);
     SobelFilterMask SFConst(IsOut, AccInConst2, D, M, size_x);
 
     SFConst.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInConst(IN, MX, BOUNDARY_CONSTANT, (uchar4){'1','1','1','1'});
+    BoundaryCondition<uchar4> BcInConst(IN, MX, Boundary::CONSTANT, (uchar4){'1','1','1','1'});
     Accessor<uchar4> AccInConst(BcInConst);
     SobelFilterMaskRow SFRConst(IsTmp, AccInConst, MX, size_x);
 
-    BoundaryCondition<short4> BcTmpConst(TMP, MY, BOUNDARY_CONSTANT, (short4){1,1,1,1});
+    BoundaryCondition<short4> BcTmpConst(TMP, MY, Boundary::CONSTANT, (short4){1,1,1,1});
     Accessor<short4> AccTmpConst(BcTmpConst);
     SobelFilterMaskColumn SFCConst(IsOut, AccTmpConst, MY, size_y);
 
     SFRConst.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     SFCConst.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (CONSTANT): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (CONSTANT): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
     // get pointer to result data
-    short4 *output = OUT.getData();
+    short4 *output = OUT.data();
     #endif
 
 
 
     #ifdef OpenCV
     #ifdef CPU
-    fprintf(stderr, "\nCalculating OpenCV Sobel filter on the CPU ...\n");
+    std::cerr << std::endl << "Calculating OpenCV Sobel filter on the CPU ..." << std::endl;
     #else
-    fprintf(stderr, "\nCalculating OpenCV Sobel filter on the GPU ...\n");
+    std::cerr << std::endl << "Calculating OpenCV Sobel filter on the GPU ..." << std::endl;
     #endif
 
 
@@ -630,28 +628,17 @@ int main(int argc, const char **argv) {
         gpu_out.download(cv_data_out);
         #endif
 
-        fprintf(stderr, "OpenCV(");
+        std::cerr << "OpenCV (";
         switch (brd_type) {
-            case IPL_BORDER_CONSTANT:
-                fprintf(stderr, "CONSTANT");
-                break;
-            case IPL_BORDER_REPLICATE:
-                fprintf(stderr, "CLAMP");
-                break;
-            case IPL_BORDER_REFLECT:
-                fprintf(stderr, "MIRROR");
-                break;
-            case IPL_BORDER_WRAP:
-                fprintf(stderr, "REPEAT");
-                break;
-            case IPL_BORDER_REFLECT_101:
-                fprintf(stderr, "MIRROR_101");
-                break;
-            default:
-                break;
+            case IPL_BORDER_CONSTANT:    std::cerr << "CONSTANT";   break;
+            case IPL_BORDER_REPLICATE:   std::cerr << "CLAMP";      break;
+            case IPL_BORDER_REFLECT:     std::cerr << "MIRROR";     break;
+            case IPL_BORDER_WRAP:        std::cerr << "REPEAT";     break;
+            case IPL_BORDER_REFLECT_101: std::cerr << "MIRROR_101"; break;
+            default: break;
         }
+        std::cerr << "): " << min_dt << " ms, " << (width*height/min_dt)/1000 << " Mpixel/s" << std::endl;
         timings.push_back(min_dt);
-        fprintf(stderr, "): %.3f ms, %.3f Mpixel/s\n", min_dt, (width*height/min_dt)/1000);
     }
 
     // get pointer to result data
@@ -659,14 +646,13 @@ int main(int argc, const char **argv) {
     #endif
 
     // print statistics
-    for (std::vector<float>::const_iterator it = timings.begin();
-         it != timings.end(); ++it) {
-        fprintf(stderr, "\t%.3f", *it);
+    for (std::vector<float>::const_iterator it = timings.begin(); it != timings.end(); ++it) {
+        std::cerr << "\t" << *it;
     }
-    fprintf(stderr, "\n\n");
+    std::cerr << std::endl << std::endl;
 
 
-    fprintf(stderr, "\nCalculating reference ...\n");
+    std::cerr << "Calculating reference ..." << std::endl;
     min_dt = DBL_MAX;
     for (int nt=0; nt<3; nt++) {
         time0 = time_ms();
@@ -683,12 +669,12 @@ int main(int argc, const char **argv) {
         dt = time1 - time0;
         if (dt < min_dt) min_dt = dt;
     }
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", min_dt, (width*height/min_dt)/1000);
+    std::cerr << "Reference: " << min_dt << " ms, " << (width*height/min_dt)/1000 << " Mpixel/s" << std::endl;
 
-    fprintf(stderr, "\nComparing results ...\n");
+    std::cerr << std::endl << "Comparing results ..." << std::endl;
     #ifdef OpenCV
     #ifndef CPU
-    fprintf(stderr, "\nWarning: OpenCV implementation on the GPU is currently broken (wrong results) ...\n");
+    std::cerr << std::endl << "Warning: OpenCV implementation on the GPU is currently broken (wrong results) ..." << std::endl;
     #endif
     int upper_y = height-size_y+offset_y;
     int upper_x = width-size_x+offset_x;
@@ -703,26 +689,26 @@ int main(int argc, const char **argv) {
                 reference_out[y*width + x].y != output[y*width + x].y ||
                 reference_out[y*width + x].z != output[y*width + x].z ||
                 reference_out[y*width + x].w != output[y*width + x].w) {
-                fprintf(stderr, "Test FAILED, at (%d,%d): %d,%d,%d,%d vs. %d,%d,%d,%d\n", x, y,
-                        reference_out[y*width + x].x,
-                        reference_out[y*width + x].y,
-                        reference_out[y*width + x].z,
-                        reference_out[y*width + x].w,
-                        output[y*width + x].x,
-                        output[y*width + x].y,
-                        output[y*width + x].z,
-                        output[y*width + x].w);
+                std::cerr << "Test FAILED, at (" << x << "," << y << "): ("
+                          << reference_out[y*width + x].x << ","
+                          << reference_out[y*width + x].y << ","
+                          << reference_out[y*width + x].z << ","
+                          << reference_out[y*width + x].w << ") vs. ("
+                          << output[y*width + x].x << ","
+                          << output[y*width + x].y << ","
+                          << output[y*width + x].z << ","
+                          << output[y*width + x].w << ")" << std::endl;
                 exit(EXIT_FAILURE);
             }
         }
     }
-    fprintf(stderr, "Test PASSED\n");
+    std::cerr << "Test PASSED" << std::endl;
 
     // memory cleanup
-    free(input);
-    free(reference_in);
-    free(reference_tmp);
-    free(reference_out);
+    delete[] input;
+    delete[] reference_in;
+    delete[] reference_tmp;
+    delete[] reference_out;
 
     return EXIT_SUCCESS;
 }

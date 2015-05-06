@@ -1,10 +1,9 @@
 IF(OPENCL_FOUND)
     INCLUDE_DIRECTORIES(
-        ${OPENCL_INCLUDE_DIR}
+        ${OPENCL_INCLUDE_DIRS}
         ${HIPACC_SOURCE_DIR}/runtime)
 
     SET(cl_compile_SOURCES cl_compile.cc)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
     ADD_EXECUTABLE(cl_compile ${cl_compile_SOURCES})
     TARGET_LINK_LIBRARIES(cl_compile ${OPENCL_LFLAGS} ${TIME_LINK})
 

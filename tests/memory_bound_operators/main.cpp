@@ -24,12 +24,13 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <vector>
 
-#include <float.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/time.h>
 
 #include "hipacc.hpp"
@@ -106,7 +107,7 @@ int calc_ssd(int *in0, int *in1, int *out, int width, int height) {
 }
 
 
-// Kernel description in HIPAcc
+// Kernel description in Hipacc
 class GlobalOffsetCorrection : public Kernel<int> {
     private:
         Accessor<int> &input;
@@ -118,7 +119,7 @@ class GlobalOffsetCorrection : public Kernel<int> {
             Kernel(iter),
             input(input),
             offset(offset)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
             output() = input() + offset;
@@ -136,8 +137,8 @@ class AbsoluteDifferences : public Kernel<int> {
             input0(input0),
             input1(input1)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
+            add_accessor(&input0);
+            add_accessor(&input1);
         }
 
         void kernel() {
@@ -156,8 +157,8 @@ class SquareDifferences : public Kernel<int> {
             input0(input0),
             input1(input1)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
+            add_accessor(&input0);
+            add_accessor(&input1);
         }
 
         void kernel() {
@@ -172,7 +173,7 @@ class Read1 : public Kernel<int> {
         Read1(IterationSpace<int> &iter, Accessor<int> &input0) :
             Kernel(iter),
             input0(input0)
-        { addAccessor(&input0); }
+        { add_accessor(&input0); }
 
         void kernel() {
             output() = input0();
@@ -190,8 +191,8 @@ class Read2 : public Kernel<int> {
             input0(input0),
             input1(input1)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
+            add_accessor(&input0);
+            add_accessor(&input1);
         }
 
         void kernel() {
@@ -212,9 +213,9 @@ class Read3 : public Kernel<int> {
             input1(input1),
             input2(input2)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
-            addAccessor(&input2);
+            add_accessor(&input0);
+            add_accessor(&input1);
+            add_accessor(&input2);
         }
 
         void kernel() {
@@ -237,10 +238,10 @@ class Read4 : public Kernel<int> {
             input2(input2),
             input3(input3)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
-            addAccessor(&input2);
-            addAccessor(&input3);
+            add_accessor(&input0);
+            add_accessor(&input1);
+            add_accessor(&input2);
+            add_accessor(&input3);
         }
 
         void kernel() {
@@ -266,11 +267,11 @@ class Read5 : public Kernel<int> {
             input3(input3),
             input4(input4)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
-            addAccessor(&input2);
-            addAccessor(&input3);
-            addAccessor(&input4);
+            add_accessor(&input0);
+            add_accessor(&input1);
+            add_accessor(&input2);
+            add_accessor(&input3);
+            add_accessor(&input4);
         }
 
         void kernel() {
@@ -299,12 +300,12 @@ class Read6 : public Kernel<int> {
             input4(input4),
             input5(input5)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
-            addAccessor(&input2);
-            addAccessor(&input3);
-            addAccessor(&input4);
-            addAccessor(&input5);
+            add_accessor(&input0);
+            add_accessor(&input1);
+            add_accessor(&input2);
+            add_accessor(&input3);
+            add_accessor(&input4);
+            add_accessor(&input5);
         }
 
         void kernel() {
@@ -335,13 +336,13 @@ class Read7 : public Kernel<int> {
             input5(input5),
             input6(input6)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
-            addAccessor(&input2);
-            addAccessor(&input3);
-            addAccessor(&input4);
-            addAccessor(&input5);
-            addAccessor(&input6);
+            add_accessor(&input0);
+            add_accessor(&input1);
+            add_accessor(&input2);
+            add_accessor(&input3);
+            add_accessor(&input4);
+            add_accessor(&input5);
+            add_accessor(&input6);
         }
 
         void kernel() {
@@ -375,14 +376,14 @@ class Read8 : public Kernel<int> {
             input6(input6),
             input7(input7)
         {
-            addAccessor(&input0);
-            addAccessor(&input1);
-            addAccessor(&input2);
-            addAccessor(&input3);
-            addAccessor(&input4);
-            addAccessor(&input5);
-            addAccessor(&input6);
-            addAccessor(&input7);
+            add_accessor(&input0);
+            add_accessor(&input1);
+            add_accessor(&input2);
+            add_accessor(&input3);
+            add_accessor(&input4);
+            add_accessor(&input5);
+            add_accessor(&input6);
+            add_accessor(&input7);
         }
 
         void kernel() {
@@ -400,35 +401,13 @@ int main(int argc, const char **argv) {
     float timing = 0.0f;
 
     // host memory for image of width x height pixels
-    int *input0 = (int *)malloc(sizeof(int)*width*height);
-    int *input1 = (int *)malloc(sizeof(int)*width*height);
-    int *reference_in0 = (int *)malloc(sizeof(int)*width*height);
-    int *reference_in1 = (int *)malloc(sizeof(int)*width*height);
-    int *reference_out0 = (int *)malloc(sizeof(int)*width*height);
-    int *reference_out1 = (int *)malloc(sizeof(int)*width*height);
-    int *reference_out2 = (int *)malloc(sizeof(int)*width*height);
-
-    // input and output image of width x height pixels
-    Image<int> IN0(width, height);
-    Image<int> IN1(width, height);
-    Image<int> IN2(width, height);
-    Image<int> IN3(width, height);
-    Image<int> IN4(width, height);
-    Image<int> IN5(width, height);
-    Image<int> IN6(width, height);
-    Image<int> IN7(width, height);
-    Image<int> OUT0(width, height);
-    Image<int> OUT1(width, height);
-    Image<int> OUT2(width, height);
-
-    Accessor<int> AccIn0(IN0);
-    Accessor<int> AccIn1(IN1);
-    Accessor<int> AccIn2(IN2);
-    Accessor<int> AccIn3(IN3);
-    Accessor<int> AccIn4(IN4);
-    Accessor<int> AccIn5(IN5);
-    Accessor<int> AccIn6(IN6);
-    Accessor<int> AccIn7(IN7);
+    int *input0 = new int[width*height];
+    int *input1 = new int[width*height];
+    int *reference_in0 = new int[width*height];
+    int *reference_in1 = new int[width*height];
+    int *reference_out0 = new int[width*height];
+    int *reference_out1 = new int[width*height];
+    int *reference_out2 = new int[width*height];
 
     // initialize data
     #define DELTA 0.001f
@@ -443,6 +422,28 @@ int main(int argc, const char **argv) {
             reference_out2[y*width + x] = (int) (3.12451);
         }
     }
+
+    // input and output image of width x height pixels
+    Image<int> IN0(width, height, input0);
+    Image<int> IN1(width, height, input1);
+    Image<int> IN2(width, height, input1);
+    Image<int> IN3(width, height, input1);
+    Image<int> IN4(width, height, input1);
+    Image<int> IN5(width, height, input1);
+    Image<int> IN6(width, height, input1);
+    Image<int> IN7(width, height, input1);
+    Image<int> OUT0(width, height);
+    Image<int> OUT1(width, height);
+    Image<int> OUT2(width, height);
+
+    Accessor<int> AccIn0(IN0);
+    Accessor<int> AccIn1(IN1);
+    Accessor<int> AccIn2(IN2);
+    Accessor<int> AccIn3(IN3);
+    Accessor<int> AccIn4(IN4);
+    Accessor<int> AccIn5(IN5);
+    Accessor<int> AccIn6(IN6);
+    Accessor<int> AccIn7(IN7);
 
     IterationSpace<int> ISOut0(OUT0);
     IterationSpace<int> ISOut1(OUT1);
@@ -459,15 +460,6 @@ int main(int argc, const char **argv) {
     Read7 R7(ISOut0, AccIn0, AccIn1, AccIn2, AccIn3, AccIn4, AccIn5, AccIn6);
     Read8 R8(ISOut0, AccIn0, AccIn1, AccIn2, AccIn3, AccIn4, AccIn5, AccIn6, AccIn7);
 
-    IN0 = input0;
-    IN1 = input1;
-    IN2 = input1;
-    IN3 = input1;
-    IN4 = input1;
-    IN5 = input1;
-    IN6 = input1;
-    IN7 = input1;
-
     // warmup
     R1.execute();
     R2.execute();
@@ -482,180 +474,182 @@ int main(int argc, const char **argv) {
     AD.execute();
     SD.execute();
 
-    fprintf(stderr, "Calculating 1 image kernel ...\n");
+    std::cerr << "Calculating 1 image kernel ..." << std::endl;
     R1.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
     size_t memory_size = sizeof(int)*width*height;
     float bandwidth_MBs = (2.0f * (double)memory_size)/(timing/1000 * (double)(1 << 20));
 
 
-    fprintf(stderr, "Calculating 2 image kernel ...\n");
+    std::cerr << "Calculating 2 image kernel ..." << std::endl;
     R2.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating 3 image kernel ...\n");
+    std::cerr << "Calculating 3 image kernel ..." << std::endl;
     R3.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating 4 image kernel ...\n");
+    std::cerr << "Calculating 4 image kernel ..." << std::endl;
     R4.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating 5 image kernel ...\n");
+    std::cerr << "Calculating 5 image kernel ..." << std::endl;
     R5.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating 6 image kernel ...\n");
+    std::cerr << "Calculating 6 image kernel ..." << std::endl;
     R6.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating 7 image kernel ...\n");
+    std::cerr << "Calculating 7 image kernel ..." << std::endl;
     R7.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating 8 image kernel ...\n");
+    std::cerr << "Calculating 8 image kernel ..." << std::endl;
     R8.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating global offset correction kernel ...\n");
+    std::cerr << "Calculating global offset correction kernel ..." << std::endl;
     GOC.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating absolute difference kernel ...\n");
+    std::cerr << "Calculating absolute difference kernel ..." << std::endl;
     AD.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "Calculating square difference kernel ...\n");
+    std::cerr << "Calculating square difference kernel ..." << std::endl;
     SD.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
     // print statistics
-    fprintf(stderr, "PPT: %d", PPT);
-    for (std::vector<float>::const_iterator it = timings.begin();
-         it != timings.end(); ++it) {
-        fprintf(stderr, "\t%.3f", *it);
+    std::cerr << "PPT: " << PPT;
+    for (std::vector<float>::const_iterator it = timings.begin(); it != timings.end(); ++it) {
+        std::cerr << "\t" << *it;
     }
-    fprintf(stderr, "\n\n");
+    std::cerr << std::endl << std::endl;
 
     // print achieved bandwidth
-    fprintf(stderr, "Bandwidth for memory size [MB]: %lu\n", memory_size/(1024*1024));
-    fprintf(stderr, "Bandwidth [MB/s]: %f\n", bandwidth_MBs);
-    fprintf(stderr, "Bandwidth [GB/s]: %f\n", bandwidth_MBs/1024);
-    fprintf(stderr, "\n\n");
+    std::cerr << "Bandwidth for memory size [MB]: " << memory_size/(1024*1024) << std::endl
+              << "Bandwidth [MB/s]: " << bandwidth_MBs << std::endl
+              << "Bandwidth [GB/s]: " << bandwidth_MBs/1024 << std::endl
+              << std::endl;
 
 
     // get pointer to result data
-    int *output0 = OUT0.getData();
-    int *output1 = OUT1.getData();
-    int *output2 = OUT2.getData();
+    int *output0 = OUT0.data();
+    int *output1 = OUT1.data();
+    int *output2 = OUT2.data();
 
 
     // GOC
-    fprintf(stderr, "\nCalculating reference ...\n");
+    std::cerr << std::endl << "Calculating reference ..." << std::endl;
     time0 = time_ms();
 
     calc_goc(reference_in0, reference_out0, offset, width, height);
 
     time1 = time_ms();
     dt = time1 - time0;
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, (width*height/dt)/1000);
+    std::cerr << "Reference: " << dt << " ms, " << (width*height/dt)/1000 << " Mpixel/s" << std::endl;
 
     // SAD
-    fprintf(stderr, "\nCalculating reference ...\n");
+    std::cerr << std::endl << "Calculating reference ..." << std::endl;
     time0 = time_ms();
 
     calc_sad(reference_in0, reference_in1, reference_out1, width, height);
 
     time1 = time_ms();
     dt = time1 - time0;
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, (width*height/dt)/1000);
+    std::cerr << "Reference: " << dt << " ms, " << (width*height/dt)/1000 << " Mpixel/s" << std::endl;
 
     // SSD
-    fprintf(stderr, "\nCalculating reference ...\n");
+    std::cerr << std::endl << "Calculating reference ..." << std::endl;
     time0 = time_ms();
 
     calc_ssd(reference_in0, reference_in1, reference_out2, width, height);
 
     time1 = time_ms();
     dt = time1 - time0;
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, (width*height/dt)/1000);
+    std::cerr << "Reference: " << dt << " ms, " << (width*height/dt)/1000 << " Mpixel/s" << std::endl;
 
     // compare results
-    fprintf(stderr, "\nComparing results for GOC ... ");
+    std::cerr << std::endl << "Comparing results for GOC ... ";
     for (int y=0; y<height; y++) {
         for (int x=0; x<width; x++) {
             if (reference_out0[y*width + x] != output0[y*width + x]) {
-                fprintf(stderr, " FAILED, at (%d,%d): %d vs. %d\n", x, y,
-                        reference_out0[y*width + x], output0[y*width + x]);
+                std::cerr << " FAILED, at (" << x << "," << y << "): "
+                          << reference_out0[y*width + x] << " vs. "
+                          << output0[y*width + x] << std::endl;
                 exit(EXIT_FAILURE);
             }
         }
     }
-    fprintf(stderr, "PASSED\n");
-    fprintf(stderr, "Comparing results for AD ... ");
+    std::cerr << "PASSED" << std::endl;
+    std::cerr << "Comparing results for AD ... ";
     for (int y=0; y<height; y++) {
         for (int x=0; x<width; x++) {
             if (reference_out1[y*width + x] != output1[y*width + x]) {
-                fprintf(stderr, " FAILED, at (%d,%d): %d vs. %d\n", x, y,
-                        reference_out1[y*width + x], output1[y*width + x]);
+                std::cerr << " FAILED, at (" << x << "," << y << "): "
+                          << reference_out1[y*width + x] << " vs. "
+                          << output1[y*width + x] << std::endl;
                 exit(EXIT_FAILURE);
             }
         }
     }
-    fprintf(stderr, "PASSED\n");
-    fprintf(stderr, "Comparing results for SD ... ");
+    std::cerr << "PASSED" << std::endl;
+    std::cerr << "Comparing results for SD ... ";
     for (int y=0; y<height; y++) {
         for (int x=0; x<width; x++) {
             if (reference_out2[y*width + x] != output2[y*width + x]) {
-                fprintf(stderr, " FAILED, at (%d,%d): %d vs. %d\n", x, y,
-                        reference_out2[y*width + x], output2[y*width + x]);
+                std::cerr << " FAILED, at (" << x << "," << y << "): "
+                          << reference_out2[y*width + x] << " vs. "
+                          << output2[y*width + x] << std::endl;
                 exit(EXIT_FAILURE);
             }
         }
     }
-    fprintf(stderr, "PASSED\n");
-    fprintf(stderr, "All Tests PASSED\n");
+    std::cerr << "PASSED" << std::endl;
+    std::cerr << "All Tests PASSED" << std::endl;
 
     // memory cleanup
-    free(input0);
-    free(input1);
-    free(reference_in0);
-    free(reference_in1);
-    free(reference_out0);
-    free(reference_out1);
-    free(reference_out2);
+    delete[] input0;
+    delete[] input1;
+    delete[] reference_in0;
+    delete[] reference_in1;
+    delete[] reference_out0;
+    delete[] reference_out1;
+    delete[] reference_out2;
 
     return EXIT_SUCCESS;
 }

@@ -41,7 +41,6 @@
 #include <float.h>
 #include <math.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include <fstream>
@@ -298,12 +297,10 @@ inline void checkErrNVML(nvmlReturn_t err, std::string name) {
 
 // Initialize CUDA devices
 void hipaccInitCUDA() {
-    cudaError_t err = cudaSuccess;
-    int device_count, driver_version = 0, runtime_version = 0;
-
     setenv("CUDA_CACHE_DISABLE", "1", 1);
 
-    err = cudaGetDeviceCount(&device_count);
+    int device_count, driver_version = 0, runtime_version = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
     checkErr(err, "cudaGetDeviceCount()");
     err = cudaDriverGetVersion(&driver_version);
     checkErr(err, "cudaDriverGetVersion()");
@@ -331,65 +328,62 @@ void hipaccInitCUDA() {
 }
 
 
-// Allocate memory with alignment specified
 template<typename T>
-HipaccImage hipaccCreateMemory(T *host_mem, int width, int height, int alignment) {
-    T *mem;
+HipaccImage createImage(T *host_mem, void *mem, size_t width, size_t height, size_t stride, size_t alignment, hipaccMemoryType mem_type=Global) {
+    HipaccImage img = HipaccImage(width, height, stride, alignment, sizeof(T), mem, mem_type);
     HipaccContext &Ctx = HipaccContext::getInstance();
-
-    // alignment has to be a multiple of sizeof(T)
-    alignment = (int)ceilf((float)alignment/sizeof(T)) * sizeof(T);
-    // compute stride
-    int stride = (int)ceilf((float)(width)/(alignment/sizeof(T))) * (alignment/sizeof(T));
-    cudaError_t err = cudaMalloc((void **) &mem, sizeof(T)*stride*height);
-    //err = cudaMallocPitch((void **) &mem, &stride, stride*sizeof(float), height);
-    checkErr(err, "cudaMalloc()");
-
-    HipaccImage img = HipaccImage(width, height, stride, alignment, sizeof(T), (void *)mem);
     Ctx.add_image(img);
+    hipaccWriteMemory(img, host_mem ? host_mem : (T*)img.host);
 
     return img;
+}
+
+template<typename T>
+T *createMemory(size_t stride, size_t height) {
+    T *mem;
+    cudaError_t err = cudaMalloc((void **) &mem, sizeof(T)*stride*height);
+    //err = cudaMallocPitch((void **) &mem, &stride, sizeof(T)*stride, height);
+    checkErr(err, "cudaMalloc()");
+    return mem;
+}
+
+
+// Allocate memory with alignment specified
+template<typename T>
+HipaccImage hipaccCreateMemory(T *host_mem, size_t width, size_t height, size_t alignment) {
+    // alignment has to be a multiple of sizeof(T)
+    alignment = (int)ceilf((float)alignment/sizeof(T)) * sizeof(T);
+    size_t stride = (int)ceilf((float)(width)/(alignment/sizeof(T))) * (alignment/sizeof(T));
+
+    T *mem = createMemory<T>(stride, height);
+    return createImage(host_mem, (void *)mem, width, height, stride, alignment);
 }
 
 
 // Allocate memory without any alignment considerations
 template<typename T>
-HipaccImage hipaccCreateMemory(T *host_mem, int width, int height) {
-    T *mem;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
-    cudaError_t err = cudaMalloc((void **) &mem, sizeof(T)*width*height);
-    checkErr(err, "cudaMalloc()");
-
-    HipaccImage img = HipaccImage(width, height, width, 0, sizeof(T), (void *)mem);
-    Ctx.add_image(img);
-
-    return img;
+HipaccImage hipaccCreateMemory(T *host_mem, size_t width, size_t height) {
+    T *mem = createMemory<T>(width, height);
+    return createImage(host_mem, (void *)mem, width, height, width, 0);
 }
 
 
 // Allocate 2D array
 template<typename T>
-HipaccImage hipaccCreateArray2D(T *host_mem, int width, int height) {
+HipaccImage hipaccCreateArray2D(T *host_mem, size_t width, size_t height) {
     cudaArray *array;
     int flags = cudaArraySurfaceLoadStore;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
-
     cudaError_t err = cudaMallocArray(&array, &channelDesc, width, height, flags);
     checkErr(err, "cudaMallocArray()");
 
-    HipaccImage img = HipaccImage(width, height, width, 0, sizeof(T), (void *)array, Array2D);
-    Ctx.add_image(img);
-
-    return img;
+    return createImage(host_mem, (void *)array, width, height, width, 0, Array2D);
 }
 
 
 // Allocate memory for Pyramid image
 template<typename T>
-HipaccImage hipaccCreatePyramidImage(HipaccImage &base, int width, int height) {
+HipaccImage hipaccCreatePyramidImage(HipaccImage &base, size_t width, size_t height) {
     switch (base.mem_type) {
         default:
             if (base.alignment > 0) {
@@ -405,17 +399,15 @@ HipaccImage hipaccCreatePyramidImage(HipaccImage &base, int width, int height) {
 
 // Release memory
 void hipaccReleaseMemory(HipaccImage &img) {
-    cudaError_t err = cudaSuccess;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
     if (img.mem_type >= Array2D) {
-        err = cudaFreeArray((cudaArray *)img.mem);
+        cudaError_t err = cudaFreeArray((cudaArray *)img.mem);
         checkErr(err, "cudaFreeArray()");
     } else {
-        err = cudaFree(img.mem);
+        cudaError_t err = cudaFree(img.mem);
         checkErr(err, "cudaFree()");
     }
 
+    HipaccContext &Ctx = HipaccContext::getInstance();
     Ctx.del_image(img);
 }
 
@@ -423,22 +415,24 @@ void hipaccReleaseMemory(HipaccImage &img) {
 // Write to memory
 template<typename T>
 void hipaccWriteMemory(HipaccImage &img, T *host_mem) {
-    cudaError_t err = cudaSuccess;
+    if (host_mem == NULL) return;
 
-    int width = img.width;
-    int height = img.height;
-    int stride = img.stride;
+    size_t width  = img.width;
+    size_t height = img.height;
+    size_t stride = img.stride;
 
-    std::copy(host_mem, host_mem + width*height, (T*)img.host);
+    if ((char *)host_mem != img.host)
+        std::copy(host_mem, host_mem + width*height, (T*)img.host);
+
     if (img.mem_type >= Array2D) {
-        err = cudaMemcpyToArray((cudaArray *)img.mem, 0, 0, host_mem, sizeof(T)*width*height, cudaMemcpyHostToDevice);
+        cudaError_t err = cudaMemcpyToArray((cudaArray *)img.mem, 0, 0, host_mem, sizeof(T)*width*height, cudaMemcpyHostToDevice);
         checkErr(err, "cudaMemcpyToArray()");
     } else {
         if (stride > width) {
-            err = cudaMemcpy2D(img.mem, stride*sizeof(T), host_mem, width*sizeof(T), width*sizeof(T), height, cudaMemcpyHostToDevice);
+            cudaError_t err = cudaMemcpy2D(img.mem, stride*sizeof(T), host_mem, width*sizeof(T), width*sizeof(T), height, cudaMemcpyHostToDevice);
             checkErr(err, "cudaMemcpy2D()");
         } else {
-            err = cudaMemcpy(img.mem, host_mem, sizeof(T)*width*height, cudaMemcpyHostToDevice);
+            cudaError_t err = cudaMemcpy(img.mem, host_mem, sizeof(T)*width*height, cudaMemcpyHostToDevice);
             checkErr(err, "cudaMemcpy()");
         }
     }
@@ -448,20 +442,19 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem) {
 // Read from memory
 template<typename T>
 T *hipaccReadMemory(HipaccImage &img) {
-    int width = img.width;
-    int height = img.height;
-    int stride = img.stride;
+    size_t width  = img.width;
+    size_t height = img.height;
+    size_t stride = img.stride;
 
-    cudaError_t err = cudaSuccess;
     if (img.mem_type >= Array2D) {
-        err = cudaMemcpyFromArray((T*)img.host, (cudaArray *)img.mem, 0, 0, sizeof(T)*width*height, cudaMemcpyDeviceToHost);
+        cudaError_t err = cudaMemcpyFromArray((T*)img.host, (cudaArray *)img.mem, 0, 0, sizeof(T)*width*height, cudaMemcpyDeviceToHost);
         checkErr(err, "cudaMemcpyFromArray()");
     } else {
         if (stride > width) {
-            err = cudaMemcpy2D((T*)img.host, width*sizeof(T), img.mem, stride*sizeof(T), width*sizeof(T), height, cudaMemcpyDeviceToHost);
+            cudaError_t err = cudaMemcpy2D((T*)img.host, width*sizeof(T), img.mem, stride*sizeof(T), width*sizeof(T), height, cudaMemcpyDeviceToHost);
             checkErr(err, "cudaMemcpy2D()");
         } else {
-            err = cudaMemcpy((T*)img.host, img.mem, sizeof(T)*width*height, cudaMemcpyDeviceToHost);
+            cudaError_t err = cudaMemcpy((T*)img.host, img.mem, sizeof(T)*width*height, cudaMemcpyDeviceToHost);
             checkErr(err, "cudaMemcpy()");
         }
     }
@@ -472,27 +465,23 @@ T *hipaccReadMemory(HipaccImage &img) {
 
 // Copy from memory to memory
 void hipaccCopyMemory(HipaccImage &src, HipaccImage &dst) {
-    cudaError_t err = cudaSuccess;
-
-    int height = src.height;
-    int stride = src.stride;
+    size_t height = src.height;
+    size_t stride = src.stride;
 
     if (src.mem_type >= Array2D) {
-        err = cudaMemcpyArrayToArray((cudaArray *)dst.mem, 0, 0, (cudaArray *)src.mem, 0, 0, stride*height*src.pixel_size, cudaMemcpyDeviceToDevice);
+        cudaError_t err = cudaMemcpyArrayToArray((cudaArray *)dst.mem, 0, 0, (cudaArray *)src.mem, 0, 0, stride*height*src.pixel_size, cudaMemcpyDeviceToDevice);
         checkErr(err, "cudaMemcpyArrayToArray()");
     } else {
-        err = cudaMemcpy(dst.mem, src.mem, src.pixel_size*stride*height, cudaMemcpyDeviceToDevice);
+        cudaError_t err = cudaMemcpy(dst.mem, src.mem, src.pixel_size*stride*height, cudaMemcpyDeviceToDevice);
         checkErr(err, "cudaMemcpy()");
     }
 }
 
 
 // Copy from memory region to memory region
-void hipaccCopyMemoryRegion(HipaccAccessor src, HipaccAccessor dst) {
-    cudaError_t err = cudaSuccess;
-
+void hipaccCopyMemoryRegion(const HipaccAccessor &src, const HipaccAccessor &dst) {
     if (src.img.mem_type >= Array2D) {
-        err = cudaMemcpy2DArrayToArray((cudaArray *)dst.img.mem,
+        cudaError_t err = cudaMemcpy2DArrayToArray((cudaArray *)dst.img.mem,
                 dst.offset_x*dst.img.pixel_size, dst.offset_y,
                 (cudaArray *)src.img.mem, src.offset_x*src.img.pixel_size,
                 src.offset_y, src.width*src.img.pixel_size, src.height,
@@ -502,7 +491,7 @@ void hipaccCopyMemoryRegion(HipaccAccessor src, HipaccAccessor dst) {
         void *dst_start = (char *)dst.img.mem + dst.offset_x*dst.img.pixel_size + (dst.offset_y*dst.img.stride*dst.img.pixel_size);
         void *src_start = (char *)src.img.mem + src.offset_x*src.img.pixel_size + (src.offset_y*src.img.stride*src.img.pixel_size);
 
-        err = cudaMemcpy2D(dst_start, dst.img.stride*dst.img.pixel_size,
+        cudaError_t err = cudaMemcpy2D(dst_start, dst.img.stride*dst.img.pixel_size,
                            src_start, src.img.stride*src.img.pixel_size,
                            src.width*src.img.pixel_size, src.height,
                            cudaMemcpyDeviceToDevice);
@@ -513,10 +502,8 @@ void hipaccCopyMemoryRegion(HipaccAccessor src, HipaccAccessor dst) {
 
 // Bind memory to texture
 template<typename T>
-void hipaccBindTexture(hipaccMemoryType mem_type, const struct textureReference
-        *tex, HipaccImage &img) {
+void hipaccBindTexture(hipaccMemoryType mem_type, const struct textureReference *tex, HipaccImage &img) {
     cudaError_t err = cudaSuccess;
-
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
 
     switch (mem_type) {
@@ -545,7 +532,8 @@ void hipaccBindTexture(hipaccMemoryType mem_type, const struct textureReference
 
 // Bind 2D array to surface
 template<typename T>
-void hipaccBindSurface(const struct surfaceReference *surf, HipaccImage &img) {
+void hipaccBindSurface(hipaccMemoryType mem_type, const struct surfaceReference *surf, HipaccImage &img) {
+    assert(mem_type==Surface && "wrong texture type");
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
     cudaError_t err = cudaBindSurfaceToArray(surf, (cudaArray *)img.mem, &channelDesc);
     checkErr(err, "cudaBindSurfaceToArray()");
@@ -561,25 +549,23 @@ void hipaccUnbindTexture(const struct textureReference *tex) {
 
 // Write to symbol
 template<typename T>
-void hipaccWriteSymbol(const void *symbol, T *host_mem, int width, int height) {
-    cudaError_t err = cudaSuccess;
-    err = cudaMemcpyToSymbol(symbol, host_mem, sizeof(T)*width*height);
+void hipaccWriteSymbol(const void *symbol, T *host_mem, size_t width, size_t height) {
+    cudaError_t err = cudaMemcpyToSymbol(symbol, host_mem, sizeof(T)*width*height);
     checkErr(err, "cudaMemcpyToSymbol()");
 }
 
 
 // Read from symbol
 template<typename T>
-void hipaccReadSymbol(T *host_mem, const void *symbol, std::string symbol_name, int width, int height) {
-    cudaError_t err = cudaSuccess;
-    err = cudaMemcpyFromSymbol(host_mem, symbol, sizeof(T)*width*height);
+void hipaccReadSymbol(T *host_mem, const void *symbol, std::string symbol_name, size_t width, size_t height) {
+    cudaError_t err = cudaMemcpyFromSymbol(host_mem, symbol, sizeof(T)*width*height);
     checkErr(err, "cudaMemcpyFromSymbol()");
 }
 
 
 // Infer non-const Domain from non-const Mask
 template<typename T>
-void hipaccWriteDomainFromMask(const void *symbol, T *host_mem, int width, int height) {
+void hipaccWriteDomainFromMask(const void *symbol, T *host_mem, size_t width, size_t height) {
     size_t size = width * height;
     uchar *dom_mem = new uchar[size];
 
@@ -614,21 +600,19 @@ void hipaccSetupArgument(const void *arg, size_t size, size_t &offset) {
 
 // Launch kernel
 void hipaccLaunchKernel(const void *kernel, std::string kernel_name, dim3 grid, dim3 block, bool print_timing=true) {
-    cudaError_t err = cudaSuccess;
     cudaEvent_t start, end;
     float time;
-    std::string error_string = "cudaLaunch(" + kernel_name + ")";
 
     cudaEventCreate(&start);
     cudaEventCreate(&end);
     cudaEventRecord(start, 0);
 
-    err = cudaLaunch(kernel);
-    checkErr(err, error_string.c_str());
+    cudaError_t err = cudaLaunch(kernel);
+    checkErr(err, "cudaLaunch(" + kernel_name + ")");
 
     cudaThreadSynchronize();
     err = cudaGetLastError();
-    checkErr(err, error_string.c_str());
+    checkErr(err, "cudaLaunch(" + kernel_name + ")");
 
     cudaEventRecord(end, 0);
     cudaEventSynchronize(end);
@@ -674,32 +658,8 @@ void hipaccLaunchKernelBenchmark(const void *kernel, std::string kernel_name, st
 // DRIVER API
 //
 
-// Compile CUDA source file to ptx assembly using nvcc compiler
-void hipaccCompileCUDAToPTX(std::string file_name, int cc, std::string build_options = std::string()) {
-    char line[FILENAME_MAX];
-    FILE *fpipe;
-
-    std::stringstream ss;
-    ss << cc;
-
-    std::string command = "${NVCC} -ptx -arch=compute_" + ss.str() + " ";
-    command += build_options + " " + file_name;
-    command += " -o " + file_name + ".ptx 2>&1";
-
-    if (!(fpipe = (FILE *)popen(command.c_str(), "r"))) {
-        perror("Problems with pipe");
-        exit(EXIT_FAILURE);
-    }
-
-    while (fgets(line, sizeof(char) * FILENAME_MAX, fpipe)) {
-        std::cerr << line;
-    }
-    pclose(fpipe);
-}
-
-
-// Load ptx assembly, create a module and kernel
-void hipaccCreateModuleKernel(CUfunction &function, CUmodule &module, std::string file_name, std::string kernel_name, int cc) {
+// Create a module from ptx assembly
+void hipaccCreateModule(CUmodule &module, const void *ptx, int cc) {
     CUresult err = CUDA_SUCCESS;
     CUjit_target target_cc;
 
@@ -722,31 +682,65 @@ void hipaccCreateModuleKernel(CUfunction &function, CUmodule &module, std::strin
     #endif
 
 
-    std::ifstream srcFile(file_name.c_str());
-    if (!srcFile.is_open()) {
-        std::cerr << "ERROR: Can't open PTX source file '" << file_name.c_str() << "'!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    std::string ptxString(std::istreambuf_iterator<char>(srcFile),
-            (std::istreambuf_iterator<char>()));
-
     const int errorLogSize = 10240;
     char errorLogBuffer[errorLogSize] = {0};
 
+    int num_options = 2;
     CUjit_option options[] = { CU_JIT_ERROR_LOG_BUFFER, CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES, CU_JIT_TARGET };
     void *optionValues[] = { (void *)errorLogBuffer, (void *)errorLogSize, (void *)target_cc };
 
-    // Load PTX source
-    err = cuModuleLoadDataEx(&module, ptxString.c_str(), 2, options, optionValues);
+    // load ptx source
+    err = cuModuleLoadDataEx(&module, ptx, num_options, options, optionValues);
+
     if (err != CUDA_SUCCESS) {
         std::cerr << "Error log: " << errorLogBuffer << std::endl;
     }
     checkErrDrv(err, "cuModuleLoadDataEx()");
+}
 
-    // Get function entry point
-    err = cuModuleGetFunction(&function, module, kernel_name.c_str());
-    checkErrDrv(err, "cuModuleGetFunction()");
+
+// Compile CUDA source file and create module
+void hipaccCompileCUDAToModule(CUmodule &module, std::string file_name, int cc, std::vector<std::string> &build_options) {
+    char line[FILENAME_MAX];
+    FILE *fpipe;
+
+    std::stringstream ss;
+    ss << cc;
+
+    std::string command = "${NVCC} -ptx -arch=compute_" + ss.str() + " ";
+    for (auto option : build_options) command += option + " ";
+    command += file_name + " -o " + file_name + ".ptx 2>&1";
+
+    if (!(fpipe = (FILE *)popen(command.c_str(), "r"))) {
+        perror("Problems with pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    while (fgets(line, sizeof(char) * FILENAME_MAX, fpipe)) {
+        std::cerr << line;
+    }
+    pclose(fpipe);
+
+    std::string ptx_filename = file_name + ".ptx";
+    std::ifstream ptx_file(ptx_filename);
+    if (!ptx_file.is_open()) {
+        std::cerr << "ERROR: Can't open PTX source file '" << ptx_filename << "'!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    std::string ptx_string(std::istreambuf_iterator<char>(ptx_file), (std::istreambuf_iterator<char>()));
+
+    const char *ptx = (const char *)ptx_string.c_str();
+    // compile ptx
+    hipaccCreateModule(module, ptx, cc);
+}
+
+
+// Get kernel from a module
+void hipaccGetKernel(CUfunction &function, CUmodule &module, std::string kernel_name) {
+    // get function entry point
+    CUresult err = cuModuleGetFunction(&function, module, kernel_name.c_str());
+    checkErrDrv(err, "cuModuleGetFunction('" + kernel_name + "')");
 }
 
 
@@ -792,20 +786,18 @@ void hipaccPrintKernelOccupancy(CUfunction fun, int tile_size_x, int tile_size_y
 
 // Launch kernel
 void hipaccLaunchKernel(CUfunction &kernel, std::string kernel_name, dim3 grid, dim3 block, void **args, bool print_timing=true) {
-    CUresult err = CUDA_SUCCESS;
     cudaEvent_t start, end;
     float time;
-    std::string error_string = "cuLaunchKernel(" + kernel_name + ")";
 
     cudaEventCreate(&start);
     cudaEventCreate(&end);
     cudaEventRecord(start, 0);
 
     // Launch the kernel
-    err = cuLaunchKernel(kernel, grid.x, grid.y, grid.z, block.x, block.y, block.z, 0, NULL, args, NULL);
-    checkErrDrv(err, error_string.c_str());
+    CUresult err = cuLaunchKernel(kernel, grid.x, grid.y, grid.z, block.x, block.y, block.z, 0, NULL, args, NULL);
+    checkErrDrv(err, "cuLaunchKernel(" + kernel_name + ")");
     err = cuCtxSynchronize();
-    checkErrDrv(err, error_string.c_str());
+    checkErrDrv(err, "cuLaunchKernel(" + kernel_name + ")");
 
     cudaEventRecord(end, 0);
     cudaEventSynchronize(end);
@@ -901,7 +893,6 @@ T hipaccApplyReduction(const void *kernel2D, std::string kernel2D_name, const
         void *kernel1D, std::string kernel1D_name, HipaccAccessor &acc, unsigned
         int max_threads, unsigned int pixels_per_thread, const struct
         textureReference *tex) {
-    cudaError_t err = cudaSuccess;
     T *output;  // GPU memory for reduction
     T result;   // host result
 
@@ -911,7 +902,7 @@ T hipaccApplyReduction(const void *kernel2D, std::string kernel2D_name, const
     unsigned int num_blocks = grid.x*grid.y;
     unsigned int idle_left = 0;
 
-    err = cudaMalloc((void **) &output, sizeof(T)*num_blocks);
+    cudaError_t err = cudaMalloc((void **) &output, sizeof(T)*num_blocks);
     checkErr(err, "cudaMalloc()");
 
     if ((acc.offset_x || acc.offset_y) &&
@@ -1005,7 +996,6 @@ template<typename T>
 T hipaccApplyReductionThreadFence(const void *kernel2D, std::string
         kernel2D_name, HipaccAccessor &acc, unsigned int max_threads, unsigned
         int pixels_per_thread, const struct textureReference *tex) {
-    cudaError_t err = cudaSuccess;
     T *output;  // GPU memory for reduction
     T result;   // host result
 
@@ -1016,7 +1006,7 @@ T hipaccApplyReductionThreadFence(const void *kernel2D, std::string
     unsigned int num_blocks = grid.x*grid.y;
     unsigned int idle_left = 0;
 
-    err = cudaMalloc((void **) &output, sizeof(T)*num_blocks);
+    cudaError_t err = cudaMalloc((void **) &output, sizeof(T)*num_blocks);
     checkErr(err, "cudaMalloc()");
 
     if ((acc.offset_x || acc.offset_y) &&
@@ -1029,7 +1019,6 @@ T hipaccApplyReductionThreadFence(const void *kernel2D, std::string
                 (block.x*2));
 
         // update number of blocks
-        num_blocks = grid.x*grid.y;
         idle_left *= block.x;
     }
 
@@ -1086,14 +1075,13 @@ template<typename T>
 T hipaccApplyReductionExploration(std::string filename, std::string kernel2D,
         std::string kernel1D, HipaccAccessor &acc, unsigned int max_threads,
         unsigned int pixels_per_thread, hipacc_tex_info tex_info, int cc) {
-    cudaError_t err = cudaSuccess;
     T *output;  // GPU memory for reduction
     T result;   // host result
 
     unsigned int num_blocks = (int)ceilf((float)(acc.img.width)/(max_threads*2))*acc.height;
     unsigned int idle_left = 0;
 
-    err = cudaMalloc((void **) &output, sizeof(T)*num_blocks);
+    cudaError_t err = cudaMalloc((void **) &output, sizeof(T)*num_blocks);
     checkErr(err, "cudaMalloc()");
 
     void *argsReduction2D[] = {
@@ -1130,16 +1118,20 @@ T hipaccApplyReductionExploration(std::string filename, std::string kernel2D,
         num_ppt_ss << ppt;
         num_bs_ss << max_threads;
 
-        std::string compile_options = "-D PPT=" + num_ppt_ss.str() + " -D BS=" + num_bs_ss.str() + " -I./include ";
-        compile_options += "-D BSX_EXPLORE=64 -D BSY_EXPLORE=1 ";
-        hipaccCompileCUDAToPTX(filename, cc, compile_options);
+        std::vector<std::string> compile_options;
+        compile_options.push_back("-I./include");
+        compile_options.push_back("-D PPT=" + num_ppt_ss.str());
+        compile_options.push_back("-D BS=" + num_bs_ss.str());
+        compile_options.push_back("-D BSX_EXPLORE=64");
+        compile_options.push_back("-D BSY_EXPLORE=1");
 
-        std::string ptx_filename = filename + ".ptx";
         CUmodule modReduction;
+        hipaccCompileCUDAToModule(modReduction, filename, cc, compile_options);
+
         CUfunction exploreReduction2D;
         CUfunction exploreReduction1D;
-        hipaccCreateModuleKernel(exploreReduction2D, modReduction, ptx_filename, kernel2D, cc);
-        hipaccCreateModuleKernel(exploreReduction1D, modReduction, ptx_filename, kernel1D, cc);
+        hipaccGetKernel(exploreReduction2D, modReduction, kernel2D);
+        hipaccGetKernel(exploreReduction1D, modReduction, kernel1D);
 
         float min_dt=FLT_MAX;
         for (size_t i=0; i<HIPACC_NUM_ITERATIONS; ++i) {
@@ -1242,7 +1234,6 @@ void hipaccKernelExploration(std::string filename, std::string kernel,
         max_threads_per_block, size_t max_threads_for_kernel, size_t
         max_smem_per_block, size_t heu_tx, size_t heu_ty, int cc) {
     CUresult err = CUDA_SUCCESS;
-    std::string ptx_filename = filename + ".ptx";
     size_t opt_tx=warp_size, opt_ty=1;
     float opt_time = FLT_MAX;
 
@@ -1294,14 +1285,16 @@ void hipaccKernelExploration(std::string filename, std::string kernel,
             num_threads_y_ss << tile_size_y;
 
             // compile kernel
-            std::string compile_options = "-D BSX_EXPLORE=" +
-                num_threads_x_ss.str() + " -D BSY_EXPLORE=" +
-                num_threads_y_ss.str() + " -I./include ";
-            hipaccCompileCUDAToPTX(filename, cc, compile_options);
+            std::vector<std::string> compile_options;
+            compile_options.push_back("-I./include");
+            compile_options.push_back("-D BSX_EXPLORE=" + num_threads_x_ss.str());
+            compile_options.push_back("-D BSY_EXPLORE=" + num_threads_y_ss.str());
 
             CUmodule modKernel;
+            hipaccCompileCUDAToModule(modKernel, filename, cc, compile_options);
+
             CUfunction exploreKernel;
-            hipaccCreateModuleKernel(exploreKernel, modKernel, ptx_filename, kernel, cc);
+            hipaccGetKernel(exploreKernel, modKernel, kernel);
 
             // load constant memory
             CUdeviceptr constMem;

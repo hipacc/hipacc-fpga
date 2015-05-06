@@ -71,11 +71,10 @@ Expr *ASTTranslate::addGlobalOffsetX(Expr *idx_x, HipaccAccessor *Acc) {
 
 
 // remove iteration space offset from index
-Expr *ASTTranslate::removeISOffsetX(Expr *idx_x, HipaccAccessor *Acc) {
-  if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl()) {
+Expr *ASTTranslate::removeISOffsetX(Expr *idx_x) {
+  if (Kernel->getIterationSpace()->getOffsetXDecl()) {
       idx_x = createBinaryOperator(Ctx, idx_x,
-          getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()), BO_Sub,
-          Ctx.IntTy);
+          getOffsetXDecl(Kernel->getIterationSpace()), BO_Sub, Ctx.IntTy);
   }
 
   return idx_x;
@@ -83,11 +82,10 @@ Expr *ASTTranslate::removeISOffsetX(Expr *idx_x, HipaccAccessor *Acc) {
 
 
 // remove iteration space offset from index
-Expr *ASTTranslate::removeISOffsetY(Expr *idx_y, HipaccAccessor *Acc) {
-  if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl()) {
+Expr *ASTTranslate::removeISOffsetY(Expr *idx_y) {
+  if (Kernel->getIterationSpace()->getOffsetYDecl()) {
       idx_y = createBinaryOperator(Ctx, idx_y,
-          getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()), BO_Sub,
-          Ctx.IntTy);
+          getOffsetYDecl(Kernel->getIterationSpace()), BO_Sub, Ctx.IntTy);
   }
 
   return idx_y;
@@ -96,7 +94,7 @@ Expr *ASTTranslate::removeISOffsetY(Expr *idx_y, HipaccAccessor *Acc) {
 
 // access memory
 Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
-    MemoryAccess memAcc, Expr *local_offset_x, Expr *local_offset_y) {
+    MemoryAccess mem_acc, Expr *local_offset_x, Expr *local_offset_y) {
   Expr *idx_x = nullptr;
   Expr *idx_y = nullptr;
 
@@ -138,19 +136,19 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
   }
 
   // step 1: remove is_offset and add interpolation & boundary handling
-  switch (Acc->getInterpolation()) {
-    case InterpolateNO:
-      if (Acc!=Kernel->getIterationSpace()->getAccessor()) {
-        idx_x = removeISOffsetX(idx_x, Acc);
+  switch (Acc->getInterpolationMode()) {
+    case Interpolate::NO:
+      if (Acc!=Kernel->getIterationSpace()) {
+        idx_x = removeISOffsetX(idx_x);
       }
       if ((compilerOptions.emitC99() ||
            compilerOptions.emitRenderscript() ||
            compilerOptions.emitFilterscript()) &&
-          Acc!=Kernel->getIterationSpace()->getAccessor()) {
-        idx_y = removeISOffsetY(idx_y, Acc);
+          Acc!=Kernel->getIterationSpace()) {
+        idx_y = removeISOffsetY(idx_y);
       }
       break;
-    case InterpolateNN:
+    case Interpolate::NN:
       idx_x = createCStyleCastExpr(Ctx, Ctx.IntTy, CK_FloatingToIntegral,
           createParenExpr(Ctx, addNNInterpolationX(Acc, idx_x)), nullptr,
           Ctx.getTrivialTypeSourceInfo(Ctx.IntTy));
@@ -158,14 +156,14 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
           createParenExpr(Ctx, addNNInterpolationY(Acc, idx_y)), nullptr,
           Ctx.getTrivialTypeSourceInfo(Ctx.IntTy));
       break;
-    case InterpolateLF:
-    case InterpolateCF:
-    case InterpolateL3:
+    case Interpolate::LF:
+    case Interpolate::CF:
+    case Interpolate::L3:
       return addInterpolationCall(LHS, Acc, idx_x, idx_y);
   }
 
   // step 2: add global Accessor/Iteration Space offset
-  if (Acc!=Kernel->getIterationSpace()->getAccessor()) {
+  if (Acc!=Kernel->getIterationSpace()) {
     idx_x = addGlobalOffsetX(idx_x, Acc);
     idx_y = addGlobalOffsetY(idx_y, Acc);
   } else {
@@ -177,21 +175,17 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
   }
 
   // step 3: access the appropriate memory
-  switch (memAcc) {
+  switch (mem_acc) {
     case WRITE_ONLY:
       switch (compilerOptions.getTargetLang()) {
         default: break;
         case Language::Renderscript: {
-            bool isGlobalAllocation = false;
-            if (Kernel->getKernelClass()->getArguments()[0].name.compare(
-                  LHS->getNameInfo().getAsString()) == 0) {
-              isGlobalAllocation = true;
-              break;
-            }
-            if (!isGlobalAllocation) {
+            if (Kernel->getKernelClass()->getMembers()[0].name.compare(
+                  LHS->getNameInfo().getAsString()) != 0) {
               // access allocation by using local pointer type kernel argument
               return accessMemAllocPtr(LHS);
             }
+            // fall through to READ_ONLY for global allocation
           }
           break;
         case Language::Filterscript:
@@ -203,25 +197,25 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
           return accessMem2DAt(LHS, idx_x, idx_y);
         case Language::CUDA:
           if (Kernel->useTextureMemory(Acc)!=Texture::None) {
-            return accessMemTexAt(LHS, Acc, memAcc, idx_x, idx_y);
+            return accessMemTexAt(LHS, Acc, mem_acc, idx_x, idx_y);
           }
           // fall through
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
         case Language::OpenCLGPU:
           if (Kernel->useTextureMemory(Acc)!=Texture::None) {
-            return accessMemImgAt(LHS, Acc, memAcc, idx_x, idx_y);
+            return accessMemImgAt(LHS, Acc, mem_acc, idx_x, idx_y);
           }
           return accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
         case Language::Renderscript:
         case Language::Filterscript:
-          return accessMemAllocAt(LHS, memAcc, idx_x, idx_y);
+          return accessMemAllocAt(LHS, mem_acc, idx_x, idx_y);
         case Language::Vivado:
           if (!vivadoWindow && redDomains.size() == 0) {// &&
               //(idx_x == nullptr || idx_y == nullptr)) {
             return accessMemStream(LHS);
           } else {
-            return accessMemWindowAt(LHS, memAcc, idx_x, idx_y);
+            return accessMemWindowAt(LHS, mem_acc, idx_x, idx_y);
           }
       }
     case READ_WRITE: {
@@ -287,7 +281,7 @@ Expr *ASTTranslate::accessMem2DAt(DeclRefExpr *LHS, Expr *idx_x, Expr *idx_y) {
 
 // get tex1Dfetch function for given Accessor
 FunctionDecl *ASTTranslate::getTextureFunction(HipaccAccessor *Acc, MemoryAccess
-    memAcc) {
+    mem_acc) {
   QualType QT = Acc->getImage()->getType();
   bool isVecType = QT->isVectorType();
 
@@ -320,7 +314,7 @@ FunctionDecl *ASTTranslate::getTextureFunction(HipaccAccessor *Acc, MemoryAccess
       assert(0 && "BuiltinType for CUDA texture not supported.");
 
 #define GET_BUILTIN_FUNCTION(TYPE) \
-      (memAcc == READ_ONLY ? \
+      (mem_acc == READ_ONLY ? \
           (isLdg ? \
               (isVecType ? builtins.getBuiltinFunction(CUDABI__ldg ## E4 ## TYPE) : \
                   builtins.getBuiltinFunction(CUDABI__ldg ## TYPE)) : \
@@ -357,7 +351,7 @@ FunctionDecl *ASTTranslate::getTextureFunction(HipaccAccessor *Acc, MemoryAccess
 
 // get read_image function for given Accessor
 FunctionDecl *ASTTranslate::getImageFunction(HipaccAccessor *Acc, MemoryAccess
-    memAcc) {
+    mem_acc) {
   QualType QT = Acc->getImage()->getType();
 
   if (QT->isVectorType()) {
@@ -384,7 +378,7 @@ FunctionDecl *ASTTranslate::getImageFunction(HipaccAccessor *Acc, MemoryAccess
     case BuiltinType::SChar:
     case BuiltinType::Short:
     case BuiltinType::Int:
-      if (memAcc==READ_ONLY) {
+      if (mem_acc==READ_ONLY) {
         return builtins.getBuiltinFunction(OPENCLBIread_imagei);
       } else {
         return builtins.getBuiltinFunction(OPENCLBIwrite_imagei);
@@ -395,13 +389,13 @@ FunctionDecl *ASTTranslate::getImageFunction(HipaccAccessor *Acc, MemoryAccess
     case BuiltinType::UShort:
     case BuiltinType::Char32:
     case BuiltinType::UInt:
-      if (memAcc==READ_ONLY) {
+      if (mem_acc==READ_ONLY) {
         return builtins.getBuiltinFunction(OPENCLBIread_imageui);
       } else {
         return builtins.getBuiltinFunction(OPENCLBIwrite_imageui);
       }
     case BuiltinType::Float:
-      if (memAcc==READ_ONLY) {
+      if (mem_acc==READ_ONLY) {
         return builtins.getBuiltinFunction(OPENCLBIread_imagef);
       } else {
         return builtins.getBuiltinFunction(OPENCLBIwrite_imagef);
@@ -412,7 +406,7 @@ FunctionDecl *ASTTranslate::getImageFunction(HipaccAccessor *Acc, MemoryAccess
 
 // get rsGetElementAt_<type>/rsSetElementAt_<type> functions for given Accessor
 FunctionDecl *ASTTranslate::getAllocationFunction(const BuiltinType *BT, bool
-    isVecType, MemoryAccess memAcc) {
+    isVecType, MemoryAccess mem_acc) {
   switch (BT->getKind()) {
     case BuiltinType::WChar_U:
     case BuiltinType::WChar_S:
@@ -427,7 +421,7 @@ FunctionDecl *ASTTranslate::getAllocationFunction(const BuiltinType *BT, bool
       assert(0 && "BuiltinType for Renderscript Allocation not supported.");
 
 #define GET_BUILTIN_FUNCTION(TYPE) \
-    (memAcc == READ_ONLY ? \
+    (mem_acc == READ_ONLY ? \
         (isVecType ? builtins.getBuiltinFunction(RSBIrsGetElementAt_ ## TYPE ## 4) : \
             builtins.getBuiltinFunction(RSBIrsGetElementAt_ ## TYPE)) : \
         (isVecType ? builtins.getBuiltinFunction(RSBIrsSetElementAt_ ## TYPE ## 4) : \
@@ -576,11 +570,11 @@ FunctionDecl *ASTTranslate::getWindowFunction(MemoryAccess memAcc) {
 
 // access linear texture memory at given index
 Expr *ASTTranslate::accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
-    MemoryAccess memAcc, Expr *idx_x, Expr *idx_y) {
+    MemoryAccess mem_acc, Expr *idx_x, Expr *idx_y) {
   // mark image as being used within the kernel
   Kernel->setUsed(LHS->getNameInfo().getAsString());
 
-  FunctionDecl *texture_function = getTextureFunction(Acc, memAcc);
+  FunctionDecl *texture_function = getTextureFunction(Acc, mem_acc);
 
   // clone Decl
   TemplateArgumentListInfo templateArgs(LHS->getLAngleLoc(),
@@ -594,8 +588,8 @@ Expr *ASTTranslate::accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
   DeclRefExpr *LHStex = DeclRefExpr::Create(Ctx,
       LHS->getQualifierLoc(),
       LHS->getTemplateKeywordLoc(),
-      CloneDeclTex(PVD, (memAcc==READ_ONLY)?"_tex":"_surf"),
-      LHS->refersToEnclosingLocal(),
+      CloneDeclTex(PVD, (mem_acc==READ_ONLY)?"_tex":"_surf"),
+      LHS->refersToEnclosingVariableOrCapture(),
       LHS->getLocation(),
       LHS->getType(), LHS->getValueKind(),
       LHS->getFoundDecl(),
@@ -606,7 +600,7 @@ Expr *ASTTranslate::accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
   // parameters for __ldg, tex1Dfetch, tex2D, or surf2Dwrite
   SmallVector<Expr *, 16> args;
 
-  if (memAcc == READ_ONLY) {
+  if (mem_acc == READ_ONLY) {
     switch (Kernel->useTextureMemory(Acc)) {
       case Texture::None:
           assert(0 && "texture expected.");
@@ -630,7 +624,23 @@ Expr *ASTTranslate::accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
     }
   } else {
     // writeImageRHS is set by VisitBinaryOperator - side effect
-    writeImageRHS = createParenExpr(Ctx, writeImageRHS);
+    QualType QT = Acc->getImage()->getType();
+
+    if (writeImageRHS->IgnoreImpCasts()->getType() != QT) {
+      // introduce temporary for implicit casts
+      std::string tmp_lit("_tmp" + std::to_string(literalCount++));
+      VarDecl *tmp_decl = createVarDecl(Ctx, kernelDecl, tmp_lit, QT,
+          writeImageRHS);
+      DeclContext *DC = FunctionDecl::castToDeclContext(kernelDecl);
+      DC->addDecl(tmp_decl);
+      DeclRefExpr *tmp_dre = createDeclRefExpr(Ctx, tmp_decl);
+      preStmts.push_back(createDeclStmt(Ctx, tmp_decl));
+      preCStmt.push_back(curCStmt);
+      writeImageRHS = tmp_dre;
+    } else {
+      writeImageRHS = createParenExpr(Ctx, writeImageRHS);
+    }
+
     args.push_back(writeImageRHS);
     args.push_back(LHStex);
     // byte addressing required for surf2Dwrite
@@ -645,7 +655,7 @@ Expr *ASTTranslate::accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
 
 // access image memory at given index
 Expr *ASTTranslate::accessMemImgAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
-    MemoryAccess memAcc, Expr *idx_x, Expr *idx_y) {
+    MemoryAccess mem_acc, Expr *idx_x, Expr *idx_y) {
   Expr *result, *coord;
 
   // mark image as being used within the kernel
@@ -657,10 +667,10 @@ Expr *ASTTranslate::accessMemImgAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
   QualType QTcoord = simdTypes.getSIMDType(Ctx.IntTy, "int", SIMD2);
   coord = createCStyleCastExpr(Ctx, QTcoord, CK_VectorSplat, coord, nullptr,
       Ctx.getTrivialTypeSourceInfo(QTcoord));
-  FunctionDecl *image_function = getImageFunction(Acc, memAcc);
+  FunctionDecl *image_function = getImageFunction(Acc, mem_acc);
 
   // create function call for image objects in OpenCL
-  if (memAcc == READ_ONLY) {
+  if (mem_acc == READ_ONLY) {
     // parameters for read_image
     SmallVector<Expr *, 16> args;
     args.push_back(LHS);
@@ -726,7 +736,7 @@ Expr *ASTTranslate::accessMemImgAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
 
 
 // access allocation at given index
-Expr *ASTTranslate::accessMemAllocAt(DeclRefExpr *LHS, MemoryAccess memAcc,
+Expr *ASTTranslate::accessMemAllocAt(DeclRefExpr *LHS, MemoryAccess mem_acc,
                                      Expr *idx_x, Expr *idx_y) {
   // mark image as being used within the kernel
   Kernel->setUsed(LHS->getNameInfo().getAsString());
@@ -738,15 +748,15 @@ Expr *ASTTranslate::accessMemAllocAt(DeclRefExpr *LHS, MemoryAccess memAcc,
     QT = QT->getAs<VectorType>()->getElementType();
   }
   const BuiltinType *BT = QT->getAs<BuiltinType>();
-  FunctionDecl *element_function = getAllocationFunction(BT, isVec, memAcc);
+  FunctionDecl *element_function = getAllocationFunction(BT, isVec, mem_acc);
 
   //const BuiltinType *BT = LHS->getType()->getPointeeType()->getAs<BuiltinType>();
-  //FunctionDecl *get_element_function = getAllocationFunction(BT, false, memAcc);
+  //FunctionDecl *get_element_function = getAllocationFunction(BT, false, mem_acc);
 
   // parameters for rsGetElementAt_<type>
   SmallVector<Expr *, 16> args;
   args.push_back(LHS);
-  if (memAcc == WRITE_ONLY) {
+  if (mem_acc == WRITE_ONLY) {
     // writeImageRHS is set by VisitBinaryOperator - side effect
     writeImageRHS = createParenExpr(Ctx, writeImageRHS);
     args.push_back(writeImageRHS);

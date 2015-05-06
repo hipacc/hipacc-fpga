@@ -28,11 +28,10 @@
 // thresholding).
 //
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
+#include <cstdlib>
+#include <iostream>
 
-#include "opencv2/opencv.hpp"
+#include <opencv2/opencv.hpp>
 
 #include "hipacc.hpp"
 
@@ -53,10 +52,10 @@ class GaussianBlurFilter : public Kernel<uchar> {
             Kernel(iter),
             input(input),
             mask(mask)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
-            output() = (uchar)(convolve(mask, HipaccSUM, [&] () -> float {
+            output() = (uchar)(convolve(mask, Reduce::SUM, [&] () -> float {
                     return mask() * input(mask);
                     }) + 0.5f);
         }
@@ -78,13 +77,13 @@ class GradFilter : public Kernel<float> {
             mask_y(mask_y),
             dom_x(dom_x),
             dom_y(dom_y)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
-            int gx = reduce(dom_x, HipaccSUM, [&] () -> int {
+            int gx = reduce(dom_x, Reduce::SUM, [&] () -> int {
                     return mask_x(dom_x) * input(dom_x);
                     });
-            int gy = reduce(dom_y, HipaccSUM, [&] () -> int {
+            int gy = reduce(dom_y, Reduce::SUM, [&] () -> int {
                     return mask_y(dom_y) * input(dom_y);
                     });
 
@@ -100,7 +99,7 @@ class NMSFilter : public Kernel<int> {
         NMSFilter(IterationSpace<int> &iter, Accessor<float> &input) :
             Kernel(iter),
             input(input)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
             int pixel = input();
@@ -139,7 +138,7 @@ class ThresholdFilter : public Kernel<uchar> {
         ThresholdFilter(IterationSpace<uchar> &iter, Accessor<int> &input) :
             Kernel(iter),
             input(input)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
             int pixel = input();
@@ -167,7 +166,7 @@ int main(int argc, const char **argv) {
     // open default camera
     VideoCapture cap(0);
     if (!cap.isOpened()) {
-        fprintf(stderr, "Error opening VideoCapture device!\n");
+        std::cerr << "Error opening VideoCapture device!" << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -177,16 +176,17 @@ int main(int argc, const char **argv) {
     imshow("Canny", frameRGB);
     #else
     // input image
-    frame = imread("0003.pgm", CV_LOAD_IMAGE_GRAYSCALE);
+    std::string frame_name = "0003.pgm";
+    frame = imread(frame_name.c_str(), CV_LOAD_IMAGE_GRAYSCALE);
     if (frame.empty()) {
-        fprintf(stderr, "Error reading image file '0003.pgm'!\n");
+        std::cerr << "Error reading image file '" << frame_name << "'!" << std::endl;
         return EXIT_FAILURE;
     }
     #endif
 
 
     // images
-    Image<uchar> input_img(frame.cols, frame.rows);
+    Image<uchar> input_img(frame.cols, frame.rows, frame.data);
     Image<uchar> gauss_img(frame.cols, frame.rows);
     Image<float> grad_img(frame.cols, frame.rows);
     Image<int> nms_img(frame.cols, frame.rows);
@@ -217,22 +217,21 @@ int main(int argc, const char **argv) {
 
 
     // blur input image
-    input_img = frame.data;
-    BoundaryCondition<uchar> bound_input_img(input_img, gauss_mask, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar> bound_input_img(input_img, gauss_mask, Boundary::CLAMP);
     Accessor<uchar> acc_input_img(bound_input_img);
     IterationSpace<uchar> iter_gauss(gauss_img);
 
     GaussianBlurFilter gauss(iter_gauss, acc_input_img, gauss_mask);
 
     // compute edge gradient
-    BoundaryCondition<uchar> bound_gauss_img(gauss_img, gauss_mask, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar> bound_gauss_img(gauss_img, gauss_mask, Boundary::CLAMP);
     Accessor<uchar> acc_gauss_img(bound_gauss_img);
     IterationSpace<float> iter_grad(grad_img);
 
     GradFilter grad(iter_grad, acc_gauss_img, sobel_mask_x, sobel_mask_y, sobel_dom_x, sobel_dom_y);
 
     // non-maximum suppression
-    BoundaryCondition<float> bound_grad_img(grad_img, gauss_mask, BOUNDARY_CLAMP);
+    BoundaryCondition<float> bound_grad_img(grad_img, gauss_mask, Boundary::CLAMP);
     Accessor<float> acc_grad_img(bound_grad_img);
     IterationSpace<int> iter_nsm(nms_img);
 
@@ -252,37 +251,37 @@ int main(int argc, const char **argv) {
 
         // convert to grayscale
         cvtColor(frameRGB, frame, CV_BGR2GRAY);
-    #endif
         input_img = frame.data;
+    #endif
 
         // blur input image
         gauss.execute();
-        timing = hipaccGetLastKernelTiming();
+        timing = hipacc_last_kernel_timing();
         fps_timing = timing;
-        fprintf(stderr, "HIPAcc Gaussian blur filter: %.3f ms\n", timing);
+        std::cerr << "Hipacc blur filter: " << timing << " ms" << std::endl;
 
         // compute edge gradient
         grad.execute();
-        timing = hipaccGetLastKernelTiming();
+        timing = hipacc_last_kernel_timing();
         fps_timing += timing;
-        fprintf(stderr, "HIPAcc edge gradient filter: %.3f ms\n", timing);
+        std::cerr << "Hipacc grad filter: " << timing << " ms" << std::endl;
 
         // perform non-maximum suppression
         nms.execute();
-        timing = hipaccGetLastKernelTiming();
+        timing = hipacc_last_kernel_timing();
         fps_timing += timing;
-        fprintf(stderr, "HIPAcc NMS filter: %.3f ms\n", timing);
+        std::cerr << "Hipacc NMS filter: " << timing << " ms" << std::endl;
 
         // final thresholding
         threshold.execute();
-        timing = hipaccGetLastKernelTiming();
+        timing = hipacc_last_kernel_timing();
         fps_timing += timing;
-        fprintf(stderr, "HIPAcc threshold filter: %.3f ms\n", timing);
+        std::cerr << "Hipacc threshold filter: " << timing << " ms" << std::endl;
 
         // fps time
-        fprintf(stderr, "HIPAcc canny: %.3f ms, %f fps\n", fps_timing, 1000.0f/fps_timing);
+        std::cerr << "Hipacc canny: " << fps_timing << " ms, " << 1000.0f/fps_timing << " fps" << std::endl;
 
-        frameCanny.data = output_img.getData();
+        frameCanny.data = output_img.data();
 
         // display frame
         imshow("Canny", frameCanny);

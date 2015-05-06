@@ -63,10 +63,10 @@ class GaussianBlurFilter : public Kernel<uchar> {
             Kernel(iter),
             input(input),
             mask(mask)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
-            output() = (uchar)(convolve(mask, HipaccSUM, [&] () -> float {
+            output() = (uchar)(convolve(mask, Reduce::SUM, [&] () -> float {
                     return mask() * input(mask);
                     }) + 0.5f);
         }
@@ -93,7 +93,7 @@ class SignatureKernel : public Kernel<uint> {
             Kernel(iter),
             input(input),
             dom(dom)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
             // Census Transformation
@@ -120,8 +120,8 @@ class VectorKernel : public Kernel<int> {
             sig2(sig2),
             dom(dom)
         {
-            addAccessor(&sig1);
-            addAccessor(&sig2);
+            add_accessor(&sig1);
+            add_accessor(&sig2);
         }
 
         void kernel() {
@@ -135,7 +135,7 @@ class VectorKernel : public Kernel<int> {
                         vec_found++;
                         // encode ix and iy as upper and lower half-word of
                         // mem_loc
-                        mem_loc = (dom.getX() << 16) | (dom.getY() & 0xffff);
+                        mem_loc = (dom.x() << 16) | (dom.y() & 0xffff);
                     }
                     });
 
@@ -242,11 +242,11 @@ int main(int argc, const char **argv) {
 
     // vector image
     Image<int> img_vec(WIDTH, HEIGHT);
-    int *vecs = (int *) malloc(img_vec.getWidth() * img_vec.getHeight() * sizeof(int));
-    //BoundaryCondition<uint> bound_img_sig(img_signature, dom, BOUNDARY_CONSTANT, 0);
+    int *vecs = (int *) malloc(img_vec.width() * img_vec.height() * sizeof(int));
+    //BoundaryCondition<uint> bound_img_sig(img_signature, dom, Boundary::CONSTANT, 0);
     //Accessor<uint> acc_img_sig(bound_img_sig);
     Accessor<uint> acc_img_sig(img_signature);
-    //BoundaryCondition<uint> bound_prev_sig(prev_signature, dom, BOUNDARY_CONSTANT, 0);
+    //BoundaryCondition<uint> bound_prev_sig(prev_signature, dom, Boundary::CONSTANT, 0);
     //Accessor<uint> acc_prev_sig(bound_prev_sig);
     Accessor<uint> acc_prev_sig(prev_signature);
     IterationSpace<int> iter_vec(img_vec);
@@ -256,7 +256,7 @@ int main(int argc, const char **argv) {
     img = host_in2;
 
     // filter previous image/frame
-    BoundaryCondition<uchar> bound_prev(prev, mask, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar> bound_prev(prev, mask, Boundary::CLAMP);
     Accessor<uchar> acc_prev(bound_prev);
     IterationSpace<uchar> iter_blur(filter_img);
     GaussianBlurFilter blur_prev(iter_blur, acc_prev, mask);
@@ -264,7 +264,7 @@ int main(int argc, const char **argv) {
 
 
     // generate signature for first image/frame
-    BoundaryCondition<uchar> bound_fil(filter_img, sig_dom, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar> bound_fil(filter_img, sig_dom, Boundary::CLAMP);
     Accessor<uchar> acc_fil(bound_fil);
     IterationSpace<uint> iter_prev_sig(prev_signature);
     SignatureKernel sig_prev(iter_prev_sig, acc_fil, sig_dom);
@@ -275,12 +275,12 @@ int main(int argc, const char **argv) {
     while(true) {
 #endif
       // filter frame
-      BoundaryCondition<uchar> bound_img(img, mask, BOUNDARY_CLAMP);
+      BoundaryCondition<uchar> bound_img(img, mask, Boundary::CLAMP);
       Accessor<uchar> acc_img(bound_img);
       GaussianBlurFilter blur_img(iter_blur, acc_img, mask);
 
       blur_img.execute();
-      timing = hipaccGetLastKernelTiming();
+      timing = hipacc_last_kernel_timing();
       fps_timing = timing;
       fprintf(stdout, "HIPAcc blur filter: %.3f ms\n", timing);
 
@@ -288,25 +288,25 @@ int main(int argc, const char **argv) {
       IterationSpace<uint> iter_img_sig(img_signature);
       SignatureKernel sig_img(iter_img_sig, acc_fil, sig_dom);
       sig_img.execute();
-      timing = hipaccGetLastKernelTiming();
+      timing = hipacc_last_kernel_timing();
       fps_timing += timing;
       fprintf(stdout, "HIPAcc signature kernel: %.3f ms\n", timing);
 
       // perform matching
       vector_kernel.execute();
-      timing = hipaccGetLastKernelTiming();
+      timing = hipacc_last_kernel_timing();
       fps_timing += timing;
       fprintf(stdout, "HIPAcc vector kernel: %.3f ms\n", timing);
-      vecs = img_vec.getData();
+      vecs = img_vec.data();
 
       // fps time
       fprintf(stdout, "<HIPACC:> optical flow: %.3f ms, %f fps\n", fps_timing, 1000.0f/fps_timing);
 
 #ifdef TEST
-      for (int y=0; y<img_vec.getHeight(); y++) {
-          for (int x=0; x<img_vec.getWidth(); x++) {
-              if (vecs[x + y*img_vec.getWidth()]!=0) {
-                  int loc = vecs[x + y*img_vec.getWidth()];
+      for (int y=0; y<img_vec.height(); y++) {
+          for (int x=0; x<img_vec.width(); x++) {
+              if (vecs[x + y*img_vec.width()]!=0) {
+                  int loc = vecs[x + y*img_vec.width()];
                   int high = loc >> 16;
                   int low = (loc & 0xffff);
                   if (low >> 15) low |= 0xffff0000;

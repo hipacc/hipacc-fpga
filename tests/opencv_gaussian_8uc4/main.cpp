@@ -23,20 +23,20 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <float.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <sys/time.h>
-
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
 #include <vector>
+
+#include <sys/time.h>
 
 //#define CPU
 #ifdef OpenCV
-#include "opencv2/opencv.hpp"
+#include <opencv2/opencv.hpp>
 #ifndef CPU
-#include "opencv2/gpu/gpu.hpp"
+#include <opencv2/gpu/gpu.hpp>
 #endif
 #endif
 
@@ -134,7 +134,7 @@ void gaussian_filter_column(float4 *in, uchar4 *out, float *filter, int size_y,
 }
 
 
-// Gaussian blur filter in HIPAcc
+// Gaussian blur filter in Hipacc
 #ifdef NO_SEP
 class GaussianBlurFilterMask : public Kernel<uchar4> {
     private:
@@ -150,11 +150,11 @@ class GaussianBlurFilterMask : public Kernel<uchar4> {
             mask(mask),
             size_x(size_x),
             size_y(size_y)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         #ifdef USE_LAMBDA
         void kernel() {
-            output() = convert_uchar4(convolve(mask, HipaccSUM, [&] () -> float4 {
+            output() = convert_uchar4(convolve(mask, Reduce::SUM, [&] () -> float4 {
                     return mask() * convert_float4(input(mask));
                     }) + 0.5f);
         }
@@ -188,11 +188,11 @@ class GaussianBlurFilterMaskRow : public Kernel<float4> {
             input(input),
             mask(mask),
             size(size)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         #ifdef USE_LAMBDA
         void kernel() {
-            output() = convolve(mask, HipaccSUM, [&] () -> float4 {
+            output() = convolve(mask, Reduce::SUM, [&] () -> float4 {
                     return mask() * convert_float4(input(mask));
                     });
         }
@@ -222,11 +222,11 @@ class GaussianBlurFilterMaskColumn : public Kernel<uchar4> {
             input(input),
             mask(mask),
             size(size)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         #ifdef USE_LAMBDA
         void kernel() {
-            output() = convert_uchar4(convolve(mask, HipaccSUM, [&] () -> float4 {
+            output() = convert_uchar4(convolve(mask, Reduce::SUM, [&] () -> float4 {
                     return mask() * convert_float4(input(mask));
                     }) + 0.5f);
         }
@@ -265,7 +265,7 @@ int main(int argc, const char **argv) {
     #ifdef CONST_MASK
     // only filter kernel sizes 3x3, 5x5, and 7x7 implemented
     if (size_x != size_y || !(size_x == 3 || size_x == 5 || size_x == 7)) {
-        fprintf(stderr, "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!\n");
+        std::cerr << "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!" << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -357,10 +357,10 @@ int main(int argc, const char **argv) {
     #endif
 
     // host memory for image of width x height pixels
-    uchar4 *input = (uchar4 *)malloc(sizeof(uchar4)*width*height);
-    uchar4 *reference_in = (uchar4 *)malloc(sizeof(uchar4)*width*height);
-    uchar4 *reference_out = (uchar4 *)malloc(sizeof(uchar4)*width*height);
-    float4 *reference_tmp = (float4 *)malloc(sizeof(float4)*width*height);
+    uchar4 *input = new uchar4[width*height];
+    uchar4 *reference_in = new uchar4[width*height];
+    uchar4 *reference_out = new uchar4[width*height];
+    float4 *reference_tmp = new float4[width*height];
 
     // initialize data
     for (int y=0; y<height; ++y) {
@@ -379,7 +379,7 @@ int main(int argc, const char **argv) {
 
 
     // input and output image of width x height pixels
-    Image<uchar4> IN(width, height);
+    Image<uchar4> IN(width, height, input);
     Image<uchar4> OUT(width, height);
     Image<float4> TMP(width, height);
 
@@ -391,156 +391,154 @@ int main(int argc, const char **argv) {
     IterationSpace<uchar4> IsOut(OUT);
     IterationSpace<float4> IsTmp(TMP);
 
-    IN = input;
-
 
     #ifndef OpenCV
-    fprintf(stderr, "Calculating HIPAcc Gaussian filter ...\n");
+    std::cerr << "Calculating Hipacc Gaussian filter ..." << std::endl;
     float timing = 0.0f;
 
-    // BOUNDARY_UNDEFINED
+    // UNDEFINED
     #ifdef RUN_UNDEF
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInUndef2(IN, M, BOUNDARY_UNDEFINED);
+    BoundaryCondition<uchar4> BcInUndef2(IN, M, Boundary::UNDEFINED);
     Accessor<uchar4> AccInUndef2(BcInUndef2);
     GaussianBlurFilterMask GFU(IsOut, AccInUndef2, M, size_x, size_y);
 
     GFU.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInUndef(IN, MX, BOUNDARY_UNDEFINED);
+    BoundaryCondition<uchar4> BcInUndef(IN, MX, Boundary::UNDEFINED);
     Accessor<uchar4> AccInUndef(BcInUndef);
     GaussianBlurFilterMaskRow GFRU(IsTmp, AccInUndef, MX, size_x);
 
-    BoundaryCondition<float4> BcTmpUndef(TMP, MY, BOUNDARY_UNDEFINED);
+    BoundaryCondition<float4> BcTmpUndef(TMP, MY, Boundary::UNDEFINED);
     Accessor<float4> AccTmpUndef(BcTmpUndef);
     GaussianBlurFilterMaskColumn GFCU(IsOut, AccTmpUndef, MY, size_y);
 
     GFRU.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GFCU.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (UNDEFINED): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (UNDEFINED): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_CLAMP
+    // CLAMP
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInClamp2(IN, M, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar4> BcInClamp2(IN, M, Boundary::CLAMP);
     Accessor<uchar4> AccInClamp2(BcInClamp2);
     GaussianBlurFilterMask GFC(IsOut, AccInClamp2, M, size_x, size_y);
 
     GFC.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInClamp(IN, MX, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar4> BcInClamp(IN, MX, Boundary::CLAMP);
     Accessor<uchar4> AccInClamp(BcInClamp);
     GaussianBlurFilterMaskRow GFRC(IsTmp, AccInClamp, MX, size_x);
 
-    BoundaryCondition<float4> BcTmpClamp(TMP, MY, BOUNDARY_CLAMP);
+    BoundaryCondition<float4> BcTmpClamp(TMP, MY, Boundary::CLAMP);
     Accessor<float4> AccTmpClamp(BcTmpClamp);
     GaussianBlurFilterMaskColumn GFCC(IsOut, AccTmpClamp, MY, size_y);
 
     GFRC.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GFCC.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (CLAMP): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (CLAMP): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_REPEAT
+    // REPEAT
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInRepeat2(IN, M, BOUNDARY_REPEAT);
+    BoundaryCondition<uchar4> BcInRepeat2(IN, M, Boundary::REPEAT);
     Accessor<uchar4> AccInRepeat2(BcInRepeat2);
     GaussianBlurFilterMask GFR(IsOut, AccInRepeat2, M, size_x, size_y);
 
     GFR.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInRepeat(IN, MX, BOUNDARY_REPEAT);
+    BoundaryCondition<uchar4> BcInRepeat(IN, MX, Boundary::REPEAT);
     Accessor<uchar4> AccInRepeat(BcInRepeat);
     GaussianBlurFilterMaskRow GFRR(IsTmp, AccInRepeat, MX, size_x);
 
-    BoundaryCondition<float4> BcTmpRepeat(TMP, MY, BOUNDARY_REPEAT);
+    BoundaryCondition<float4> BcTmpRepeat(TMP, MY, Boundary::REPEAT);
     Accessor<float4> AccTmpRepeat(BcTmpRepeat);
     GaussianBlurFilterMaskColumn GFCR(IsOut, AccTmpRepeat, MY, size_y);
 
     GFRR.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GFCR.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (REPEAT): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (REPEAT): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_MIRROR
+    // MIRROR
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInMirror2(IN, M, BOUNDARY_MIRROR);
+    BoundaryCondition<uchar4> BcInMirror2(IN, M, Boundary::MIRROR);
     Accessor<uchar4> AccInMirror2(BcInMirror2);
     GaussianBlurFilterMask GFM(IsOut, AccInMirror2, M, size_x, size_y);
 
     GFM.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInMirror(IN, MX, BOUNDARY_MIRROR);
+    BoundaryCondition<uchar4> BcInMirror(IN, MX, Boundary::MIRROR);
     Accessor<uchar4> AccInMirror(BcInMirror);
     GaussianBlurFilterMaskRow GFRM(IsTmp, AccInMirror, MX, size_x);
 
-    BoundaryCondition<float4> BcTmpMirror(TMP, MY, BOUNDARY_MIRROR);
+    BoundaryCondition<float4> BcTmpMirror(TMP, MY, Boundary::MIRROR);
     Accessor<float4> AccTmpMirror(BcTmpMirror);
     GaussianBlurFilterMaskColumn GFCM(IsOut, AccTmpMirror, MY, size_y);
 
     GFRM.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GFCM.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (MIRROR): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (MIRROR): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
-    // BOUNDARY_CONSTANT
+    // CONSTANT
     #ifdef NO_SEP
-    BoundaryCondition<uchar4> BcInConst2(IN, M, BOUNDARY_CONSTANT, (uchar4){'1','1','1','1'});
+    BoundaryCondition<uchar4> BcInConst2(IN, M, Boundary::CONSTANT, (uchar4){'1','1','1','1'});
     Accessor<uchar4> AccInConst2(BcInConst2);
     GaussianBlurFilterMask GFConst(IsOut, AccInConst2, M, size_x, size_y);
 
     GFConst.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     #else
-    BoundaryCondition<uchar4> BcInConst(IN, MX, BOUNDARY_CONSTANT, (uchar4){'1','1','1','1'});
+    BoundaryCondition<uchar4> BcInConst(IN, MX, Boundary::CONSTANT, (uchar4){'1','1','1','1'});
     Accessor<uchar4> AccInConst(BcInConst);
     GaussianBlurFilterMaskRow GFRConst(IsTmp, AccInConst, MX, size_x);
 
-    BoundaryCondition<float4> BcTmpConst(TMP, MY, BOUNDARY_CONSTANT, (float4){1.0f,1.0f,1.0f,1.0f});
+    BoundaryCondition<float4> BcTmpConst(TMP, MY, Boundary::CONSTANT, (float4){1.0f,1.0f,1.0f,1.0f});
     Accessor<float4> AccTmpConst(BcTmpConst);
     GaussianBlurFilterMaskColumn GFCConst(IsOut, AccTmpConst, MY, size_y);
 
     GFRConst.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GFCConst.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     #endif
     timings.push_back(timing);
-    fprintf(stderr, "HIPACC (CONSTANT): %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Hipacc (CONSTANT): " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
 
     // get pointer to result data
-    uchar4 *output = OUT.getData();
+    uchar4 *output = OUT.data();
     #endif
 
 
 
     #ifdef OpenCV
     #ifdef CPU
-    fprintf(stderr, "\nCalculating OpenCV Gaussian filter on the CPU ...\n");
+    std::cerr << std::endl << "Calculating OpenCV Gaussian filter on the CPU ..." << std::endl;
     #else
-    fprintf(stderr, "\nCalculating OpenCV Gaussian filter on the GPU ...\n");
+    std::cerr << std::endl << "Calculating OpenCV Gaussian filter on the GPU ..." << std::endl;
     #endif
 
 
@@ -583,28 +581,17 @@ int main(int argc, const char **argv) {
         gpu_out.download(cv_data_out);
         #endif
 
-        fprintf(stderr, "OpenCV(");
+        std::cerr << "OpenCV (";
         switch (brd_type) {
-            case IPL_BORDER_CONSTANT:
-                fprintf(stderr, "CONSTANT");
-                break;
-            case IPL_BORDER_REPLICATE:
-                fprintf(stderr, "CLAMP");
-                break;
-            case IPL_BORDER_REFLECT:
-                fprintf(stderr, "MIRROR");
-                break;
-            case IPL_BORDER_WRAP:
-                fprintf(stderr, "REPEAT");
-                break;
-            case IPL_BORDER_REFLECT_101:
-                fprintf(stderr, "MIRROR_101");
-                break;
-            default:
-                break;
+            case IPL_BORDER_CONSTANT:    std::cerr << "CONSTANT";   break;
+            case IPL_BORDER_REPLICATE:   std::cerr << "CLAMP";      break;
+            case IPL_BORDER_REFLECT:     std::cerr << "MIRROR";     break;
+            case IPL_BORDER_WRAP:        std::cerr << "REPEAT";     break;
+            case IPL_BORDER_REFLECT_101: std::cerr << "MIRROR_101"; break;
+            default: break;
         }
+        std::cerr << "): " << min_dt << " ms, " << (width*height/min_dt)/1000 << " Mpixel/s" << std::endl;
         timings.push_back(min_dt);
-        fprintf(stderr, "): %.3f ms, %.3f Mpixel/s\n", min_dt, (width*height/min_dt)/1000);
     }
 
     // get pointer to result data
@@ -612,14 +599,13 @@ int main(int argc, const char **argv) {
     #endif
 
     // print statistics
-    for (std::vector<float>::const_iterator it = timings.begin();
-         it != timings.end(); ++it) {
-        fprintf(stderr, "\t%.3f", *it);
+    for (std::vector<float>::const_iterator it = timings.begin(); it != timings.end(); ++it) {
+        std::cerr << "\t" << *it;
     }
-    fprintf(stderr, "\n\n");
+    std::cerr << std::endl << std::endl;
 
 
-    fprintf(stderr, "\nCalculating reference ...\n");
+    std::cerr << "Calculating reference ..." << std::endl;
     min_dt = DBL_MAX;
     for (int nt=0; nt<3; nt++) {
         time0 = time_ms();
@@ -636,9 +622,9 @@ int main(int argc, const char **argv) {
         dt = time1 - time0;
         if (dt < min_dt) min_dt = dt;
     }
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", min_dt, (width*height/min_dt)/1000);
+    std::cerr << "Reference: " << min_dt << " ms, " << (width*height/min_dt)/1000 << " Mpixel/s" << std::endl;
 
-    fprintf(stderr, "\nComparing results ...\n");
+    std::cerr << std::endl << "Comparing results ..." << std::endl;
     #ifdef OpenCV
     int upper_y = height-size_y+offset_y;
     int upper_x = width-size_x+offset_x;
@@ -649,31 +635,30 @@ int main(int argc, const char **argv) {
     // compare results
     for (int y=offset_y; y<upper_y; y++) {
         for (int x=offset_x; x<upper_x; x++) {
-            if ((reference_out[y*width + x].x != output[y*width + x].x) &&
-                (reference_out[y*width + x].y != output[y*width + x].y) &&
-                (reference_out[y*width + x].z != output[y*width + x].z) &&
-                (reference_out[y*width + x].w != output[y*width + x].w)) {
-                fprintf(stderr, "Test FAILED, at (%d,%d): (%hhu,%hhu,%hhu,%hhu) vs. (%hhu,%hhu,%hhu,%hhu)\n",
-                        x, y,
-                        reference_out[y*width + x].x,
-                        reference_out[y*width + x].y,
-                        reference_out[y*width + x].z,
-                        reference_out[y*width + x].w,
-                        output[y*width + x].x,
-                        output[y*width + x].y,
-                        output[y*width + x].z,
-                        output[y*width + x].w);
+            if (reference_out[y*width + x].x != output[y*width + x].x ||
+                reference_out[y*width + x].y != output[y*width + x].y ||
+                reference_out[y*width + x].z != output[y*width + x].z ||
+                reference_out[y*width + x].w != output[y*width + x].w) {
+                std::cerr << "Test FAILED, at (" << x << "," << y << "): ("
+                          << (int)reference_out[y*width + x].x << ","
+                          << (int)reference_out[y*width + x].y << ","
+                          << (int)reference_out[y*width + x].z << ","
+                          << (int)reference_out[y*width + x].w << ") vs. ("
+                          << (int)output[y*width + x].x << ","
+                          << (int)output[y*width + x].y << ","
+                          << (int)output[y*width + x].z << ","
+                          << (int)output[y*width + x].w << ")" << std::endl;
                 exit(EXIT_FAILURE);
             }
         }
     }
-    fprintf(stderr, "Test PASSED\n");
+    std::cerr << "Test PASSED" << std::endl;
 
     // memory cleanup
-    free(input);
-    free(reference_in);
-    free(reference_tmp);
-    free(reference_out);
+    delete[] input;
+    delete[] reference_in;
+    delete[] reference_tmp;
+    delete[] reference_out;
 
     return EXIT_SUCCESS;
 }

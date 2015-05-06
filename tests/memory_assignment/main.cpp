@@ -23,13 +23,11 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
-#include <float.h>
-#include <limits.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/time.h>
 
 #include "hipacc.hpp"
 
@@ -38,15 +36,6 @@
 //#define HEIGHT 4096
 
 using namespace hipacc;
-
-
-// get time in milliseconds
-double time_ms () {
-    struct timeval tv;
-    gettimeofday (&tv, NULL);
-
-    return ((double)(tv.tv_sec) * 1e+3 + (double)(tv.tv_usec) * 1e-3);
-}
 
 struct roi_t {
     int img_width, img_height;
@@ -67,21 +56,21 @@ void compare_results(data_t *ref, data_t *data, roi_t &ref_roi, roi_t &data_roi)
     // compare results
     assert(ref_roi.roi_width == data_roi.roi_width && ref_roi.roi_height ==
             data_roi.roi_height && "Image sizes have to be the same!");
-    fprintf(stderr, "\nComparing results ...\n");
+    std::cerr << std::endl << "Comparing results ..." << std::endl;
     for (int y=ref_roi.roi_oy; y<ref_roi.roi_oy+ref_roi.roi_height; y++) {
         for (int x=ref_roi.roi_ox; x<ref_roi.roi_ox+ref_roi.roi_width; x++) {
             if (ref[y*ref_roi.img_width + x] !=
                 data[(y-ref_roi.roi_oy+data_roi.roi_oy)*data_roi.img_width +
                 x-ref_roi.roi_ox+data_roi.roi_ox]) {
-                fprintf(stderr, "Test FAILED, at (%d,%d): %d vs. %d\n", x, y,
-                        ref[y*ref_roi.img_width + x],
-                        data[(y-ref_roi.roi_oy+data_roi.roi_oy)*data_roi.img_width
-                        + x-ref_roi.roi_ox+data_roi.roi_ox]);
+                std::cerr << "Test FAILED, at (" << x << "," << y << "): "
+                          << ref[y*ref_roi.img_width + x] << " vs. "
+                          << data[(y-ref_roi.roi_oy+data_roi.roi_oy)*data_roi.img_width + x-ref_roi.roi_ox+data_roi.roi_ox]
+                          << std::endl;
                 return;
             }
         }
     }
-    fprintf(stderr, "Test PASSED\n");
+    std::cerr << "Test PASSED" << std::endl;
 }
 
 
@@ -94,17 +83,10 @@ int main(int argc, const char **argv) {
     const int roi_offset_y = 2;
 
     // host memory for image of width x height pixels
-    int *img0 = (int *)malloc(sizeof(int)*width*height);
-    int *img1 = (int *)malloc(sizeof(int)*width*height);
-    int *img2 = (int *)malloc(sizeof(int)*roi_width*roi_height);
-    int *img3 = (int *)malloc(sizeof(int)*roi_width*roi_height);
-
-    // input and output image of width x height pixels
-    Image<int> IMG0(width, height);
-    Image<int> IMG1(width, height);
-    Image<int> IMG2(roi_width, roi_height);
-    Image<int> IMG3(roi_width, roi_height);
-    roi_t img_roi(width, height);
+    int *img0 = new int[width*height];
+    int *img1 = new int[width*height];
+    int *img2 = new int[roi_width*roi_height];
+    int *img3 = new int[roi_width*roi_height];
 
     // initialize data
     for (int y=0; y<height; ++y) {
@@ -120,49 +102,52 @@ int main(int argc, const char **argv) {
         }
     }
 
-    IMG0 = img0;
-    IMG1 = img1;
-    IMG2 = img2;
-    IMG3 = img3;
+    // input and output image of width x height pixels
+    Image<int> IMG0(width, height, img0);
+    Image<int> IMG1(width, height, img1);
+    Image<int> IMG2(roi_width, roi_height, img2);
+    Image<int> IMG3(roi_width, roi_height, img3);
+
+    roi_t img_roi(width, height);
     int *out = NULL;
 
     // Image = Image
     IMG1 = IMG0;
-    out = IMG1.getData();
+    out = IMG1.data();
     compare_results(img0, out, img_roi, img_roi);
 
     // Accessor = Image
-    AccessorNN<int> AccImg1NN(IMG1);
+    Accessor<int> AccImg1NN(IMG1, Interpolate::NN);
     AccImg1NN = IMG0;
-    out = IMG1.getData();
+    out = IMG1.data();
     compare_results(img0, out, img_roi, img_roi);
 
     // Accessor = Accessor
     Accessor<int> AccImg0(IMG0, roi_width, roi_height, roi_width/2, roi_height/2);
-    AccessorLF<int> AccImg1LF(IMG1, roi_width, roi_height, roi_offset_x, roi_offset_y);
+    Accessor<int> AccImg1LF(IMG1, roi_width, roi_height, roi_offset_x, roi_offset_y, Interpolate::LF);
     roi_t acc_roi0(width, height, roi_width, roi_height, roi_width/2, roi_height/2);
     roi_t acc_roi1(width, height, roi_width, roi_height, roi_offset_x, roi_offset_y);
     AccImg1LF = AccImg0;
-    out = IMG1.getData();
+    out = IMG1.data();
     compare_results(img0, out, acc_roi0, acc_roi1);
 
     // Image = Accessor
     IMG2 = AccImg0;
     roi_t img_roi2(roi_width, roi_height);
-    out = IMG2.getData();
+    out = IMG2.data();
     compare_results(img0, out, acc_roi0, img_roi2);
 
-    // Image = Image.getData()
-    IMG1 = IMG0.getData();
-    out = IMG1.getData();
+    // Image = Image.data()
+    IMG1 = IMG0.data();
+    out = IMG1.data();
     compare_results(img0, out, img_roi, img_roi);
 
 
     // memory cleanup
-    free(img0);
-    free(img1);
-    free(img2);
-    free(img3);
+    delete[] img0;
+    delete[] img1;
+    delete[] img2;
+    delete[] img3;
 
     return EXIT_SUCCESS;
 }

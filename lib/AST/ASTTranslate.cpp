@@ -25,7 +25,7 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-//===--- ASTTranslate.cpp - C to CL Translation of the AST ----------------===//
+//===--- ASTTranslate.cpp - Translation of the AST ------------------------===//
 //
 // This file implements translation of statements and expressions.
 //
@@ -132,20 +132,15 @@ T *ASTTranslate::lookup(std::string name, QualType QT, NamespaceDecl *NS) {
   DeclContext *DC = Ctx.getTranslationUnitDecl();
   if (NS) DC = Decl::castToDeclContext(NS);
 
-  for (auto Lookup = DC->lookup(&Ctx.Idents.get(name)); !Lookup.empty();
-      Lookup=Lookup.slice(1)) {
-    T *result = cast_or_null<T>(Lookup.front());
-
-    if (result) {
-      if (isa<FunctionDecl>(result)) {
-        FunctionDecl *decl = dyn_cast<FunctionDecl>(result);
-        if (decl->getReturnType().getDesugaredType(Ctx) ==
+  for (auto *decl : DC->lookup(&Ctx.Idents.get(name))) {
+    if (auto result = cast_or_null<T>(decl)) {
+      if (auto fun = dyn_cast<FunctionDecl>(result)) {
+        if (fun->getReturnType().getDesugaredType(Ctx) ==
             QT.getDesugaredType(Ctx)) return result;
         continue;
       }
-      if (isa<VarDecl>(result)) {
-        VarDecl *decl = dyn_cast<VarDecl>(result);
-        if (decl->getType().getDesugaredType(Ctx) == QT.getDesugaredType(Ctx))
+      if (auto var = dyn_cast<VarDecl>(result)) {
+        if (var->getType().getDesugaredType(Ctx) == QT.getDesugaredType(Ctx))
           return result;
         continue;
       }
@@ -164,18 +159,18 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
   VarDecl *gid_x = nullptr, *gid_y = nullptr;
 
   // C/C++: int gid_x = offset_x;
-  if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl()) {
+  if (Kernel->getIterationSpace()->getOffsetXDecl()) {
     gid_x = createVarDecl(Ctx, kernelDecl, "gid_x", Ctx.IntTy,
-        getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()));
+        getOffsetXDecl(Kernel->getIterationSpace()));
   } else {
     gid_x = createVarDecl(Ctx, kernelDecl, "gid_x", Ctx.IntTy,
         createIntegerLiteral(Ctx, 0));
   }
 
   // C/C++: int gid_y = offset_y;
-  if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl()) {
+  if (Kernel->getIterationSpace()->getOffsetYDecl()) {
     gid_y = createVarDecl(Ctx, kernelDecl, "gid_y", Ctx.IntTy,
-        getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()));
+        getOffsetYDecl(Kernel->getIterationSpace()));
   } else {
     gid_y = createVarDecl(Ctx, kernelDecl, "gid_y", Ctx.IntTy,
         createIntegerLiteral(Ctx, 0));
@@ -197,25 +192,24 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
   tileVars.local_id_y = createDeclRefExpr(Ctx, gid_y);
   tileVars.block_id_x = createDeclRefExpr(Ctx, gid_x);
   tileVars.block_id_y = createDeclRefExpr(Ctx, gid_y);
-  tileVars.local_size_x = createIntegerLiteral(Ctx, 0);//getStrideDecl(Kernel->getIterationSpace()->getAccessor());
+  tileVars.local_size_x = createIntegerLiteral(Ctx, 0);//getStrideDecl(Kernel->getIterationSpace());
   tileVars.local_size_y = createIntegerLiteral(Ctx, 0);
 
   // check if we need border handling
-  for (auto img : KernelClass->getImgFields()) {
-    HipaccAccessor *Acc = Kernel->getImgFromMapping(img);
+  if (KernelClass->getKernelType() != UserOperator) {
+    for (auto img : KernelClass->getImgFields()) {
+      HipaccAccessor *Acc = Kernel->getImgFromMapping(img);
 
-    // bail out for user defined kernels
-    if (KernelClass->getKernelType()==UserOperator) break;
-
-    // check if we need border handling
-    if (Acc->getBoundaryHandling() != BOUNDARY_UNDEFINED) {
-      if (Acc->getSizeX() > 1) {
-          bh_variant.borders.left = 1;
-          bh_variant.borders.right = 1;
-      }
-      if (Acc->getSizeY() > 1) {
-          bh_variant.borders.top = 1;
-          bh_variant.borders.bottom = 1;
+      // check if we need border handling
+      if (Acc->getBoundaryMode() != Boundary::UNDEFINED) {
+        if (Acc->getSizeX() > 1) {
+            bh_variant.borders.left = 1;
+            bh_variant.borders.right = 1;
+        }
+        if (Acc->getSizeY() > 1) {
+            bh_variant.borders.top = 1;
+            bh_variant.borders.bottom = 1;
+        }
       }
     }
   }
@@ -226,7 +220,6 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
         Kernel->getIterationSpace()->getImage()->getType());
     retValRef = createDeclRefExpr(Ctx, output);
   }
-
   // convert the function body to kernel syntax
   Stmt *clonedStmt = Clone(S);
   assert(isa<CompoundStmt>(clonedStmt) && "CompoundStmt for kernel function body expected!");
@@ -241,17 +234,15 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
     //     }
     // }
     //
-    Expr *upper_x = getWidthDecl(Kernel->getIterationSpace()->getAccessor());
-    Expr *upper_y = getHeightDecl(Kernel->getIterationSpace()->getAccessor());
-    if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl()) {
+    Expr *upper_x = getWidthDecl(Kernel->getIterationSpace());
+    Expr *upper_y = getHeightDecl(Kernel->getIterationSpace());
+    if (Kernel->getIterationSpace()->getOffsetXDecl()) {
       upper_x = createBinaryOperator(Ctx, upper_x,
-          getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()), BO_Add,
-          Ctx.IntTy);
+          getOffsetXDecl(Kernel->getIterationSpace()), BO_Add, Ctx.IntTy);
     }
-    if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl()) {
+    if (Kernel->getIterationSpace()->getOffsetYDecl()) {
       upper_y = createBinaryOperator(Ctx, upper_y,
-          getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()), BO_Add,
-          Ctx.IntTy);
+          getOffsetYDecl(Kernel->getIterationSpace()), BO_Add, Ctx.IntTy);
     }
     ForStmt *innerLoop = createForStmt(Ctx, gid_x_stmt, createBinaryOperator(Ctx,
           tileVars.global_id_x, upper_x, BO_LT, Ctx.BoolTy),
@@ -507,14 +498,14 @@ void ASTTranslate::initRenderscript(SmallVector<Stmt *, 16> &kernelBody) {
   tileVars.local_id_y = createDeclRefExpr(Ctx, gid_y);
   tileVars.block_id_x = createDeclRefExpr(Ctx, gid_x);
   tileVars.block_id_y = createDeclRefExpr(Ctx, gid_y);
-  tileVars.local_size_x = getStrideDecl(Kernel->getIterationSpace()->getAccessor());
+  tileVars.local_size_x = getStrideDecl(Kernel->getIterationSpace());
   tileVars.local_size_y = createIntegerLiteral(Ctx, 1);
 
   switch (compilerOptions.getTargetLang()) {
     default: break;
     case Language::Renderscript: {
         // retValRef: Kernel parameter pointing to current output pixel
-        VarDecl *output = createVarDecl(Ctx, kernelDecl, "_IS",
+        VarDecl *output = createVarDecl(Ctx, kernelDecl, "_iter",
             Kernel->getIterationSpace()->getImage()->getType());
         retValRef = createDeclRefExpr(Ctx, output);
       }
@@ -576,56 +567,32 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
 
   // search for image width and height parameters
   for (auto param : kernelDecl->params()) {
+    auto parm_ref = createDeclRefExpr(Ctx, param);
     // the first parameter is the output image; create association between them.
-    if (param==*kernelDecl->param_begin()) {
-      outputImage = createDeclRefExpr(Ctx, param);
+    if (param == *kernelDecl->param_begin()) {
+      outputImage = parm_ref;
       continue;
     }
 
-    // search for iteration space parameters
-    if (param->getName().equals("is_width")) {
-      Kernel->getIterationSpace()->getAccessor()->setWidthDecl(createDeclRefExpr(Ctx,
-            param));
-      continue;
-    }
-    if (param->getName().equals("is_height")) {
-      Kernel->getIterationSpace()->getAccessor()->setHeightDecl(createDeclRefExpr(Ctx,
-            param));
-      continue;
-    }
-    if (param->getName().equals("is_stride")) {
-      Kernel->getIterationSpace()->getAccessor()->setStrideDecl(createDeclRefExpr(Ctx,
-            param));
-      continue;
-    }
-    if (param->getName().equals("is_offset_x")) {
-      Kernel->getIterationSpace()->getAccessor()->setOffsetXDecl(createDeclRefExpr(Ctx,
-            param));
-      continue;
-    }
-    if (param->getName().equals("is_offset_y")) {
-      Kernel->getIterationSpace()->getAccessor()->setOffsetYDecl(createDeclRefExpr(Ctx,
-            param));
-      continue;
-    }
+    // search for boundary handling parameters
     if (param->getName().equals("bh_start_left")) {
-      bh_start_left = createDeclRefExpr(Ctx, param);
+      bh_start_left = parm_ref;
       continue;
     }
     if (param->getName().equals("bh_start_right")) {
-      bh_start_right = createDeclRefExpr(Ctx, param);
+      bh_start_right = parm_ref;
       continue;
     }
     if (param->getName().equals("bh_start_top")) {
-      bh_start_top = createDeclRefExpr(Ctx, param);
+      bh_start_top = parm_ref;
       continue;
     }
     if (param->getName().equals("bh_start_bottom")) {
-      bh_start_bottom = createDeclRefExpr(Ctx, param);
+      bh_start_bottom = parm_ref;
       continue;
     }
     if (param->getName().equals("bh_fall_back")) {
-      bh_fall_back = createDeclRefExpr(Ctx, param);
+      bh_fall_back = parm_ref;
       continue;
     }
 
@@ -648,23 +615,23 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       HipaccAccessor *Acc = Kernel->getImgFromMapping(img);
 
       if (param->getName().equals(img->getNameAsString() + "_width")) {
-        Acc->setWidthDecl(createDeclRefExpr(Ctx, param));
+        Acc->setWidthDecl(parm_ref);
         continue;
       }
       if (param->getName().equals(img->getNameAsString() + "_height")) {
-        Acc->setHeightDecl(createDeclRefExpr(Ctx, param));
+        Acc->setHeightDecl(parm_ref);
         continue;
       }
       if (param->getName().equals(img->getNameAsString() + "_stride")) {
-        Acc->setStrideDecl(createDeclRefExpr(Ctx, param));
+        Acc->setStrideDecl(parm_ref);
         continue;
       }
       if (param->getName().equals(img->getNameAsString() + "_offset_x")) {
-        Acc->setOffsetXDecl(createDeclRefExpr(Ctx, param));
+        Acc->setOffsetXDecl(parm_ref);
         continue;
       }
       if (param->getName().equals(img->getNameAsString() + "_offset_y")) {
-        Acc->setOffsetYDecl(createDeclRefExpr(Ctx, param));
+        Acc->setOffsetYDecl(parm_ref);
         continue;
       }
     }
@@ -716,17 +683,15 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
     // add scale factor calculations for interpolation:
     // float acc_scale_x = (float)acc_width/is_width;
     // float acc_scale_y = (float)acc_height/is_height;
-    if (Acc->getInterpolation()!=InterpolateNO) {
+    if (Acc->getInterpolationMode() != Interpolate::NO) {
       Expr *scaleExprX = createBinaryOperator(Ctx, createCStyleCastExpr(Ctx,
             Ctx.FloatTy, CK_IntegralToFloating, getWidthDecl(Acc), nullptr,
             Ctx.getTrivialTypeSourceInfo(Ctx.FloatTy)),
-          getWidthDecl(Kernel->getIterationSpace()->getAccessor()), BO_Div,
-          Ctx.FloatTy);
+          getWidthDecl(Kernel->getIterationSpace()), BO_Div, Ctx.FloatTy);
       Expr *scaleExprY = createBinaryOperator(Ctx, createCStyleCastExpr(Ctx,
             Ctx.FloatTy, CK_IntegralToFloating, getHeightDecl(Acc), nullptr,
             Ctx.getTrivialTypeSourceInfo(Ctx.FloatTy)),
-          getHeightDecl(Kernel->getIterationSpace()->getAccessor()), BO_Div,
-          Ctx.FloatTy);
+          getHeightDecl(Kernel->getIterationSpace()), BO_Div, Ctx.FloatTy);
       VarDecl *scaleDeclX = createVarDecl(Ctx, kernelDecl, Acc->getName() +
           "scale_x", Ctx.FloatTy, scaleExprX);
       VarDecl *scaleDeclY = createVarDecl(Ctx, kernelDecl, Acc->getName() +
@@ -753,8 +718,8 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
     // search for member name in kernel parameter list
     for (auto param : kernelDecl->params()) {
       // output image - iteration space
-      if (param->getName().equals("Output")) {
-        // <type>4 *Input4 = (<type>4 *) Input;
+      if (param->getName().equals((*kernelDecl->param_begin())->getName())) {
+        // <type>4 *Output4 = (<type>4 *) Output;
         VarDecl *VD = CloneParmVarDecl(param);
 
         VD->setInit(createCStyleCastExpr(Ctx, VD->getType(), CK_BitCast,
@@ -795,20 +760,20 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   bool kernel_y = false;
   for (auto img : KernelClass->getImgFields()) {
     HipaccAccessor *Acc = Kernel->getImgFromMapping(img);
-    MemoryAccess memAcc = KernelClass->getImgAccess(img);
+    MemoryAccess mem_acc = KernelClass->getMemAccess(img);
 
     // bail out for user defined kernels
     if (KernelClass->getKernelType()==UserOperator) break;
 
     // check if we need border handling
-    if (Acc->getBoundaryHandling() != BOUNDARY_UNDEFINED) {
+    if (Acc->getBoundaryMode() != Boundary::UNDEFINED) {
       if (Acc->getSizeX() > 1 || Acc->getSizeY() > 1) border_handling = true;
       if (Acc->getSizeX() > 1) kernel_x = true;
       if (Acc->getSizeY() > 1) kernel_y = true;
     }
 
     // check if we need shared memory
-    if (memAcc == READ_ONLY && Kernel->useLocalMemory(Acc)) {
+    if (mem_acc == READ_ONLY && Kernel->useLocalMemory(Acc)) {
       std::string sharedName = "_smem";
       sharedName += img->getNameAsString();
       use_shared = true;
@@ -1124,25 +1089,23 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
     BinaryOperator *check_bop = nullptr;
     if (border_handling) {
       // if (gid_x >= is_offset_x)
-      if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl() &&
+      if (Kernel->getIterationSpace()->getOffsetXDecl() &&
           !(kernel_x && !bh_variant.borders.left) && bh_variant.borderVal) {
         check_bop = createBinaryOperator(Ctx, tileVars.global_id_x,
-            getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()), BO_GE,
-            Ctx.BoolTy);
+            getOffsetXDecl(Kernel->getIterationSpace()), BO_GE, Ctx.BoolTy);
       }
       // if (gid_x < is_width+is_offset_x)
       if (!(kernel_x && !bh_variant.borders.right) && bh_variant.borderVal) {
         BinaryOperator *check_tmp = nullptr;
-        if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl()) {
+        if (Kernel->getIterationSpace()->getOffsetXDecl()) {
           check_tmp = createBinaryOperator(Ctx, tileVars.global_id_x,
               createBinaryOperator(Ctx,
-                getWidthDecl(Kernel->getIterationSpace()->getAccessor()),
-                getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()),
-                BO_Add, Ctx.IntTy), BO_LT, Ctx.BoolTy);
+                getWidthDecl(Kernel->getIterationSpace()),
+                getOffsetXDecl(Kernel->getIterationSpace()), BO_Add, Ctx.IntTy),
+              BO_LT, Ctx.BoolTy);
         } else {
           check_tmp = createBinaryOperator(Ctx, tileVars.global_id_x,
-              getWidthDecl(Kernel->getIterationSpace()->getAccessor()), BO_LT,
-              Ctx.BoolTy);
+              getWidthDecl(Kernel->getIterationSpace()), BO_LT, Ctx.BoolTy);
         }
         if (check_bop) {
           check_bop = createBinaryOperator(Ctx, check_bop, check_tmp, BO_LAnd,
@@ -1157,12 +1120,11 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       if (compilerOptions.emitRenderscript() ||
           compilerOptions.emitFilterscript()) {
         // if (gid_y >= is_offset_y)
-        if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl() &&
+        if (Kernel->getIterationSpace()->getOffsetYDecl() &&
             !(kernel_y && !bh_variant.borders.left) && bh_variant.borderVal) {
           BinaryOperator *check_tmp = nullptr;
           check_tmp = createBinaryOperator(Ctx, gidYRef,
-              getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()), BO_GE,
-              Ctx.BoolTy);
+              getOffsetYDecl(Kernel->getIterationSpace()), BO_GE, Ctx.BoolTy);
           if (check_bop) {
             check_bop = createBinaryOperator(Ctx, check_bop, check_tmp, BO_LAnd,
                 Ctx.BoolTy);
@@ -1173,16 +1135,15 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
         // if (gid_y < is_height+is_offset_y)
         if (!(kernel_y && !bh_variant.borders.right) && bh_variant.borderVal) {
           BinaryOperator *check_tmp = nullptr;
-          if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl()) {
+          if (Kernel->getIterationSpace()->getOffsetYDecl()) {
             check_tmp = createBinaryOperator(Ctx, gidYRef,
                 createBinaryOperator(Ctx,
-                  getHeightDecl(Kernel->getIterationSpace()->getAccessor()),
-                  getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()),
-                  BO_Add, Ctx.IntTy), BO_LT, Ctx.BoolTy);
+                  getHeightDecl(Kernel->getIterationSpace()),
+                  getOffsetYDecl(Kernel->getIterationSpace()), BO_Add,
+                  Ctx.IntTy), BO_LT, Ctx.BoolTy);
           } else {
             check_tmp = createBinaryOperator(Ctx, gidYRef,
-                getHeightDecl(Kernel->getIterationSpace()->getAccessor()),
-                BO_LT, Ctx.BoolTy);
+                getHeightDecl(Kernel->getIterationSpace()), BO_LT, Ctx.BoolTy);
           }
           if (check_bop) {
             check_bop = createBinaryOperator(Ctx, check_bop, check_tmp, BO_LAnd,
@@ -1194,20 +1155,18 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       }
     } else {
       // if (gid_x < is_width+is_offset_x)
-      if (Kernel->getIterationSpace()->getAccessor()->getOffsetXDecl()) {
+      if (Kernel->getIterationSpace()->getOffsetXDecl()) {
         check_bop = createBinaryOperator(Ctx, tileVars.global_id_x,
-            getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()), BO_GE,
-            Ctx.BoolTy);
+            getOffsetXDecl(Kernel->getIterationSpace()), BO_GE, Ctx.BoolTy);
         check_bop = createBinaryOperator(Ctx, check_bop,
             createBinaryOperator(Ctx, tileVars.global_id_x,
               createBinaryOperator(Ctx,
-                getWidthDecl(Kernel->getIterationSpace()->getAccessor()),
-                getOffsetXDecl(Kernel->getIterationSpace()->getAccessor()),
-                BO_Add, Ctx.IntTy), BO_LT, Ctx.BoolTy), BO_LAnd, Ctx.BoolTy);
+                getWidthDecl(Kernel->getIterationSpace()),
+                getOffsetXDecl(Kernel->getIterationSpace()), BO_Add, Ctx.IntTy),
+              BO_LT, Ctx.BoolTy), BO_LAnd, Ctx.BoolTy);
       } else {
         check_bop = createBinaryOperator(Ctx, tileVars.global_id_x,
-            getWidthDecl(Kernel->getIterationSpace()->getAccessor()), BO_LT,
-            Ctx.BoolTy);
+            getWidthDecl(Kernel->getIterationSpace()), BO_LT, Ctx.BoolTy);
       }
       // if (gid_y >= is_offset_y && gid_y < is_height+is_offset_y)
       // Renderscript iteration space is always the whole image, so we need to
@@ -1216,19 +1175,17 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
           compilerOptions.emitFilterscript()) {
         // if (gid_y < is_height+is_offset_y)
         BinaryOperator *check_tmp = nullptr;
-        if (Kernel->getIterationSpace()->getAccessor()->getOffsetYDecl()) {
+        if (Kernel->getIterationSpace()->getOffsetYDecl()) {
           check_tmp = createBinaryOperator(Ctx, gidYRef,
-              getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()), BO_GE,
-              Ctx.BoolTy);
+              getOffsetYDecl(Kernel->getIterationSpace()), BO_GE, Ctx.BoolTy);
           check_tmp = createBinaryOperator(Ctx, check_tmp,
               createBinaryOperator(Ctx, gidYRef, createBinaryOperator(Ctx,
-                  getHeightDecl(Kernel->getIterationSpace()->getAccessor()),
-                  getOffsetYDecl(Kernel->getIterationSpace()->getAccessor()),
-                  BO_Add, Ctx.IntTy), BO_LT, Ctx.BoolTy), BO_LAnd, Ctx.BoolTy);
+                  getHeightDecl(Kernel->getIterationSpace()),
+                  getOffsetYDecl(Kernel->getIterationSpace()), BO_Add,
+                  Ctx.IntTy), BO_LT, Ctx.BoolTy), BO_LAnd, Ctx.BoolTy);
         } else {
           check_tmp = createBinaryOperator(Ctx, gidYRef,
-              getHeightDecl(Kernel->getIterationSpace()->getAccessor()), BO_LT,
-              Ctx.BoolTy);
+              getHeightDecl(Kernel->getIterationSpace()), BO_LT, Ctx.BoolTy);
         }
         if (check_bop) {
           check_bop = createBinaryOperator(Ctx, check_bop, check_tmp, BO_LAnd,
@@ -1348,8 +1305,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
           !compilerOptions.emitFilterscript()) {
         // if (gid_y + p < is_height)
         BinaryOperator *inner_check_bop = createBinaryOperator(Ctx, gidYRef,
-            getHeightDecl(Kernel->getIterationSpace()->getAccessor()), BO_LT,
-            Ctx.BoolTy);
+            getHeightDecl(Kernel->getIterationSpace()), BO_LT, Ctx.BoolTy);
         IfStmt *inner_ispace_check = createIfStmt(Ctx, inner_check_bop,
             clonedStmt);
         pptBody.push_back(inner_ispace_check);
@@ -1392,10 +1348,11 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   }
 
   if (compilerOptions.emitFilterscript()) {
-      Expr *result = accessMem(outputImage,
-          Kernel->getIterationSpace()->getAccessor(), READ_ONLY);
-      setExprProps(outputImage, result);
-      kernelBody.push_back(createReturnStmt(Ctx, result));
+    // in case no value was written, return the value of the iteration space
+    Expr *result = accessMem(outputImage, Kernel->getIterationSpace(),
+        READ_ONLY);
+    setExprProps(outputImage, result);
+    kernelBody.push_back(createReturnStmt(Ctx, result));
   }
 
   CompoundStmt *CS = createCompoundStmt(Ctx, kernelBody);
@@ -1464,7 +1421,7 @@ VarDecl *ASTTranslate::CloneParmVarDecl(ParmVarDecl *PVD) {
       for (auto img : KernelClass->getImgFields()) {
         // parameter name matches
         if (PVD->getName().equals(img->getName()) ||
-            PVD->getName().equals("Output")) {
+            PVD->getName().equals((*kernelDecl->param_begin())->getName())) {
           // mark original variable as being used
           Kernel->setUsed(name);
 
@@ -1577,25 +1534,12 @@ Stmt *ASTTranslate::VisitCompoundStmtTranslate(CompoundStmt *S) {
 
 
 Stmt *ASTTranslate::VisitReturnStmtTranslate(ReturnStmt *S) {
-  // within convolve lambda-functions, return statements are replaced by
-  // reductions
+  // replace return statements within convolve lambda-functions
   if (convMask && convTmp) {
-    Expr *retVal = Clone(S->getRetValue());
-
-    Stmt *convInitExpr = createBinaryOperator(Ctx, convTmp, retVal, BO_Assign,
-        convTmp->getType());
-    Stmt *convTmpExpr = getConvolutionStmt(convMode, convTmp, retVal);
-
-    if (convIdxX + convIdxY == 0) {
-      // conv_tmp = ...
-      return convInitExpr;
-    } else {
-      // conv_tmp += ...
-      return convTmpExpr;
-    }
+    return getConvolutionStmt(convMode, convTmp, Clone(S->getRetValue()));
   } else if (!redDomains.empty() && !redTmps.empty()) {
     return getConvolutionStmt(redModes.back(), redTmps.back(),
-        Clone(S->getRetValue()));
+                              Clone(S->getRetValue()));
   } else {
     return new (Ctx) ReturnStmt(S->getReturnLoc(), Clone(S->getRetValue()), 0);
   }
@@ -2017,9 +1961,8 @@ Expr *ASTTranslate::VisitImplicitCastExprTranslate(ImplicitCastExpr *E) {
   setCastPath(E, castPath);
 
   Expr *litExpr = subExpr->IgnoreImpCasts();
-  if (isa<UnaryOperator>(litExpr)) {
-    litExpr = ((UnaryOperator *)litExpr)->getSubExpr();
-  }
+  if (auto uo = dyn_cast<UnaryOperator>(litExpr))
+    litExpr = uo->getSubExpr();
 
   if (E->getCastKind() == CK_LValueToRValue &&
       (isa<IntegerLiteral>(litExpr->IgnoreParenCasts()) ||
@@ -2111,10 +2054,9 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
   }
 
   // look for Mask user class member variable
-  if (Kernel->getMaskFromMapping(FD)) {
-    HipaccMask *Mask = Kernel->getMaskFromMapping(FD);
-    MemoryAccess memAcc = KernelClass->getImgAccess(FD);
-    assert(memAcc==READ_ONLY &&
+  if (auto mask = Kernel->getMaskFromMapping(FD)) {
+    MemoryAccess mem_acc = KernelClass->getMemAccess(FD);
+    assert(mem_acc==READ_ONLY &&
         "only read-only memory access to Mask supported");
 
     switch (E->getNumArgs()) {
@@ -2122,13 +2064,13 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
         assert(0 && "0, 1, or 2 arguments for Mask operator() expected!");
         break;
       case 1:
-        assert(convMask && convMask==Mask &&
+        assert(convMask && convMask==mask &&
             "0 arguments for Mask operator() only allowed within"
             "convolution lambda-function.");
         // within convolute lambda-function
-        if (Mask->isConstant()) {
+        if (mask->isConstant()) {
           // propagate constants
-          result = Clone(Mask->getInitExpr(convIdxX, convIdxY));
+          result = Clone(mask->getInitExpr(convIdxX, convIdxY));
         } else {
           // access mask elements
           Expr *midx_x = createIntegerLiteral(Ctx, convIdxX);
@@ -2147,12 +2089,12 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             case Language::OpenCLGPU:
               // array subscript: Mask[(conv_y)*width + conv_x]
               result = accessMemArrAt(LHS, createIntegerLiteral(Ctx,
-                    (int)Mask->getSizeX()), midx_x, midx_y);
+                    (int)mask->getSizeX()), midx_x, midx_y);
               break;
             case Language::Renderscript:
             case Language::Filterscript:
               // allocation access: rsGetElementAt(Mask, conv_x, conv_y)
-              result = accessMemAllocAt(LHS, memAcc, midx_x, midx_y);
+              result = accessMemAllocAt(LHS, mem_acc, midx_x, midx_y);
               break;
             case Language::Vivado:
               assert(false && "Only constant masks are allowed for Vivado");
@@ -2175,14 +2117,14 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
         (void)Domain; // silent compiler warning
         assert(Domain->isDomain() && "Domain required.");
 
-        assert(Mask->getSizeX()==Domain->getSizeX() &&
-               Mask->getSizeY()==Domain->getSizeY() &&
+        assert(mask->getSizeX()==Domain->getSizeX() &&
+               mask->getSizeY()==Domain->getSizeY() &&
                "Mask and Domain size must be equal.");
 
         // within reduce/iterate lambda-function
-        if (Mask->isConstant()) {
+        if (mask->isConstant()) {
           // propagate constants
-          result = Clone(Mask->getInitExpr(redIdxX.back(), redIdxY.back()));
+          result = Clone(mask->getInitExpr(redIdxX.back(), redIdxY.back()));
         } else {
           // access mask elements
           Expr *midx_x = createIntegerLiteral(Ctx, redIdxX.back());
@@ -2201,12 +2143,12 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             case Language::OpenCLGPU:
               // array subscript: Mask[(conv_y)*width + conv_x]
               result = accessMemArrAt(LHS, createIntegerLiteral(Ctx,
-                    (int)Mask->getSizeX()), midx_x, midx_y);
+                    (int)mask->getSizeX()), midx_x, midx_y);
               break;
             case Language::Renderscript:
             case Language::Filterscript:
               // allocation access: rsGetElementAt(Mask, conv_x, conv_y)
-              result = accessMemAllocAt(LHS, memAcc, midx_x, midx_y);
+              result = accessMemAllocAt(LHS, mem_acc, midx_x, midx_y);
               break;
             case Language::Vivado:
               assert(false && "Only constant masks are allowed for Vivado");
@@ -2228,50 +2170,50 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             // array subscript: Mask[y+size_y/2][x+size_x/2]
             result = accessMem2DAt(LHS, createBinaryOperator(Ctx,
                   Clone(E->getArg(1)), createIntegerLiteral(Ctx,
-                    (int)Mask->getSizeX()/2), BO_Add, Ctx.IntTy),
+                    (int)mask->getSizeX()/2), BO_Add, Ctx.IntTy),
                 createBinaryOperator(Ctx, Clone(E->getArg(2)),
-                  createIntegerLiteral(Ctx, (int)Mask->getSizeY()/2), BO_Add,
+                  createIntegerLiteral(Ctx, (int)mask->getSizeY()/2), BO_Add,
                   Ctx.IntTy));
             break;
           case Language::OpenCLACC:
           case Language::OpenCLCPU:
           case Language::OpenCLGPU:
-            if (Mask->isConstant()) {
+            if (mask->isConstant()) {
               // array subscript: Mask[y+size_y/2][x+size_x/2]
               result = accessMem2DAt(LHS, createBinaryOperator(Ctx,
                     Clone(E->getArg(1)), createIntegerLiteral(Ctx,
-                      (int)Mask->getSizeX()/2), BO_Add, Ctx.IntTy),
+                      (int)mask->getSizeX()/2), BO_Add, Ctx.IntTy),
                   createBinaryOperator(Ctx, Clone(E->getArg(2)),
-                    createIntegerLiteral(Ctx, (int)Mask->getSizeY()/2), BO_Add,
+                    createIntegerLiteral(Ctx, (int)mask->getSizeY()/2), BO_Add,
                     Ctx.IntTy));
             } else {
               // array subscript: Mask[(y+size_y/2)*width + x+size_x/2]
               result = accessMemArrAt(LHS, createIntegerLiteral(Ctx,
-                    (int)Mask->getSizeX()), createBinaryOperator(Ctx,
+                    (int)mask->getSizeX()), createBinaryOperator(Ctx,
                     Clone(E->getArg(1)), createIntegerLiteral(Ctx,
-                      (int)Mask->getSizeX()/2), BO_Add, Ctx.IntTy),
+                      (int)mask->getSizeX()/2), BO_Add, Ctx.IntTy),
                   createBinaryOperator(Ctx, Clone(E->getArg(2)),
-                    createIntegerLiteral(Ctx, (int)Mask->getSizeY()/2), BO_Add,
+                    createIntegerLiteral(Ctx, (int)mask->getSizeY()/2), BO_Add,
                     Ctx.IntTy));
             }
             break;
           case Language::Renderscript:
           case Language::Filterscript:
-            if (Mask->isConstant()) {
+            if (mask->isConstant()) {
               // array subscript: Mask[y+size_y/2][x+size_x/2]
               result = accessMem2DAt(LHS, createBinaryOperator(Ctx,
                     Clone(E->getArg(1)), createIntegerLiteral(Ctx,
-                      (int)Mask->getSizeX()/2), BO_Add, Ctx.IntTy),
+                      (int)mask->getSizeX()/2), BO_Add, Ctx.IntTy),
                   createBinaryOperator(Ctx, Clone(E->getArg(2)),
-                    createIntegerLiteral(Ctx, (int)Mask->getSizeY()/2), BO_Add,
+                    createIntegerLiteral(Ctx, (int)mask->getSizeY()/2), BO_Add,
                     Ctx.IntTy));
             } else {
               // allocation access: rsGetElementAt(Mask, x+size_x/2, y+size_y/2)
-              result = accessMemAllocAt(LHS, memAcc, createBinaryOperator(Ctx,
+              result = accessMemAllocAt(LHS, mem_acc, createBinaryOperator(Ctx,
                     Clone(E->getArg(1)), createIntegerLiteral(Ctx,
-                      (int)Mask->getSizeX()/2), BO_Add, Ctx.IntTy),
+                      (int)mask->getSizeX()/2), BO_Add, Ctx.IntTy),
                   createBinaryOperator(Ctx, Clone(E->getArg(2)),
-                    createIntegerLiteral(Ctx, (int)Mask->getSizeY()/2), BO_Add,
+                    createIntegerLiteral(Ctx, (int)mask->getSizeY()/2), BO_Add,
                     Ctx.IntTy));
             }
             break;
@@ -2284,9 +2226,8 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
   }
 
   // look for Image user class member variable
-  if (Kernel->getImgFromMapping(FD)) {
-    HipaccAccessor *Acc = Kernel->getImgFromMapping(FD);
-    MemoryAccess memAcc = KernelClass->getImgAccess(FD);
+  if (auto acc = Kernel->getImgFromMapping(FD)) {
+    MemoryAccess mem_acc = KernelClass->getMemAccess(FD);
 
     // Images are ParmVarDecls
     bool use_shared = false;
@@ -2304,7 +2245,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
     }
 
     Expr *SY, *TX;
-    if (Acc->getSizeX() > 1) {
+    if (acc->getSizeX() > 1) {
       if (compilerOptions.exploreConfig()) {
         TX = tileVars.local_size_x;
       } else {
@@ -2313,8 +2254,8 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
     } else {
       TX = createIntegerLiteral(Ctx, 0);
     }
-    if (Acc->getSizeY() > 1) {
-      SY = createIntegerLiteral(Ctx, (int)Acc->getSizeY()/2);
+    if (acc->getSizeY() > 1) {
+      SY = createIntegerLiteral(Ctx, (int)acc->getSizeY()/2);
     } else {
       SY = createIntegerLiteral(Ctx, 0);
     }
@@ -2330,7 +2271,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
         if (use_shared) {
           result = accessMemShared(DRE, TX, SY);
         } else {
-          result = accessMem(LHS, Acc, memAcc);
+          result = accessMem(LHS, acc, mem_acc);
         }
         break;
       case 2:
@@ -2384,16 +2325,16 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
                 TX, BO_Add, Ctx.IntTy), createBinaryOperator(Ctx, offset_y,
                   SY, BO_Add, Ctx.IntTy));
         } else {
-          switch (memAcc) {
+          switch (mem_acc) {
             case READ_ONLY:
               if (bh_variant.borderVal && !compilerOptions.emitVivado()) {
-                return addBorderHandling(LHS, offset_x, offset_y, Acc);
+                return addBorderHandling(LHS, offset_x, offset_y, acc);
               }
               // fall through
             case WRITE_ONLY:
             case READ_WRITE:
             case UNDEFINED:
-              result = accessMem(LHS, Acc, memAcc, offset_x, offset_y);
+              result = accessMem(LHS, acc, mem_acc, offset_x, offset_y);
               break;
           }
         }
@@ -2410,12 +2351,51 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
 Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
   assert(isa<MemberExpr>(E->getCallee()) &&
       "Hipacc: Stumbled upon unsupported expression or statement: CXXMemberCallExpr");
-  MemberExpr *ME = dyn_cast<MemberExpr>(E->getCallee());
+  MemberExpr *ME = cast<MemberExpr>(E->getCallee());
 
-  DeclRefExpr *LHS = nullptr;
-  HipaccAccessor *Acc = nullptr;
-  Expr *result = nullptr;
-  MemoryAccess memAcc = UNDEFINED;
+  auto mem_at_fun = [&] (HipaccAccessor *acc, DeclRefExpr *LHS,
+                         MemoryAccess mem_acc) -> Expr * {
+    assert(E->getNumArgs()==2 &&
+           "x and y argument for pixel_at() or output_at() required!");
+    Expr *idx_x = addGlobalOffsetX(Clone(E->getArg(0)), acc);
+    Expr *idx_y = addGlobalOffsetY(Clone(E->getArg(1)), acc);
+    Expr *result = nullptr;
+
+    switch (compilerOptions.getTargetLang()) {
+      case Language::Vivado:
+      case Language::C99:
+        result = accessMem2DAt(LHS, idx_x, idx_y);
+        break;
+      case Language::CUDA:
+        if (Kernel->useTextureMemory(acc)!=Texture::None) {
+          result = accessMemTexAt(LHS, acc, mem_acc, idx_x, idx_y);
+        } else {
+          result = accessMemArrAt(LHS, getStrideDecl(acc), idx_x, idx_y);
+        }
+        break;
+      case Language::OpenCLACC:
+      case Language::OpenCLCPU:
+      case Language::OpenCLGPU:
+        if (Kernel->useTextureMemory(acc)!=Texture::None) {
+          result = accessMemImgAt(LHS, acc, mem_acc, idx_x, idx_y);
+        } else {
+          result = accessMemArrAt(LHS, getStrideDecl(acc), idx_x, idx_y);
+        }
+        break;
+      case Language::Renderscript:
+      case Language::Filterscript:
+        if (ME->getMemberNameInfo().getAsString() == "output_at" &&
+            compilerOptions.emitFilterscript()) {
+            assert(0 && "Filterscript does not support output_at().");
+        }
+        result = accessMemAllocAt(LHS, mem_acc, idx_x, idx_y);
+        break;
+    }
+
+    setExprProps(E, result);
+
+    return result;
+  };
 
   if (isa<CXXThisExpr>(ME->getBase()->IgnoreImpCasts())) {
     // check if this is a convolve function call
@@ -2427,21 +2407,21 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
     }
 
     // Kernel context -> use Iteration Space output Accessor
-    LHS = outputImage;
-    Acc = Kernel->getIterationSpace()->getAccessor();
-    memAcc = WRITE_ONLY;
+    auto LHS = outputImage;
+    HipaccAccessor *acc = Kernel->getIterationSpace();
+    MemoryAccess mem_acc = KernelClass->getMemAccess(KernelClass->getOutField());
 
-    // getX() method -> gid_x - is_offset_x
-    if (ME->getMemberNameInfo().getAsString() == "getX") {
-      return createParenExpr(Ctx, removeISOffsetX(tileVars.global_id_x, Acc));
+    // x() method -> gid_x - is_offset_x
+    if (ME->getMemberNameInfo().getAsString() == "x") {
+      return createParenExpr(Ctx, removeISOffsetX(tileVars.global_id_x));
     }
 
-    // getY() method -> gid_y
-    if (ME->getMemberNameInfo().getAsString() == "getY") {
+    // y() method -> gid_y
+    if (ME->getMemberNameInfo().getAsString() == "y") {
       if (compilerOptions.emitC99() ||
           compilerOptions.emitRenderscript() ||
           compilerOptions.emitFilterscript()) {
-        return createParenExpr(Ctx, removeISOffsetY(gidYRef, Acc));
+        return createParenExpr(Ctx, removeISOffsetY(gidYRef));
       } else {
         return gidYRef;
       }
@@ -2450,6 +2430,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
     // output() method -> img[y][x]
     if (ME->getMemberNameInfo().getAsString() == "output") {
       assert(E->getNumArgs()==0 && "no arguments for output() method supported!");
+      Expr *result = nullptr;
 
       switch (compilerOptions.getTargetLang()) {
         case Language::Renderscript:
@@ -2463,7 +2444,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
         case Language::OpenCLGPU:
-          result = accessMem(LHS, Acc, memAcc);
+          result = accessMem(LHS, acc, mem_acc);
           break;
         case Language::Filterscript:
           postStmts.push_back(createReturnStmt(Ctx, retValRef));
@@ -2479,58 +2460,64 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
 
       return result;
     }
-  } else if (isa<MemberExpr>(ME->getBase()->IgnoreImpCasts())) {
-    // Accessor context -> use Accessor
-    // MemberExpr is converted to DeclRefExpr when cloning
-    LHS = dyn_cast<DeclRefExpr>(Clone(ME->getBase()->IgnoreImpCasts()));
 
-    // find corresponding Image user class member variable
-    MemberExpr *ImgAcc = dyn_cast<MemberExpr>(ME->getBase()->IgnoreImpCasts());
-    FieldDecl *FD = dyn_cast<FieldDecl>(ImgAcc->getMemberDecl());
+    // output_at(x, y) method -> img[y][x]
+    if (ME->getMemberNameInfo().getAsString() == "output_at") {
+      return mem_at_fun(acc, LHS, mem_acc);
+    }
+  }
 
-    Acc = Kernel->getImgFromMapping(FD);
-    HipaccMask *Mask = Kernel->getMaskFromMapping(FD);
-    memAcc = KernelClass->getImgAccess(FD);
-    assert((Acc || Mask) &&
-           "Could not find Image/Accessor/Mask/Domain Field Decl.");
+  if (auto base = dyn_cast<MemberExpr>(ME->getBase()->IgnoreImpCasts())) {
+    FieldDecl *FD = dyn_cast<FieldDecl>(base->getMemberDecl());
 
-    if (Acc != nullptr) {
-      // Acc.getX() method -> acc_scale_x * (gid_x - is_offset_x)
-      if (ME->getMemberNameInfo().getAsString() == "getX") {
+    if (auto acc = Kernel->getImgFromMapping(FD)) {
+      MemoryAccess mem_acc = KernelClass->getMemAccess(FD);
+
+      // Acc.x() method -> acc_scale_x * (gid_x - is_offset_x)
+      if (ME->getMemberNameInfo().getAsString() == "x") {
         // remove is_offset_x and scale index to Accessor size
-        if (Acc->getInterpolation()!=InterpolateNO) {
+        if (acc->getInterpolationMode() != Interpolate::NO) {
           return createCStyleCastExpr(Ctx, Ctx.IntTy, CK_FloatingToIntegral,
-              createParenExpr(Ctx, addNNInterpolationX(Acc,
+              createParenExpr(Ctx, addNNInterpolationX(acc,
                   tileVars.global_id_x)), nullptr,
               Ctx.getTrivialTypeSourceInfo(Ctx.IntTy));
         } else {
-          return createParenExpr(Ctx, removeISOffsetX(tileVars.global_id_x, Acc));
+          return createParenExpr(Ctx, removeISOffsetX(tileVars.global_id_x));
         }
       }
 
-      // Acc.getY() method -> acc_scale_y * gid_y
-      if (ME->getMemberNameInfo().getAsString() == "getY") {
+      // Acc.y() method -> acc_scale_y * gid_y
+      if (ME->getMemberNameInfo().getAsString() == "y") {
         Expr *idx_y = gidYRef;
         // scale index to Accessor size
-        if (Acc->getInterpolation()!=InterpolateNO) {
+        if (acc->getInterpolationMode() != Interpolate::NO) {
           idx_y = createCStyleCastExpr(Ctx, Ctx.IntTy, CK_FloatingToIntegral,
-              createParenExpr(Ctx, addNNInterpolationY(Acc, idx_y)), nullptr,
+              createParenExpr(Ctx, addNNInterpolationY(acc, idx_y)), nullptr,
               Ctx.getTrivialTypeSourceInfo(Ctx.IntTy));
         } else if (compilerOptions.emitRenderscript() ||
             compilerOptions.emitFilterscript()) {
-          idx_y = createParenExpr(Ctx, removeISOffsetY(gidYRef, Acc));
+          idx_y = createParenExpr(Ctx, removeISOffsetY(gidYRef));
         }
 
         return idx_y;
       }
-    } else if (Mask != nullptr) {
-      if (Mask->isDomain()) {
+
+      // Acc.pixel_at(x, y) method -> img[y][x]
+      if (ME->getMemberNameInfo().getAsString() == "pixel_at") {
+        // MemberExpr is converted to DeclRefExpr when cloning
+        auto LHS = cast<DeclRefExpr>(Clone(ME->getBase()->IgnoreImpCasts()));
+        return mem_at_fun(acc, LHS, mem_acc);
+      }
+    }
+
+    if (auto mask = Kernel->getMaskFromMapping(FD)) {
+      if (mask->isDomain()) {
         bool isDomainValid = false;
         int redDepth = 0;
 
         // search corresponding domain
         for (size_t i=0, e=redDomains.size(); i!=e; ++i) {
-          if (Mask == redDomains[i]) {
+          if (mask == redDomains[i]) {
             isDomainValid = true;
             redDepth = i;
             break;
@@ -2540,72 +2527,26 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
         assert(isDomainValid && "Getting Domain reduction IDs is only allowed "
                                 "within reduction lambda-function.");
         // within convolute lambda-function
-        if (ME->getMemberNameInfo().getAsString() == "getX") {
+        if (ME->getMemberNameInfo().getAsString() == "x") {
           return createIntegerLiteral(Ctx,
               redIdxX[redDepth] - (int)redDomains[redDepth]->getSizeX()/2);
         }
-        if (ME->getMemberNameInfo().getAsString() == "getY") {
+        if (ME->getMemberNameInfo().getAsString() == "y") {
           return createIntegerLiteral(Ctx,
               redIdxY[redDepth] - (int)redDomains[redDepth]->getSizeY()/2);
         }
       } else {
-        assert(Mask==convMask && "Getting Mask convolution IDs is only allowed "
+        assert(mask==convMask && "Getting Mask convolution IDs is only allowed "
                                  "allowed within convolution lambda-function.");
         // within convolute lambda-function
-        if (ME->getMemberNameInfo().getAsString() == "getX") {
-          return createIntegerLiteral(Ctx,
-              convIdxX - (int)convMask->getSizeX()/2);
+        if (ME->getMemberNameInfo().getAsString() == "x") {
+          return createIntegerLiteral(Ctx, convIdxX - (int)mask->getSizeX()/2);
         }
-        if (ME->getMemberNameInfo().getAsString() == "getY") {
-          return createIntegerLiteral(Ctx,
-              convIdxY - (int)convMask->getSizeY()/2);
+        if (ME->getMemberNameInfo().getAsString() == "y") {
+          return createIntegerLiteral(Ctx, convIdxY - (int)mask->getSizeY()/2);
         }
       }
     }
-  }
-
-  // Acc.getPixel(x, y) method -> img[y][x]
-  // outputAtPixel(x, y) method -> img[y][x]
-  if (ME->getMemberNameInfo().getAsString() == "getPixel" ||
-      ME->getMemberNameInfo().getAsString() == "outputAtPixel") {
-    assert(Acc && E->getNumArgs()==2 && "x and y argument for getPixel() or outputAtPixel() required!");
-    Expr *idx_x = addGlobalOffsetX(Clone(E->getArg(0)), Acc);
-    Expr *idx_y = addGlobalOffsetY(Clone(E->getArg(1)), Acc);
-
-    switch (compilerOptions.getTargetLang()) {
-      case Language::Vivado:
-      case Language::C99:
-        result = accessMem2DAt(LHS, idx_x, idx_y);
-        break;
-      case Language::CUDA:
-        if (Kernel->useTextureMemory(Acc)!=Texture::None) {
-          result = accessMemTexAt(LHS, Acc, memAcc, idx_x, idx_y);
-        } else {
-          result = accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
-        }
-        break;
-      case Language::OpenCLACC:
-      case Language::OpenCLCPU:
-      case Language::OpenCLGPU:
-        if (Kernel->useTextureMemory(Acc)!=Texture::None) {
-          result = accessMemImgAt(LHS, Acc, memAcc, idx_x, idx_y);
-        } else {
-          result = accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
-        }
-        break;
-      case Language::Renderscript:
-      case Language::Filterscript:
-        if (ME->getMemberNameInfo().getAsString() == "outputAtPixel" &&
-            compilerOptions.emitFilterscript()) {
-            assert(0 && "Filterscript does not support outputAtPixel().");
-        }
-        result = accessMemAllocAt(LHS, memAcc, idx_x, idx_y);
-        break;
-    }
-
-    setExprProps(E, result);
-
-    return result;
   }
 
   // break_iterate() method -> goto current break label
@@ -2615,9 +2556,8 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
     Stmt *S = createGotoStmt(Ctx, breakLabels.back());
     CS->setStmts(Ctx, &S, 1);
     SE->setSubStmt(CS);
-    result = SE;
 
-    return result;
+    return SE;
   }
 
   assert(0 && "Hipacc: Stumbled upon unsupported expression: CXXMemberCallExpr");

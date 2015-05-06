@@ -24,11 +24,12 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
-#include <float.h>
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
+
 #include <sys/time.h>
 
 #include "hipacc.hpp"
@@ -105,7 +106,7 @@ data_t calc_sum_pixel(data_t *in, int width, int height) {
 }
 
 
-// Kernel description in HIPAcc
+// Kernel description in Hipacc
 class MinReductionInt : public Kernel<int> {
     private:
         Accessor<int> &in;
@@ -114,7 +115,7 @@ class MinReductionInt : public Kernel<int> {
         MinReductionInt(IterationSpace<int> &iter, Accessor<int> &in) :
             Kernel(iter),
             in(in)
-        { addAccessor(&in); }
+        { add_accessor(&in); }
 
         void kernel() {
             output() = in();
@@ -132,7 +133,7 @@ class MinReductionFloat : public Kernel<float> {
         MinReductionFloat(IterationSpace<float> &iter, Accessor<float> &in) :
             Kernel(iter),
             in(in)
-        { addAccessor(&in); }
+        { add_accessor(&in); }
 
         void kernel() {
             output() = in();
@@ -150,7 +151,7 @@ class MaxReductionInt : public Kernel<int> {
         MaxReductionInt(IterationSpace<int> &iter, Accessor<int> &in) :
             Kernel(iter),
             in(in)
-        { addAccessor(&in); }
+        { add_accessor(&in); }
 
         void kernel() {
             output() = in();
@@ -168,7 +169,7 @@ class MaxReductionFloat : public Kernel<float> {
         MaxReductionFloat(IterationSpace<float> &iter, Accessor<float> &in) :
             Kernel(iter),
             in(in)
-        { addAccessor(&in); }
+        { add_accessor(&in); }
 
         void kernel() {
             output() = in();
@@ -186,7 +187,7 @@ class SumReductionInt : public Kernel<int> {
         SumReductionInt(IterationSpace<int> &iter, Accessor<int> &in) :
             Kernel(iter),
             in(in)
-        { addAccessor(&in); }
+        { add_accessor(&in); }
 
         void kernel() {
             output() = in();
@@ -204,7 +205,7 @@ class SumReductionFloat : public Kernel<float> {
         SumReductionFloat(IterationSpace<float> &iter, Accessor<float> &in) :
             Kernel(iter),
             in(in)
-        { addAccessor(&in); }
+        { add_accessor(&in); }
 
         void kernel() {
             output() = in();
@@ -222,29 +223,12 @@ int main(int argc, const char **argv) {
     const int height = HEIGHT;
 
     // host memory for image of width x height pixels
-    int *input_int = (int *)malloc(sizeof(int)*width*height);
-    int *reference_in_int = (int *)malloc(sizeof(int)*width*height);
-    int *reference_out_int = (int *)malloc(sizeof(int)*width*height);
-    float *input_float = (float *)malloc(sizeof(float)*width*height);
-    float *reference_in_float = (float *)malloc(sizeof(float)*width*height);
-    float *reference_out_float = (float *)malloc(sizeof(float)*width*height);
-
-    // input and output image of width x height pixels
-    Image<int> in_int(width, height);
-    Image<int> out_int(width, height);
-    Image<float> in_float(width, height);
-    Image<float> out_float(width, height);
-
-    Accessor<int> img_in_int(in_int);
-    Accessor<float> img_in_float(in_float);
-    Accessor<int> acc_in_int(in_int, width/3, height/3, width/3, height/3);
-    Accessor<float> acc_in_float(in_float, width/3, height/3, width/3, height/3);
-
-    // iteration spaces
-    IterationSpace<int> out_int_iter(out_int);
-    IterationSpace<float> out_float_iter(out_float);
-    IterationSpace<int> out_acc_int_iter(out_int, width/3, height/3, width/3, height/3);
-    IterationSpace<float> out_acc_float_iter(out_float, width/3, height/3, width/3, height/3);
+    int *input_int = new int[width*height];
+    int *reference_in_int = new int[width*height];
+    int *reference_out_int = new int[width*height];
+    float *input_float = new float[width*height];
+    float *reference_in_float = new float[width*height];
+    float *reference_out_float = new float[width*height];
 
     // initialize data
     #define DELTA 0.001f
@@ -259,19 +243,31 @@ int main(int argc, const char **argv) {
         }
     }
 
-    in_int = input_int;
-    out_int = reference_out_int;
-    in_float = input_float;
-    out_float = reference_out_float;
+    // input and output image of width x height pixels
+    Image<int> in_int(width, height, input_int);
+    Image<int> out_int(width, height, reference_out_int);
+    Image<float> in_float(width, height, input_float);
+    Image<float> out_float(width, height, reference_out_float);
 
-    // global operation using functors: Images
+    Accessor<int> img_in_int(in_int);
+    Accessor<float> img_in_float(in_float);
+    Accessor<int> acc_in_int(in_int, width/3, height/3, width/3, height/3);
+    Accessor<float> acc_in_float(in_float, width/3, height/3, width/3, height/3);
+
+    // iteration spaces
+    IterationSpace<int> out_int_iter(out_int);
+    IterationSpace<float> out_float_iter(out_float);
+    IterationSpace<int> out_acc_int_iter(out_int, width/3, height/3, width/3, height/3);
+    IterationSpace<float> out_acc_float_iter(out_float, width/3, height/3, width/3, height/3);
+
+    // global operations on Images
     MinReductionInt redMinINInt(out_int_iter, img_in_int);
     MaxReductionInt redMaxINInt(out_int_iter, img_in_int);
     SumReductionInt redSumINInt(out_int_iter, img_in_int);
     MinReductionFloat redMinINFloat(out_float_iter, img_in_float);
     MaxReductionFloat redMaxINFloat(out_float_iter, img_in_float);
     SumReductionFloat redSumINFloat(out_float_iter, img_in_float);
-    // global operation using functors: Accessors
+    // global operations on Accessors
     MinReductionInt redMinAccInInt(out_acc_int_iter, acc_in_int);
     MaxReductionInt redMaxAccInInt(out_acc_int_iter, acc_in_int);
     SumReductionInt redSumAccInInt(out_acc_int_iter, acc_in_int);
@@ -293,57 +289,54 @@ int main(int argc, const char **argv) {
     redMaxAccInFloat.execute();
     redSumAccInFloat.execute();
 
-    fprintf(stderr, "Calculating global reductions ...\n");
+    std::cerr << "Calculating global reductions ..." << std::endl;
     time0 = time_ms();
 
     // Images
-    int min_pixel_functor_int_img = redMinINInt.getReducedData();
-    fprintf(stderr, "reduction functor, min (img, int): %d\n", min_pixel_functor_int_img);
+    int min_pixel_kernel_int_img = redMinINInt.reduced_data();
+    std::cerr << "min (img, int) reduction: " << min_pixel_kernel_int_img << std::endl;
 
-    int max_pixel_functor_int_img = redMaxINInt.getReducedData();
-    fprintf(stderr, "reduction functor, max (img, int): %d\n", max_pixel_functor_int_img);
+    int max_pixel_kernel_int_img = redMaxINInt.reduced_data();
+    std::cerr << "max (img, int) reduction: " << max_pixel_kernel_int_img << std::endl;
 
-    int sum_pixel_functor_int_img = redSumINInt.getReducedData();
-    fprintf(stderr, "reduction functor, sum (img, int): %d\n", sum_pixel_functor_int_img);
+    int sum_pixel_kernel_int_img = redSumINInt.reduced_data();
+    std::cerr << "sum (img, int) reduction: " << sum_pixel_kernel_int_img << std::endl;
 
-    float min_pixel_functor_float_img = redMinINFloat.getReducedData();
-    fprintf(stderr, "reduction functor, min (img, float): %f\n", min_pixel_functor_float_img);
+    float min_pixel_kernel_float_img = redMinINFloat.reduced_data();
+    std::cerr << "min (img, float) reduction: " << min_pixel_kernel_float_img << std::endl;
 
-    float max_pixel_functor_float_img = redMaxINFloat.getReducedData();
-    fprintf(stderr, "reduction functor, max (img, float): %f\n", max_pixel_functor_float_img);
+    float max_pixel_kernel_float_img = redMaxINFloat.reduced_data();
+    std::cerr << "max (img, float) reduction: " << max_pixel_kernel_float_img << std::endl;
 
-    float sum_pixel_functor_float_img = redSumINFloat.getReducedData();
-    fprintf(stderr, "reduction functor, sum (img, float): %f\n", sum_pixel_functor_float_img);
+    float sum_pixel_kernel_float_img = redSumINFloat.reduced_data();
+    std::cerr << "sum (img, float) reduction: " << sum_pixel_kernel_float_img << std::endl;
 
     // Accessors
-    int min_pixel_functor_int_acc = redMinAccInInt.getReducedData();
-    fprintf(stderr, "reduction functor, min (acc, int): %d\n", min_pixel_functor_int_acc);
+    int min_pixel_kernel_int_acc = redMinAccInInt.reduced_data();
+    std::cerr << "min (acc, int) reduction: " << min_pixel_kernel_int_acc << std::endl;
 
-    int max_pixel_functor_int_acc = redMaxAccInInt.getReducedData();
-    fprintf(stderr, "reduction functor, max (acc, int): %d\n", max_pixel_functor_int_acc);
+    int max_pixel_kernel_int_acc = redMaxAccInInt.reduced_data();
+    std::cerr << "max (acc, int) reduction: " << max_pixel_kernel_int_acc << std::endl;
 
-    int sum_pixel_functor_int_acc = redSumAccInInt.getReducedData();
-    fprintf(stderr, "reduction functor, sum (acc, int): %d\n", sum_pixel_functor_int_acc);
+    int sum_pixel_kernel_int_acc = redSumAccInInt.reduced_data();
+    std::cerr << "sum (acc, int) reduction: " << sum_pixel_kernel_int_acc << std::endl;
 
-    float min_pixel_functor_float_acc = redMinAccInFloat.getReducedData();
-    fprintf(stderr, "reduction functor, min (acc, float): %f\n", min_pixel_functor_float_acc);
+    float min_pixel_kernel_float_acc = redMinAccInFloat.reduced_data();
+    std::cerr << "min (acc, float) reduction: " << min_pixel_kernel_float_acc << std::endl;
 
-    float max_pixel_functor_float_acc = redMaxAccInFloat.getReducedData();
-    fprintf(stderr, "reduction functor, max (acc, float): %f\n", max_pixel_functor_float_acc);
+    float max_pixel_kernel_float_acc = redMaxAccInFloat.reduced_data();
+    std::cerr << "max (acc, float) reduction: " << max_pixel_kernel_float_acc << std::endl;
 
-    float sum_pixel_functor_float_acc = redSumAccInFloat.getReducedData();
-    fprintf(stderr, "reduction functor, sum (acc, float): %f\n", sum_pixel_functor_float_acc);
+    float sum_pixel_kernel_float_acc = redSumAccInFloat.reduced_data();
+    std::cerr << "sum (acc, float) reduction: " << sum_pixel_kernel_float_acc << std::endl;
 
     time1 = time_ms();
     dt = time1 - time0;
 
-
-    // Mpixel/s = (width*height/1000000) / (dt/1000) = (width*height/dt)/1000
-    // NB: actually there are (width-d)*(height) output pixels
-    fprintf(stderr, "Hipacc: %.3f ms, %.3f Mpixel/s\n", dt, ((width*height)/dt)/1000);
+    std::cerr << "Hipacc: " << dt << " ms, " << (width*height/dt)/1000 << " Mpixel/s" << std::endl;
 
 
-    fprintf(stderr, "\nCalculating reference ...\n");
+    std::cerr << std::endl << "Calculating reference ..." << std::endl;
     time0 = time_ms();
 
     // calculate reference: Images
@@ -364,103 +357,104 @@ int main(int argc, const char **argv) {
 
     time1 = time_ms();
     dt = time1 - time0;
-    fprintf(stderr, "Reference: %.3f ms, %.3f Mpixel/s\n", dt, (width*height/dt)/1000);
+    std::cerr << "Reference: " << dt << " ms, " << (width*height/dt)/1000 << " Mpixel/s" << std::endl;
 
     // compare results: Images
     bool passed_all = true;
-    fprintf(stderr, "\nComparing results ...\n");
-    if (min_pixel_functor_int_img != min_pixel_ref_int_img) {
-        fprintf(stderr, "Test FAILED for min reduction (img, int): %d vs %d, aborting...\n", min_pixel_functor_int_img, min_pixel_ref_int_img);
+    std::cerr << std::endl << "Comparing results ..." << std::endl;
+    if (min_pixel_kernel_int_img != min_pixel_ref_int_img) {
+        std::cerr << "Test FAILED for min reduction (img, int): " << min_pixel_kernel_int_img << " vs. " << min_pixel_ref_int_img << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Min reduction (img, int): PASSED\n");
+        std::cerr << "Min reduction (img, int): PASSED" << std::endl;
     }
-    if (min_pixel_functor_float_img != min_pixel_ref_float_img) {
-        fprintf(stderr, "Test FAILED for min reduction (img, float): %.5f vs %.5f, aborting...\n", min_pixel_functor_float_img, min_pixel_ref_float_img);
+    if (min_pixel_kernel_float_img != min_pixel_ref_float_img) {
+        std::cerr << "Test FAILED for min reduction (img, float): " << min_pixel_kernel_float_img << " vs. " << min_pixel_ref_float_img << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Min reduction (img, float): PASSED\n");
-    }
-
-    if (max_pixel_functor_int_img != max_pixel_ref_int_img) {
-        fprintf(stderr, "Test FAILED for max reduction (img, int): %d vs %d, aborting...\n", max_pixel_functor_int_img, max_pixel_ref_int_img);
-        passed_all = false;
-    } else {
-        fprintf(stderr, "Max reduction (img, int): PASSED\n");
-    }
-    if (max_pixel_functor_float_img != max_pixel_ref_float_img) {
-        fprintf(stderr, "Test FAILED for max reduction (img, float): %.5f vs %.5f, aborting...\n", max_pixel_functor_float_img, max_pixel_ref_float_img);
-        passed_all = false;
-    } else {
-        fprintf(stderr, "Max reduction (img, float): PASSED\n");
+        std::cerr << "Min reduction (img, float): PASSED" << std::endl;
     }
 
-    if (sum_pixel_functor_int_img != sum_pixel_ref_int_img) {
-        fprintf(stderr, "Test FAILED for sum reduction (img, int): %d vs %d, aborting...\n", sum_pixel_functor_int_img, sum_pixel_ref_int_img);
+    if (max_pixel_kernel_int_img != max_pixel_ref_int_img) {
+        std::cerr << "Test FAILED for max reduction (img, int): " << max_pixel_kernel_int_img << " vs. " << max_pixel_ref_int_img << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Sum reduction (img, int): PASSED\n");
+        std::cerr << "Max reduction (img, int): PASSED" << std::endl;
     }
-    if (sum_pixel_functor_float_img != sum_pixel_ref_float_img) {
-        fprintf(stderr, "Test FAILED for sum reduction (img, float): %.5f vs %.5f, aborting...\n", sum_pixel_functor_float_img, sum_pixel_ref_float_img);
+    if (max_pixel_kernel_float_img != max_pixel_ref_float_img) {
+        std::cerr << "Test FAILED for max reduction (img, float): " << max_pixel_kernel_float_img << " vs. " << max_pixel_ref_float_img << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Sum reduction (img, float): PASSED\n");
+        std::cerr << "Max reduction (img, float): PASSED" << std::endl;
     }
+
+    if (sum_pixel_kernel_int_img != sum_pixel_ref_int_img) {
+        std::cerr << "Test FAILED for sum reduction (img, int): " << sum_pixel_kernel_int_img << " vs. " << sum_pixel_ref_int_img << ", aborting ..." << std::endl;
+        passed_all = false;
+    } else {
+        std::cerr << "Sum reduction (img, int): PASSED" << std::endl;
+    }
+    if (sum_pixel_kernel_float_img != sum_pixel_ref_float_img) {
+        std::cerr << "Test FAILED for sum reduction (img, float): " << sum_pixel_kernel_float_img << " vs. " << sum_pixel_ref_float_img << ", aborting ..." << std::endl;
+        passed_all = false;
+    } else {
+        std::cerr << "Sum reduction (img, float): PASSED" << std::endl;
+    }
+
     // compare results: Accessors
-    if (min_pixel_functor_int_acc != min_pixel_ref_int_acc) {
-        fprintf(stderr, "Test FAILED for min reduction (acc, int): %d vs %d, aborting...\n", min_pixel_functor_int_acc, min_pixel_ref_int_acc);
+    if (min_pixel_kernel_int_acc != min_pixel_ref_int_acc) {
+        std::cerr << "Test FAILED for min reduction (acc, int): " << min_pixel_kernel_int_acc << " vs. " << min_pixel_ref_int_acc << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Min reduction (acc, int): PASSED\n");
+        std::cerr << "Min reduction (acc, int): PASSED" << std::endl;
     }
-    if (min_pixel_functor_float_acc != min_pixel_ref_float_acc) {
-        fprintf(stderr, "Test FAILED for min reduction (acc, float): %.5f vs %.5f, aborting...\n", min_pixel_functor_float_acc, min_pixel_ref_float_acc);
+    if (min_pixel_kernel_float_acc != min_pixel_ref_float_acc) {
+        std::cerr << "Test FAILED for min reduction (acc, float): " << min_pixel_kernel_float_acc << " vs. " << min_pixel_ref_float_acc << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Min reduction (acc, float): PASSED\n");
-    }
-
-    if (max_pixel_functor_int_acc != max_pixel_ref_int_acc) {
-        fprintf(stderr, "Test FAILED for max reduction (acc, int): %d vs %d, aborting...\n", max_pixel_functor_int_acc, max_pixel_ref_int_acc);
-        passed_all = false;
-    } else {
-        fprintf(stderr, "Max reduction (acc, int): PASSED\n");
-    }
-    if (max_pixel_functor_float_acc != max_pixel_ref_float_acc) {
-        fprintf(stderr, "Test FAILED for max reduction (acc, float): %.5f vs %.5f, aborting...\n", max_pixel_functor_float_acc, max_pixel_ref_float_acc);
-        passed_all = false;
-    } else {
-        fprintf(stderr, "Max reduction (acc, float): PASSED\n");
+        std::cerr << "Min reduction (acc, float): PASSED" << std::endl;
     }
 
-    if (sum_pixel_functor_int_acc != sum_pixel_ref_int_acc) {
-        fprintf(stderr, "Test FAILED for sum reduction (acc, int): %d vs %d, aborting...\n", sum_pixel_functor_int_acc, sum_pixel_ref_int_acc);
+    if (max_pixel_kernel_int_acc != max_pixel_ref_int_acc) {
+        std::cerr << "Test FAILED for max reduction (acc, int): " << max_pixel_kernel_int_acc << " vs. " << max_pixel_ref_int_acc << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Sum reduction (acc, int): PASSED\n");
+        std::cerr << "Max reduction (acc, int): PASSED" << std::endl;
     }
-    if (sum_pixel_functor_float_acc != sum_pixel_ref_float_acc) {
-        fprintf(stderr, "Test FAILED for sum reduction (acc, float): %.5f vs %.5f, aborting...\n", sum_pixel_functor_float_acc, sum_pixel_ref_float_acc);
+    if (max_pixel_kernel_float_acc != max_pixel_ref_float_acc) {
+        std::cerr << "Test FAILED for max reduction (acc, float): " << max_pixel_kernel_float_acc << " vs. " << max_pixel_ref_float_acc << ", aborting ..." << std::endl;
         passed_all = false;
     } else {
-        fprintf(stderr, "Sum reduction (acc, float): PASSED\n");
+        std::cerr << "Max reduction (acc, float): PASSED" << std::endl;
+    }
+
+    if (sum_pixel_kernel_int_acc != sum_pixel_ref_int_acc) {
+        std::cerr << "Test FAILED for sum reduction (acc, int): " << sum_pixel_kernel_int_acc << " vs. " << sum_pixel_ref_int_acc << ", aborting ..." << std::endl;
+        passed_all = false;
+    } else {
+        std::cerr << "Sum reduction (acc, int): PASSED" << std::endl;
+    }
+    if (sum_pixel_kernel_float_acc != sum_pixel_ref_float_acc) {
+        std::cerr << "Test FAILED for sum reduction (acc, float): " << sum_pixel_kernel_float_acc << " vs. " << sum_pixel_ref_float_acc << ", aborting ..." << std::endl;
+        passed_all = false;
+    } else {
+        std::cerr << "Sum reduction (acc, float): PASSED" << std::endl;
     }
     // print final result
     if (passed_all) {
-        fprintf(stderr, "Tests PASSED\n");
+        std::cerr << "Tests PASSED" << std::endl;
     } else {
-        fprintf(stderr, "Tests FAILED\n");
+        std::cerr << "Tests FAILED" << std::endl;
         exit(EXIT_FAILURE);
     }
 
     // memory cleanup
-    free(input_int);
-    free(input_float);
-    free(reference_in_int);
-    free(reference_in_float);
-    free(reference_out_int);
-    free(reference_out_float);
+    delete[] input_int;
+    delete[] input_float;
+    delete[] reference_in_int;
+    delete[] reference_in_float;
+    delete[] reference_out_int;
+    delete[] reference_out_float;
 
     return EXIT_SUCCESS;
 }

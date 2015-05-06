@@ -1,6 +1,6 @@
 //
-// Copyright (c) 2012, University of Erlangen-Nuremberg
-// Copyright (c) 2012, Siemens AG
+// Copyright (c) 2014, University of Erlangen-Nuremberg
+// Copyright (c) 2014, Saarland University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -66,8 +66,8 @@ double time_ms () {
 
 
 // Laplace filter reference
-void laplace_filter(uchar *in, uchar *out, int *filter, int size, int width, int
-        height) {
+void laplace_filter(uchar4 *in, uchar4 *out, int *filter, int size, int width,
+        int height) {
     const int size_x = size;
     const int size_y = size;
     int anchor_x = size_x >> 1;
@@ -82,33 +82,33 @@ void laplace_filter(uchar *in, uchar *out, int *filter, int size, int width, int
 
     for (int y=anchor_y; y<upper_y; ++y) {
         for (int x=anchor_x; x<upper_x; ++x) {
-            int sum = 0;
+            int4 sum = { 0, 0, 0, 0 };
 
             for (int yf = -anchor_y; yf<=anchor_y; yf++) {
                 for (int xf = -anchor_x; xf<=anchor_x; xf++) {
                     sum += filter[(yf+anchor_y)*size_x + xf+anchor_x] *
-                           in[(y+yf)*width + x + xf];
+                           convert_int4(in[(y+yf)*width + x + xf]);
                 }
             }
 
             sum = min(sum, 255);
             sum = max(sum, 0);
-            out[y*width + x] = sum;
+            out[y*width + x] = convert_uchar4(sum);
         }
     }
 }
 
 
 // Laplace filter in Hipacc
-class LaplaceFilter : public Kernel<uchar> {
+class LaplaceFilter : public Kernel<uchar4> {
     private:
-        Accessor<uchar> &input;
+        Accessor<uchar4> &input;
         Domain &dom;
         Mask<int> &mask;
         const int size;
 
     public:
-        LaplaceFilter(IterationSpace<uchar> &iter, Accessor<uchar> &input,
+        LaplaceFilter(IterationSpace<uchar4> &iter, Accessor<uchar4> &input,
                 Domain &dom, Mask<int> &mask, const int size) :
             Kernel(iter),
             input(input),
@@ -119,27 +119,27 @@ class LaplaceFilter : public Kernel<uchar> {
 
         #ifdef USE_LAMBDA
         void kernel() {
-            int sum = reduce(dom, Reduce::SUM, [&] () -> int {
-                    return mask(dom) * input(dom);
+            int4 sum = reduce(dom, Reduce::SUM, [&] () -> int4 {
+                    return mask(dom) * convert_int4(input(dom));
                     });
             sum = min(sum, 255);
             sum = max(sum, 0);
-            output() = (uchar) (sum);
+            output() = convert_uchar4(sum);
         }
         #else
         void kernel() {
             const int anchor = size >> 1;
-            int sum = 0;
+            int4 sum = { 0, 0, 0, 0 };
 
             for (int yf = -anchor; yf<=anchor; yf++) {
                 for (int xf = -anchor; xf<=anchor; xf++) {
-                    sum += mask(xf, yf)*input(xf, yf);
+                    sum += mask(xf, yf) * convert_int4(input(xf, yf));
                 }
             }
 
             sum = min(sum, 255);
             sum = max(sum, 0);
-            output() = (uchar) (sum);
+            output() = convert_uchar4(sum);
         }
         #endif
 };
@@ -196,23 +196,28 @@ int main(int argc, const char **argv) {
     };
 
     // host memory for image of width x height pixels
-    uchar *input = new uchar[width*height];
-    uchar *reference_in = new uchar[width*height];
-    uchar *reference_out = new uchar[width*height];
+    uchar4 *input = new uchar4[width*height];
+    uchar4 *reference_in = new uchar4[width*height];
+    uchar4 *reference_out = new uchar4[width*height];
 
     // initialize data
     for (int y=0; y<height; ++y) {
         for (int x=0; x<width; ++x) {
-            input[y*width + x] = (uchar)(y*width + x) % 256;
-            reference_in[y*width + x] = (uchar)(y*width + x) % 256;
-            reference_out[y*width + x] = 0;
+            uchar4 val;
+            val.x = (y*width + x + 1) % 256;
+            val.y = (y*width + x + 2) % 256;
+            val.z = (y*width + x + 3) % 256;
+            val.w = (y*width + x + 4) % 256;
+            input[y*width + x] = val;
+            reference_in[y*width + x] = val;
+            reference_out[y*width + x] = (uchar4){ 0, 0, 0, 0 };
         }
     }
 
 
     // input and output image of width x height pixels
-    Image<uchar> IN(width, height, input);
-    Image<uchar> OUT(width, height);
+    Image<uchar4> IN(width, height, input);
+    Image<uchar4> OUT(width, height);
 
     // filter mask
     Mask<int> M(mask);
@@ -220,7 +225,7 @@ int main(int argc, const char **argv) {
     // filter domain
     Domain D(M);
 
-    IterationSpace<uchar> IsOut(OUT);
+    IterationSpace<uchar4> IsOut(OUT);
 
 
     #ifndef OpenCV
@@ -229,8 +234,8 @@ int main(int argc, const char **argv) {
 
     // UNDEFINED
     #ifdef RUN_UNDEF
-    BoundaryCondition<uchar> BcInUndef(IN, M, Boundary::UNDEFINED);
-    Accessor<uchar> AccInUndef(BcInUndef);
+    BoundaryCondition<uchar4> BcInUndef(IN, M, Boundary::UNDEFINED);
+    Accessor<uchar4> AccInUndef(BcInUndef);
     LaplaceFilter LFU(IsOut, AccInUndef, D, M, size_x);
 
     LFU.execute();
@@ -241,8 +246,8 @@ int main(int argc, const char **argv) {
 
 
     // CLAMP
-    BoundaryCondition<uchar> BcInClamp(IN, M, Boundary::CLAMP);
-    Accessor<uchar> AccInClamp(BcInClamp);
+    BoundaryCondition<uchar4> BcInClamp(IN, M, Boundary::CLAMP);
+    Accessor<uchar4> AccInClamp(BcInClamp);
     LaplaceFilter LFC(IsOut, AccInClamp, D, M, size_x);
 
     LFC.execute();
@@ -252,8 +257,8 @@ int main(int argc, const char **argv) {
 
 
     // REPEAT
-    BoundaryCondition<uchar> BcInRepeat(IN, M, Boundary::REPEAT);
-    Accessor<uchar> AccInRepeat(BcInRepeat);
+    BoundaryCondition<uchar4> BcInRepeat(IN, M, Boundary::REPEAT);
+    Accessor<uchar4> AccInRepeat(BcInRepeat);
     LaplaceFilter LFR(IsOut, AccInRepeat, D, M, size_x);
 
     LFR.execute();
@@ -263,8 +268,8 @@ int main(int argc, const char **argv) {
 
 
     // MIRROR
-    BoundaryCondition<uchar> BcInMirror(IN, M, Boundary::MIRROR);
-    Accessor<uchar> AccInMirror(BcInMirror);
+    BoundaryCondition<uchar4> BcInMirror(IN, M, Boundary::MIRROR);
+    Accessor<uchar4> AccInMirror(BcInMirror);
     LaplaceFilter LFM(IsOut, AccInMirror, D, M, size_x);
 
     LFM.execute();
@@ -274,8 +279,8 @@ int main(int argc, const char **argv) {
 
 
     // CONSTANT
-    BoundaryCondition<uchar> BcInConst(IN, M, Boundary::CONSTANT, '1');
-    Accessor<uchar> AccInConst(BcInConst);
+    BoundaryCondition<uchar4> BcInConst(IN, M, Boundary::CONSTANT, '1');
+    Accessor<uchar4> AccInConst(BcInConst);
     LaplaceFilter LFConst(IsOut, AccInConst, D, M, size_x);
 
     LFConst.execute();
@@ -285,7 +290,7 @@ int main(int argc, const char **argv) {
 
 
     // get pointer to result data
-    uchar *output = OUT.data();
+    uchar4 *output = (uchar4 *)OUT.data();
     #endif
 
 
@@ -298,8 +303,8 @@ int main(int argc, const char **argv) {
     #endif
 
 
-    cv::Mat cv_data_in(height, width, CV_8UC1, input);
-    cv::Mat cv_data_out(height, width, CV_8UC1, cv::Scalar(0));
+    cv::Mat cv_data_in(height, width, CV_8UC4, input);
+    cv::Mat cv_data_out(height, width, CV_8UC4, cv::Scalar(0));
     int ddepth = CV_8U;
     double scale = 1.0f;
     double delta = 0.0f;
@@ -356,7 +361,7 @@ int main(int argc, const char **argv) {
     }
 
     // get pointer to result data
-    uchar *output = (uchar *)cv_data_out.data;
+    uchar4 *output = (uchar4 *)cv_data_out.data;
     #endif
 
     // print statistics
@@ -391,10 +396,19 @@ int main(int argc, const char **argv) {
     // compare results
     for (int y=offset_y; y<upper_y; y++) {
         for (int x=offset_x; x<upper_x; x++) {
-            if (reference_out[y*width + x] != output[y*width + x]) {
-                std::cerr << "Test FAILED, at (" << x << "," << y << "): "
-                          << (int)reference_out[y*width + x] << " vs. "
-                          << (int)output[y*width + x] << std::endl;
+            if (reference_out[y*width + x].x != output[y*width + x].x ||
+                reference_out[y*width + x].y != output[y*width + x].y ||
+                reference_out[y*width + x].z != output[y*width + x].z ||
+                reference_out[y*width + x].w != output[y*width + x].w) {
+                std::cerr << "Test FAILED, at (" << x << "," << y << "): ("
+                          << (int)reference_out[y*width + x].x << ","
+                          << (int)reference_out[y*width + x].y << ","
+                          << (int)reference_out[y*width + x].z << ","
+                          << (int)reference_out[y*width + x].w << ") vs. ("
+                          << (int)output[y*width + x].x << ","
+                          << (int)output[y*width + x].y << ","
+                          << (int)output[y*width + x].z << ","
+                          << (int)output[y*width + x].w << ")" << std::endl;
                 exit(EXIT_FAILURE);
             }
         }

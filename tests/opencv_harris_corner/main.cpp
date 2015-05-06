@@ -23,19 +23,15 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#include <float.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <sys/time.h>
-
+#include <cfloat>
 #include <iostream>
 #include <numeric>
 #include <vector>
 
+#include <sys/time.h>
+
 #ifdef OpenCV
-#include "opencv2/opencv.hpp"
+#include <opencv2/opencv.hpp>
 #endif
 
 #include "hipacc.hpp"
@@ -65,7 +61,7 @@ double time_ms () {
 }
 
 
-// Harris Corner filter in HIPAcc
+// Harris Corner filter in Hipacc
 #ifdef NO_SEP
 class Deriv1D : public Kernel<float> {
   private:
@@ -76,12 +72,12 @@ class Deriv1D : public Kernel<float> {
     Deriv1D(IterationSpace<float> &iter, Accessor<uchar> &input,
             Mask<float> &mask)
           : Kernel(iter), input(input), mask(mask) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     void kernel() {
       float sum = 0.0f;
-      sum += convolve(mask, HipaccSUM, [&] () -> float {
+      sum += convolve(mask, Reduce::SUM, [&] () -> float {
           return input(mask) * mask();
       });
       output() = sum*sum;
@@ -101,12 +97,12 @@ class Deriv1DCol : public Kernel<float> {
             input(input),
             mask(mask),
             size(size) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     void kernel() {
       float sum = 0.0f;
-      sum += convolve(mask, HipaccSUM, [&] () -> float {
+      sum += convolve(mask, Reduce::SUM, [&] () -> float {
           return input(mask) * mask();
       });
       output() = sum;
@@ -125,12 +121,12 @@ class Deriv1DRow : public Kernel<float> {
             input(input),
             mask(mask),
             size(size) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     void kernel() {
       float sum = 0.0f;
-      sum += convolve(mask, HipaccSUM, [&] () -> float {
+      sum += convolve(mask, Reduce::SUM, [&] () -> float {
           return input(mask) * mask();
       });
       output() = sum*sum;
@@ -153,7 +149,7 @@ class Deriv2D : public Kernel<float> {
             dom(dom),
             mask1(mask1),
             mask2(mask2) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     void kernel() {
@@ -180,12 +176,12 @@ class GaussianBlurFilterMaskRow : public Kernel<float> {
           input(input),
           mask(mask),
           size(size) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     #ifdef USE_LAMBDA
     void kernel() {
-      output() = convolve(mask, HipaccSUM, [&] () -> float {
+      output() = convolve(mask, Reduce::SUM, [&] () -> float {
           return mask() * input(mask);
       });
     }
@@ -216,12 +212,12 @@ class GaussianBlurFilterMaskColumn : public Kernel<float> {
           input(input),
           mask(mask),
           size(size) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     #ifdef USE_LAMBDA
     void kernel() {
-      output() = convolve(mask, HipaccSUM, [&] () -> float {
+      output() = convolve(mask, Reduce::SUM, [&] () -> float {
           return mask() * input(mask);
       }) + 0.5f;
     }
@@ -254,9 +250,9 @@ class HarrisCorner : public Kernel<float> {
             Dy(Dy),
             Dxy(Dxy),
             k(k) {
-      addAccessor(&Dx);
-      addAccessor(&Dy);
-      addAccessor(&Dxy);
+      add_accessor(&Dx);
+      add_accessor(&Dy);
+      add_accessor(&Dxy);
     }
 
     void kernel() {
@@ -303,7 +299,7 @@ int main(int argc, const char **argv) {
           break;
         default:
           std::cerr << "Unknown image format" << std::endl;
-          exit(1);
+          return EXIT_FAILURE;
       }
     }
 
@@ -319,19 +315,11 @@ int main(int argc, const char **argv) {
     std::vector<float> timings;
     float timing = 0.0f;
 
-    // input and output image of width x height pixels
-    Image<uchar> IN(width, height);
-    Image<float> OUT(width, height);
-    Image<float> DX(width, height);
-    Image<float> DY(width, height);
-    Image<float> DXY(width, height);
-    Image<float> TMP(width, height);
-
     // host memory for image of width x height pixels
     #ifdef USE_FREEIMAGE
     uchar *input = FreeImage_GetBits(gray);
     #else
-    uchar *input = (uchar *)malloc(sizeof(uchar)*width*height);
+    uchar *input = new uchar[width*height];
     #endif
 
     // initialize data
@@ -343,11 +331,19 @@ int main(int argc, const char **argv) {
       }
     }
 
+    // input and output image of width x height pixels
+    Image<uchar> IN(width, height, input);
+    Image<float> OUT(width, height);
+    Image<float> DX(width, height);
+    Image<float> DY(width, height);
+    Image<float> DXY(width, height);
+    Image<float> TMP(width, height);
+
     #ifndef OpenCV
     // only filter kernel sizes 3x3, 5x5, and 7x7 implemented
     if (size_x != size_y || !(size_x == 3 || size_x == 5 || size_x == 7)) {
-        fprintf(stderr, "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!\n");
-        exit(EXIT_FAILURE);
+        std::cerr << "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!" << std::endl;
+        return EXIT_FAILURE;
     }
 
     // convolution filter mask
@@ -403,85 +399,83 @@ int main(int argc, const char **argv) {
     IterationSpace<float> IsDxy(DXY);
     IterationSpace<float> IsTmp(TMP);
 
-    IN = input;
+    std::cerr << "Calculating Hipacc Harris Corner filter ..." << std::endl;
 
-    fprintf(stderr, "Calculating HIPAcc Harris Corner filter ...\n");
-
-    BoundaryCondition<uchar> BcInClamp(IN, 3, 3, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar> BcInClamp(IN, 3, 3, Boundary::CLAMP);
     Accessor<uchar> AccInClamp(BcInClamp);
 
     #ifdef NO_SEP
     Deriv1D D1dx(IsDx, AccInClamp, MX);
     D1dx.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
 
     Deriv1D D1dy(IsDy, AccInClamp, MY);
     D1dy.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
     #else
-    BoundaryCondition<float> BcTmpDcClamp(TMP, 1, 3, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcTmpDcClamp(TMP, 1, 3, Boundary::CLAMP);
     Accessor<float> AccTmpDcClamp(BcTmpDcClamp);
 
     Deriv1DCol D1dxc(IsTmp, AccInClamp, MXX, 3);
     D1dxc.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
 
     Deriv1DRow D1dxr(IsDx, AccTmpDcClamp, MXY, 3);
     D1dxr.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
 
     Deriv1DCol D1dyc(IsTmp, AccInClamp, MYX, 3);
     D1dyc.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
 
     Deriv1DRow D1dyr(IsDy, AccTmpDcClamp, MYY, 3);
     D1dyr.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
     #endif
 
     Domain dom(3, 3);
     Deriv2D D2dxy(IsDxy, AccInClamp, dom, MX, MY);
     D2dxy.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
 
-    BoundaryCondition<float> BcTmpClamp(TMP, 1, size_y, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcTmpClamp(TMP, 1, size_y, Boundary::CLAMP);
     Accessor<float> AccTmpClamp(BcTmpClamp);
 
-    BoundaryCondition<float> BcInClampDx(DX, size_x, 1, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcInClampDx(DX, size_x, 1, Boundary::CLAMP);
     Accessor<float> AccInClampDx(BcInClampDx);
     GaussianBlurFilterMaskRow GRDx(IsTmp, AccInClampDx, GX, size_x);
     GaussianBlurFilterMaskColumn GCDx(IsDx, AccTmpClamp, GY, size_y);
     GRDx.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GCDx.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     timings.push_back(timing);
 
-    BoundaryCondition<float> BcInClampDy(DY, size_x, 1, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcInClampDy(DY, size_x, 1, Boundary::CLAMP);
     Accessor<float> AccInClampDy(BcInClampDy);
     GaussianBlurFilterMaskRow GRDy(IsTmp, AccInClampDy, GX, size_x);
     GaussianBlurFilterMaskColumn GCDy(IsDy, AccTmpClamp, GY, size_y);
     GRDy.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GCDy.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     timings.push_back(timing);
 
-    BoundaryCondition<float> BcInClampDxy(DXY, size_x, 1, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcInClampDxy(DXY, size_x, 1, Boundary::CLAMP);
     Accessor<float> AccInClampDxy(BcInClampDxy);
     GaussianBlurFilterMaskRow GRDxy(IsTmp, AccInClampDxy, GX, size_x);
     GaussianBlurFilterMaskColumn GCDxy(IsDxy, AccTmpClamp, GY, size_y);
     GRDxy.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     GCDxy.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
     timings.push_back(timing);
 
     Accessor<float> AccDx(DX);
@@ -489,11 +483,11 @@ int main(int argc, const char **argv) {
     Accessor<float> AccDxy(DXY);
     HarrisCorner HC(IsOut, AccDx, AccDy, AccDxy, k);
     HC.execute();
-    timing = hipaccGetLastKernelTiming();
+    timing = hipacc_last_kernel_timing();
     timings.push_back(timing);
 
     // get pointer to result data
-    float *output = OUT.getData();
+    float *output = OUT.data();
 
     for (int x = 0; x < width; ++x) {
       for (int y = 0; y < height; y++) {
@@ -513,7 +507,7 @@ int main(int argc, const char **argv) {
     #endif
 
     #ifdef OpenCV
-    fprintf(stderr, "\nCalculating OpenCV Harris Corner filter on the CPU ...\n");
+    std::cerr << std::endl << "Calculating OpenCV Harris Corner filter on the CPU ..." << std::endl;
 
     cv::Mat cv_data_in(height, width, CV_8UC1, input);
     cv::Mat dst, dst_norm, dst_norm_scaled;
@@ -526,7 +520,7 @@ int main(int argc, const char **argv) {
 
     double min_dt = DBL_MAX;
     for (int nt=0; nt<10; nt++) {
-      timing = time_ms();
+      double time0 = time_ms();
 
       // Detecting corners
       cv::cornerHarris(cv_data_in, dst,
@@ -536,7 +530,8 @@ int main(int argc, const char **argv) {
       cv::normalize(dst, dst_norm, 0, 255, cv::NORM_MINMAX, CV_32FC1, cv::Mat());
       cv::convertScaleAbs(dst_norm, dst_norm_scaled);
 
-      double dt = time_ms() - timing;
+      double time1 = time_ms();
+      double dt = time1 - time0;
       if (dt < min_dt) min_dt = dt;
     }
     timings.push_back(min_dt);
@@ -559,7 +554,7 @@ int main(int argc, const char **argv) {
     #endif
 
     timing = std::accumulate(timings.begin(), timings.end(), 0.0f);
-    fprintf(stderr, "Harris Corner: %.3f ms, %.3f Mpixel/s\n", timing, (width*height/timing)/1000);
+    std::cerr << "Harris Corner: " << timing << " ms, " << (width*height/timing)/1000 << " Mpixel/s" << std::endl;
 
     #ifdef USE_FREEIMAGE
     FIBITMAP* out = FreeImage_ConvertFromRawBits(input, width, height, width,
@@ -572,7 +567,7 @@ int main(int argc, const char **argv) {
     FreeImage_Unload(out);
     FreeImage_Unload(gray);
     #else
-    free(input);
+    delete[] input;
     #endif
 
     return EXIT_SUCCESS;

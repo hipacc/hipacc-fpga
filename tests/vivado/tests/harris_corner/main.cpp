@@ -70,12 +70,12 @@ class Sobel : public Kernel<float> {
             Input(Input),
             cMask(cMask),
             dom(dom) {
-      addAccessor(&Input);
+      add_accessor(&Input);
     }
 
     void kernel() {
       float sum = 0.0f;
-      sum += reduce(dom, HipaccSUM, [&] () -> float {
+      sum += reduce(dom, Reduce::SUM, [&] () -> float {
           return Input(dom) * cMask(dom);
       });
       output() = sum;
@@ -91,7 +91,7 @@ class Square1 : public Kernel<float> {
             Accessor<float> &Input)
           : Kernel(IS),
             Input(Input) {
-      addAccessor(&Input);
+      add_accessor(&Input);
     }
 
     void kernel() {
@@ -111,8 +111,8 @@ class Square2 : public Kernel<float> {
           : Kernel(IS),
             Input1(Input1),
             Input2(Input2) {
-      addAccessor(&Input1);
-      addAccessor(&Input2);
+      add_accessor(&Input1);
+      add_accessor(&Input2);
     }
 
     void kernel() {
@@ -131,12 +131,12 @@ class Gauss : public Kernel<float> {
           : Kernel(IS),
             Input(Input),
             cMask(cMask) {
-      addAccessor(&Input);
+      add_accessor(&Input);
     }
 
     void kernel() {
       float sum = 0.0f;
-      sum += convolve(cMask, HipaccSUM, [&] () -> float {
+      sum += convolve(cMask, Reduce::SUM, [&] () -> float {
           return Input(cMask) * cMask();
       });
       output() = sum;
@@ -161,9 +161,9 @@ class HarrisCorner : public Kernel<uchar> {
             Dxy(Dxy),
             k(k),
             threshold(threshold) {
-      addAccessor(&Dx);
-      addAccessor(&Dy);
-      addAccessor(&Dxy);
+      add_accessor(&Dx);
+      add_accessor(&Dy);
+      add_accessor(&Dxy);
     }
 
     void kernel() {
@@ -293,16 +293,16 @@ int main(int argc, const char **argv) {
     IN = host_in;
     OUT = host_out;
 
-    BoundaryCondition<uchar> BcInClamp(IN, MX, BOUNDARY_CLAMP);
+    BoundaryCondition<uchar> BcInClamp(IN, MX, Boundary::CLAMP);
     Accessor<uchar> AccInClamp(BcInClamp);
 
     Sobel DerivX(IsDx, AccInClamp, MX, DomX);
     DerivX.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
     Sobel DerivY(IsDy, AccInClamp, MY, DomY);
     DerivY.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
 
     Accessor<float> AccDx(DX);
@@ -311,36 +311,36 @@ int main(int argc, const char **argv) {
 
     Square1 SquareX(IsSx, AccDx);
     SquareX.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
     Square1 SquareY(IsSy, AccDy);
     SquareY.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
     Square2 SquareXY(IsSxy, AccDx, AccDy);
     SquareXY.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
 
-    BoundaryCondition<float> BcInClampSx(SX, G, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcInClampSx(SX, G, Boundary::CLAMP);
     Accessor<float> AccInClampSx(BcInClampSx);
-    BoundaryCondition<float> BcInClampSy(SY, G, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcInClampSy(SY, G, Boundary::CLAMP);
     Accessor<float> AccInClampSy(BcInClampSy);
-    BoundaryCondition<float> BcInClampSxy(SXY, G, BOUNDARY_CLAMP);
+    BoundaryCondition<float> BcInClampSxy(SXY, G, Boundary::CLAMP);
     Accessor<float> AccInClampSxy(BcInClampSxy);
 
 
     Gauss GaussX(IsDx, AccInClampSx, G);
     GaussX.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
     Gauss GaussY(IsDy, AccInClampSy, G);
     GaussY.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
     Gauss GaussXY(IsDxy, AccInClampSxy, G);
     GaussXY.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
 
     Accessor<float> AccDxy(DXY);
@@ -348,10 +348,10 @@ int main(int argc, const char **argv) {
 
     HarrisCorner HC(IsOut, AccDx, AccDy, AccDxy, k, threshold);
     HC.execute();
-    timing += hipaccGetLastKernelTiming();
+    timing += hipacc_last_kernel_timing();
 
     // get results
-    host_out = OUT.getData();
+    host_out = OUT.data();
     fprintf(stdout,"<HIPACC:> Overall time: %fms\n", timing);
 
 #ifdef TEST

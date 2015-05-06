@@ -62,7 +62,7 @@ class SignatureKernel : public Kernel<sig_t> {
             Kernel(iter),
             input(input),
             dom(dom)
-        { addAccessor(&input); }
+        { add_accessor(&input); }
 
         void kernel() {
             // Census Transformation
@@ -88,8 +88,8 @@ class CompareKernel : public Kernel<uchar> {
         CompareKernel(IterationSpace<uchar> &iter, Accessor<sig_t> &sig1,
                       Accessor<sig_t> &sig2, Domain &dom, Domain &cdom)
             : Kernel(iter), sig1(sig1), sig2(sig2), dom(dom), cdom(cdom) {
-            addAccessor(&sig1);
-            addAccessor(&sig2);
+            add_accessor(&sig1);
+            add_accessor(&sig2);
         }
 
         void kernel() {
@@ -102,7 +102,7 @@ class CompareKernel : public Kernel<uchar> {
                 uchar dist = 0;
 
                 iterate(cdom, [&] () {
-                  if ((ref >> (cdom.getX()+(CENSUS_BITS/2))) & 1) {
+                  if ((ref >> (cdom.x()+(CENSUS_BITS/2))) & 1) {
                     ++dist;
                   }
                 });
@@ -115,7 +115,7 @@ class CompareKernel : public Kernel<uchar> {
                 //});
 
                 if (dist < min) {
-                  pos = dom.getX();
+                  pos = dom.x();
                   min = dist;
                 }
             });
@@ -137,8 +137,8 @@ public:
   SAD(IterationSpace<outdata_t> &it, Accessor<indata_t> &in1,
       Accessor<indata_t> &in2, Domain &idom, Domain &odom)
       : Kernel(it), input1(in1), input2(in2), idom(idom), odom(odom) {
-    addAccessor(&input1);
-    addAccessor(&input2);
+    add_accessor(&input1);
+    add_accessor(&input2);
   }
 
   void kernel() {
@@ -150,18 +150,18 @@ public:
       iterate(idom, [&] () {
 #ifdef GRAYSCALE
         int sum = input1(idom)
-                 - input2(idom.getX()+odom.getX()+(DISPARITY/2), idom.getY());
+                 - input2(idom.x()+odom.x()+(DISPARITY/2), idom.getY());
         val += abs(sum);
 #else
         int4 sum = convert_int4(input1(idom))
-                 - convert_int4(input2(idom.getX()+odom.getX()+(DISPARITY/2), idom.getY()));
+                 - convert_int4(input2(idom.x()+odom.x()+(DISPARITY/2), idom.getY()));
         val += abs(sum.x) + abs(sum.y) + abs(sum.z) + abs(sum.w);
 #endif
       });
 
       if (val < min) {
         min = val;
-        pos = odom.getX()+(DISPARITY/2);
+        pos = odom.x()+(DISPARITY/2);
       }
     });
 
@@ -385,8 +385,8 @@ int main(int argc, const char *argv[]) {
   sig_kernel2.execute();
 
   // output image
-  BoundaryCondition<sig_t> bcSig1(sig1, sig_dom, BOUNDARY_CLAMP);
-  BoundaryCondition<sig_t> bcSig2(sig2, sig_dom, BOUNDARY_CLAMP);
+  BoundaryCondition<sig_t> bcSig1(sig1, sig_dom, Boundary::CLAMP);
+  BoundaryCondition<sig_t> bcSig2(sig2, sig_dom, Boundary::CLAMP);
   Accessor<sig_t> accSig1(bcSig1);
   Accessor<sig_t> accSig2(bcSig2);
   CompareKernel compare(it, accSig1, accSig2, odom, cdom);
@@ -401,7 +401,7 @@ int main(int argc, const char *argv[]) {
   sad.execute();
 #endif
 
-  output = out.getData();
+  output = out.data();
 
 #ifndef FAKE_IMG
   writeOutputPic(output, WIDTH, HEIGHT);

@@ -95,7 +95,7 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
           // get the Image from the DRE if we have one
           if (imgDeclMap_.count(DRE->getDecl())) {
             Img = imgDeclMap_[DRE->getDecl()];
-            BC = new HipaccBoundaryCondition(Img, VD);
+            BC = new HipaccBoundaryCondition(VD, Img);
 
             dataDeps.addBoundaryCondition(VD, BC, DRE->getDecl());
           }
@@ -122,15 +122,7 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
 
       // found Accessor decl
       if (compilerClasses.isTypeOfTemplateClass(VD->getType(),
-            compilerClasses.Accessor) ||
-          compilerClasses.isTypeOfTemplateClass(VD->getType(),
-            compilerClasses.AccessorNN) ||
-          compilerClasses.isTypeOfTemplateClass(VD->getType(),
-            compilerClasses.AccessorLF) ||
-          compilerClasses.isTypeOfTemplateClass(VD->getType(),
-            compilerClasses.AccessorCF) ||
-          compilerClasses.isTypeOfTemplateClass(VD->getType(),
-            compilerClasses.AccessorL3)) {
+            compilerClasses.Accessor)) {
 
         if (DEBUG) std::cout << "  Tracked Accessor declaration: "
                 << VD->getNameAsString() << std::endl;
@@ -162,7 +154,7 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
                     << DRE->getNameInfo().getAsString() << std::endl;
 
             Img = imgDeclMap_[DRE->getDecl()];
-            BC = new HipaccBoundaryCondition(Img, VD);
+            BC = new HipaccBoundaryCondition(VD, Img);
 
             bcDeclMap_[VD] = BC;
           }
@@ -185,18 +177,10 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
         //  }
         //}
 
-        InterpolationMode mode;
-        if (compilerClasses.isTypeOfTemplateClass(VD->getType(),
-              compilerClasses.Accessor)) mode = InterpolateNO;
-        else if (compilerClasses.isTypeOfTemplateClass(VD->getType(),
-              compilerClasses.AccessorNN)) mode = InterpolateNN;
-        else if (compilerClasses.isTypeOfTemplateClass(VD->getType(),
-              compilerClasses.AccessorLF)) mode = InterpolateLF;
-        else if (compilerClasses.isTypeOfTemplateClass(VD->getType(),
-              compilerClasses.AccessorCF)) mode = InterpolateCF;
-        else mode = InterpolateL3;
+        // TODO: Read from arguments
+        Interpolate mode = Interpolate::NO;
 
-        Acc = new HipaccAccessor(BC, mode, VD);
+        Acc = new HipaccAccessor(VD, BC, mode, false);
 
         // store Accessor definition
         accDeclMap_[VD] = Acc;
@@ -229,7 +213,7 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
                     << DRE->getNameInfo().getAsString() << std::endl;
 
             Img = imgDeclMap_[DRE->getDecl()];
-            IS = new HipaccIterationSpace(Img, VD);
+            IS = new HipaccIterationSpace(VD, Img, false);
 
             dataDeps.addIterationSpace(VD, IS, DRE->getDecl());
           }

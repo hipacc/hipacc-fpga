@@ -7,7 +7,7 @@ HIPAcc Prerequisites:
 - libcxx (see dependencies.sh)
 - libcxxabi (when using clang for GNU/Linux)
 - Polly (optional, see dependencies.sh)
-- CMake (2.8 or later)
+- CMake (2.8.12 or later)
 
 The revision of the Clang/LLVM (and Polly) have to match in order to compile the
 HIPAcc sources successfully. The file 'dependencies.sh' lists the revisions and
@@ -27,12 +27,12 @@ The following variables can be set to tell cmake where to look for certain
 components:
 CMAKE_INSTALL_PREFIX        - Installation prefix (this must be an absolute path)
 CMAKE_BUILD_TYPE            - Build type (Debug or Release)
-OPENCL_INC_PATH             - OpenCL include path
-                              e.g. -DOPENCL_INC_PATH=/opt/cuda/include
-OPENCL_LIB_PATH             - OpenCL library path
-                              e.g. -DOPENCL_LIB_PATH=/usr/lib64
-CUDA_BIN_PATH               - CUDA binary path
-                              e.g. -DCUDA_BIN_PATH=/opt/cuda/bin
+OPENCL_INC_DIR              - OpenCL include path
+                              e.g. -DOPENCL_INC_DIR=/usr/local/cuda/include
+OPENCL_LIB_DIR              - OpenCL library path
+                              e.g. -DOPENCL_LIB_DIR=/usr/lib64
+OPENCV_DIR                  - OpenCV installation path
+                              e.g. -DOPENCV_DIR=/opt/local
 
 For Android, the cross compiler etc. have to be specified in addition:
 ANDROID_SOURCE_DIR          - Android source directory
@@ -46,15 +46,11 @@ NDK_TOOLCHAIN_DIR           - Android NDK directory
 RS_TARGET_API               - Android API level
                               e.g. -DRS_TARGET_API=16
 EMBEDDED_OPENCL_INC_PATH    - OpenCL include path
-                              e.g. -DEMBEDDED_OPENCL_INC_PATH=/opt/cuda/include
+                              e.g. -DEMBEDDED_OPENCL_INC_PATH=/usr/local/cuda/include
 EMBEDDED_OPENCL_LIB_PATH    - OpenCL library path within the target system
                               e.g. -DEMBEDDED_OPENCL_LIB_PATH=vendor/lib/egl
 EMBEDDED_OPENCL_LIB         - Name of the embedded OpenCL library
                               e.g. -DEMBEDDED_OPENCL_LIB=libGLES_mali.so
-OPENCV_INC_PATH             - OpenCV include path
-                              e.g. -DOPENCV_INC_PATH=/opt/local/include
-OPENCV_LIB_PATH             - OpenCV library path
-                              e.g. -DOPENCV_LIB_PATH=/opt/local/lib
 
 The following options can be enabled or disabled:
 USE_POLLY               - Use Polly for kernel analysis (e.g. -DUSE_POLLY=ON)

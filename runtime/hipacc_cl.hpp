@@ -36,10 +36,9 @@
 #include <float.h>
 #include <math.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -131,163 +130,102 @@ void hipaccCalcGridFromBlock(hipacc_launch_info &info, size_t *block, size_t *gr
 }
 
 
-std::string getOpenCLErrorCodeStr(int errorCode) {
-    switch (errorCode) {
-        case CL_SUCCESS:
-            return "CL_SUCCESS";
-        case CL_DEVICE_NOT_FOUND:
-            return "CL_DEVICE_NOT_FOUND";
-        case CL_DEVICE_NOT_AVAILABLE:
-            return "CL_DEVICE_NOT_AVAILABLE";
-        case CL_COMPILER_NOT_AVAILABLE:
-            return "CL_COMPILER_NOT_AVAILABLE";
-        case CL_MEM_OBJECT_ALLOCATION_FAILURE:
-            return "CL_MEM_OBJECT_ALLOCATION_FAILURE";
-        case CL_OUT_OF_RESOURCES:
-            return "CL_OUT_OF_RESOURCES";
-        case CL_OUT_OF_HOST_MEMORY:
-            return "CL_OUT_OF_HOST_MEMORY";
-        case CL_PROFILING_INFO_NOT_AVAILABLE:
-            return "CL_PROFILING_INFO_NOT_AVAILABLE";
-        case CL_MEM_COPY_OVERLAP:
-            return "CL_MEM_COPY_OVERLAP";
-        case CL_IMAGE_FORMAT_MISMATCH:
-            return "CL_IMAGE_FORMAT_MISMATCH";
-        case CL_IMAGE_FORMAT_NOT_SUPPORTED:
-            return "CL_IMAGE_FORMAT_NOT_SUPPORTED";
-        case CL_BUILD_PROGRAM_FAILURE:
-            return "CL_BUILD_PROGRAM_FAILURE";
-        case CL_MAP_FAILURE:
-            return "CL_MAP_FAILURE";
+std::string getOpenCLErrorCodeStr(int error) {
+    #define CL_ERROR_CODE(CODE) case CODE: return #CODE;
+    switch (error) {
+        CL_ERROR_CODE(CL_SUCCESS)
+        CL_ERROR_CODE(CL_DEVICE_NOT_FOUND)
+        CL_ERROR_CODE(CL_DEVICE_NOT_AVAILABLE)
+        CL_ERROR_CODE(CL_COMPILER_NOT_AVAILABLE)
+        CL_ERROR_CODE(CL_MEM_OBJECT_ALLOCATION_FAILURE)
+        CL_ERROR_CODE(CL_OUT_OF_RESOURCES)
+        CL_ERROR_CODE(CL_OUT_OF_HOST_MEMORY)
+        CL_ERROR_CODE(CL_PROFILING_INFO_NOT_AVAILABLE)
+        CL_ERROR_CODE(CL_MEM_COPY_OVERLAP)
+        CL_ERROR_CODE(CL_IMAGE_FORMAT_MISMATCH)
+        CL_ERROR_CODE(CL_IMAGE_FORMAT_NOT_SUPPORTED)
+        CL_ERROR_CODE(CL_BUILD_PROGRAM_FAILURE)
+        CL_ERROR_CODE(CL_MAP_FAILURE)
         #ifdef CL_VERSION_1_1
-        case CL_MISALIGNED_SUB_BUFFER_OFFSET:
-            return "CL_MISALIGNED_SUB_BUFFER_OFFSET";
-        case CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST:
-            return "CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST";
+        CL_ERROR_CODE(CL_MISALIGNED_SUB_BUFFER_OFFSET)
+        CL_ERROR_CODE(CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST)
         #endif
         #ifdef CL_VERSION_1_2
-        case CL_COMPILE_PROGRAM_FAILURE:
-            return "CL_COMPILE_PROGRAM_FAILURE";
-        case CL_LINKER_NOT_AVAILABLE:
-            return "CL_LINKER_NOT_AVAILABLE";
-        case CL_LINK_PROGRAM_FAILURE:
-            return "CL_LINK_PROGRAM_FAILURE";
-        case CL_DEVICE_PARTITION_FAILED:
-            return "CL_DEVICE_PARTITION_FAILED";
-        case CL_KERNEL_ARG_INFO_NOT_AVAILABLE:
-            return "CL_KERNEL_ARG_INFO_NOT_AVAILABLE";
+        CL_ERROR_CODE(CL_COMPILE_PROGRAM_FAILURE)
+        CL_ERROR_CODE(CL_LINKER_NOT_AVAILABLE)
+        CL_ERROR_CODE(CL_LINK_PROGRAM_FAILURE)
+        CL_ERROR_CODE(CL_DEVICE_PARTITION_FAILED)
+        CL_ERROR_CODE(CL_KERNEL_ARG_INFO_NOT_AVAILABLE)
         #endif
-        case CL_INVALID_VALUE:
-            return "CL_INVALID_VALUE";
-        case CL_INVALID_DEVICE_TYPE:
-            return "CL_INVALID_DEVICE_TYPE";
-        case CL_INVALID_PLATFORM:
-            return "CL_INVALID_PLATFORM";
-        case CL_INVALID_DEVICE:
-            return "CL_INVALID_DEVICE";
-        case CL_INVALID_CONTEXT:
-            return "CL_INVALID_CONTEXT";
-        case CL_INVALID_QUEUE_PROPERTIES:
-            return "CL_INVALID_QUEUE_PROPERTIES";
-        case CL_INVALID_COMMAND_QUEUE:
-            return "CL_INVALID_COMMAND_QUEUE";
-        case CL_INVALID_HOST_PTR:
-            return "CL_INVALID_HOST_PTR";
-        case CL_INVALID_MEM_OBJECT:
-            return "CL_INVALID_MEM_OBJECT";
-        case CL_INVALID_IMAGE_FORMAT_DESCRIPTOR:
-            return "CL_INVALID_IMAGE_FORMAT_DESCRIPTOR";
-        case CL_INVALID_IMAGE_SIZE:
-            return "CL_INVALID_IMAGE_SIZE";
-        case CL_INVALID_SAMPLER:
-            return "CL_INVALID_SAMPLER";
-        case CL_INVALID_BINARY:
-            return "CL_INVALID_BINARY";
-        case CL_INVALID_BUILD_OPTIONS:
-            return "CL_INVALID_BUILD_OPTIONS";
-        case CL_INVALID_PROGRAM:
-            return "CL_INVALID_PROGRAM";
-        case CL_INVALID_PROGRAM_EXECUTABLE:
-            return "CL_INVALID_PROGRAM_EXECUTABLE";
-        case CL_INVALID_KERNEL_NAME:
-            return "CL_INVALID_KERNEL_NAME";
-        case CL_INVALID_KERNEL_DEFINITION:
-            return "CL_INVALID_KERNEL_DEFINITION";
-        case CL_INVALID_KERNEL:
-            return "CL_INVALID_KERNEL";
-        case CL_INVALID_ARG_INDEX:
-            return "CL_INVALID_ARG_INDEX";
-        case CL_INVALID_ARG_VALUE:
-            return "CL_INVALID_ARG_VALUE";
-        case CL_INVALID_ARG_SIZE:
-            return "CL_INVALID_ARG_SIZE";
-        case CL_INVALID_KERNEL_ARGS:
-            return "CL_INVALID_KERNEL_ARGS";
-        case CL_INVALID_WORK_DIMENSION:
-            return "CL_INVALID_WORK_DIMENSION";
-        case CL_INVALID_WORK_GROUP_SIZE:
-            return "CL_INVALID_WORK_GROUP_SIZE";
-        case CL_INVALID_WORK_ITEM_SIZE:
-            return "CL_INVALID_WORK_ITEM_SIZE";
-        case CL_INVALID_GLOBAL_OFFSET:
-            return "CL_INVALID_GLOBAL_OFFSET";
-        case CL_INVALID_EVENT_WAIT_LIST:
-            return "CL_INVALID_EVENT_WAIT_LIST";
-        case CL_INVALID_EVENT:
-            return "CL_INVALID_EVENT";
-        case CL_INVALID_OPERATION:
-            return "CL_INVALID_OPERATION";
-        case CL_INVALID_GL_OBJECT:
-            return "CL_INVALID_GL_OBJECT";
-        case CL_INVALID_BUFFER_SIZE:
-            return "CL_INVALID_BUFFER_SIZE";
-        case CL_INVALID_MIP_LEVEL:
-            return "CL_INVALID_MIP_LEVEL";
-        case CL_INVALID_GLOBAL_WORK_SIZE:
-            return "CL_INVALID_GLOBAL_WORK_SIZE";
+        CL_ERROR_CODE(CL_INVALID_VALUE)
+        CL_ERROR_CODE(CL_INVALID_DEVICE_TYPE)
+        CL_ERROR_CODE(CL_INVALID_PLATFORM)
+        CL_ERROR_CODE(CL_INVALID_DEVICE)
+        CL_ERROR_CODE(CL_INVALID_CONTEXT)
+        CL_ERROR_CODE(CL_INVALID_QUEUE_PROPERTIES)
+        CL_ERROR_CODE(CL_INVALID_COMMAND_QUEUE)
+        CL_ERROR_CODE(CL_INVALID_HOST_PTR)
+        CL_ERROR_CODE(CL_INVALID_MEM_OBJECT)
+        CL_ERROR_CODE(CL_INVALID_IMAGE_FORMAT_DESCRIPTOR)
+        CL_ERROR_CODE(CL_INVALID_IMAGE_SIZE)
+        CL_ERROR_CODE(CL_INVALID_SAMPLER)
+        CL_ERROR_CODE(CL_INVALID_BINARY)
+        CL_ERROR_CODE(CL_INVALID_BUILD_OPTIONS)
+        CL_ERROR_CODE(CL_INVALID_PROGRAM)
+        CL_ERROR_CODE(CL_INVALID_PROGRAM_EXECUTABLE)
+        CL_ERROR_CODE(CL_INVALID_KERNEL_NAME)
+        CL_ERROR_CODE(CL_INVALID_KERNEL_DEFINITION)
+        CL_ERROR_CODE(CL_INVALID_KERNEL)
+        CL_ERROR_CODE(CL_INVALID_ARG_INDEX)
+        CL_ERROR_CODE(CL_INVALID_ARG_VALUE)
+        CL_ERROR_CODE(CL_INVALID_ARG_SIZE)
+        CL_ERROR_CODE(CL_INVALID_KERNEL_ARGS)
+        CL_ERROR_CODE(CL_INVALID_WORK_DIMENSION)
+        CL_ERROR_CODE(CL_INVALID_WORK_GROUP_SIZE)
+        CL_ERROR_CODE(CL_INVALID_WORK_ITEM_SIZE)
+        CL_ERROR_CODE(CL_INVALID_GLOBAL_OFFSET)
+        CL_ERROR_CODE(CL_INVALID_EVENT_WAIT_LIST)
+        CL_ERROR_CODE(CL_INVALID_EVENT)
+        CL_ERROR_CODE(CL_INVALID_OPERATION)
+        CL_ERROR_CODE(CL_INVALID_GL_OBJECT)
+        CL_ERROR_CODE(CL_INVALID_BUFFER_SIZE)
+        CL_ERROR_CODE(CL_INVALID_MIP_LEVEL)
+        CL_ERROR_CODE(CL_INVALID_GLOBAL_WORK_SIZE)
         #ifdef CL_VERSION_1_1
-        case CL_INVALID_PROPERTY:
-            return "CL_INVALID_PROPERTY";
+        CL_ERROR_CODE(CL_INVALID_PROPERTY)
         #endif
         #ifdef CL_VERSION_1_2
-        case CL_INVALID_IMAGE_DESCRIPTOR:
-            return "CL_INVALID_IMAGE_DESCRIPTOR";
-        case CL_INVALID_COMPILER_OPTIONS:
-            return "CL_INVALID_COMPILER_OPTIONS";
-        case CL_INVALID_LINKER_OPTIONS:
-            return "CL_INVALID_LINKER_OPTIONS";
-        case CL_INVALID_DEVICE_PARTITION_COUNT:
-            return "CL_INVALID_DEVICE_PARTITION_COUNT";
+        CL_ERROR_CODE(CL_INVALID_IMAGE_DESCRIPTOR)
+        CL_ERROR_CODE(CL_INVALID_COMPILER_OPTIONS)
+        CL_ERROR_CODE(CL_INVALID_LINKER_OPTIONS)
+        CL_ERROR_CODE(CL_INVALID_DEVICE_PARTITION_COUNT)
         #endif
-        default:
-            return "unknown error code";
+        #ifdef CL_VERSION_2_0
+        CL_ERROR_CODE(CL_INVALID_PIPE_SIZE)
+        CL_ERROR_CODE(CL_INVALID_DEVICE_QUEUE)
+        #endif
+        default: return "unknown error code";
     }
+    #undef CL_ERROR_CODE
 }
-// Macro for error checking
-#if 1
-#define checkErr(err, name) \
-    if (err != CL_SUCCESS) { \
-        std::cerr << "ERROR: " << name << " (" << (err) << ")" << " [file " << __FILE__ << ", line " << __LINE__ << "]: "; \
-        std::cerr << getOpenCLErrorCodeStr(err) << std::endl; \
-        exit(EXIT_FAILURE); \
-    }
-#else
-inline void checkErr(cl_int err, std::string name) {
+
+#define checkErr(err, name)  __checkOpenCLErrors(err, name, __FILE__, __LINE__)
+
+inline void __checkOpenCLErrors(cl_int err, std::string name, std::string file, const int line) {
     if (err != CL_SUCCESS) {
-        std::cerr << "ERROR: " << name << " (" << err << ")" << std::endl;
+        std::cerr << "ERROR: " << name << " (" << err << ")"
+                  << " [file " << file << ", line " << line << "]: "
+                  << getOpenCLErrorCodeStr(err) << std::endl;
         exit(EXIT_FAILURE);
     }
 }
-#endif
 
 
 // Select platform and device for execution
 void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name platform_name=ALL) {
     HipaccContext &Ctx = HipaccContext::getInstance();
     char pnBuffer[1024], pvBuffer[1024], pv2Buffer[1024], pdBuffer[1024], pd2Buffer[1024];
-    int platform_number = -1, device_number = -1;
     cl_uint num_platforms, num_devices, num_devices_type;
-    cl_int err = CL_SUCCESS;
 
     // Set environment variable to tell AMD/ATI platform to dump kernel
     // this has to be done before platform initialization
@@ -301,13 +239,14 @@ void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name pla
     }
 
     // Get OpenCL platform count
-    err = clGetPlatformIDs(0, NULL, &num_platforms);
+    cl_int err = clGetPlatformIDs(0, NULL, &num_platforms);
     checkErr(err, "clGetPlatformIDs()");
 
     std::cerr << "Number of available Platforms: " << num_platforms << std::endl;
     if (num_platforms == 0) {
         exit(EXIT_FAILURE);
     } else {
+        int platform_number = -1, device_number = -1;
         std::vector<cl_platform_id> platforms(num_platforms);
         std::vector<cl_platform_name> platform_names(num_platforms);
 
@@ -427,8 +366,14 @@ void hipaccCreateContextsAndCommandQueues(bool all_devies=false) {
 
     // Create command queues
     for (size_t i=0; i<devices.size(); ++i) {
+        #ifdef CL_VERSION_2_0
+        cl_queue_properties cprops[3] = { CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE, 0 };
+        command_queue = clCreateCommandQueueWithProperties(context, devices[i], cprops, &err);
+        checkErr(err, "clCreateCommandQueueWithProperties()");
+        #else
         command_queue = clCreateCommandQueue(context, devices[i], CL_QUEUE_PROFILING_ENABLE, &err);
         checkErr(err, "clCreateCommandQueue()");
+        #endif
 
         Ctx.add_command_queue(command_queue);
     }
@@ -437,11 +382,10 @@ void hipaccCreateContextsAndCommandQueues(bool all_devies=false) {
 
 // Get binary from OpenCL program and dump it to stderr
 void hipaccDumpBinary(cl_program program, cl_device_id device) {
-    cl_int err = CL_SUCCESS;
     cl_uint num_devices;
 
     // Get the number of devices associated with the program
-    err = clGetProgramInfo(program, CL_PROGRAM_NUM_DEVICES, sizeof(cl_uint), &num_devices, NULL);
+    cl_int err = clGetProgramInfo(program, CL_PROGRAM_NUM_DEVICES, sizeof(cl_uint), &num_devices, NULL);
 
     // Get the associated device ids
     std::vector<cl_device_id> devices(num_devices);
@@ -571,88 +515,64 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
 }
 
 
+template<typename T>
+HipaccImage createImage(T *host_mem, void *mem, size_t width, size_t height, size_t stride, size_t alignment, hipaccMemoryType mem_type=Global) {
+    HipaccImage img = HipaccImage(width, height, stride, alignment, sizeof(T), mem, mem_type);
+    HipaccContext &Ctx = HipaccContext::getInstance();
+    Ctx.add_image(img);
+    hipaccWriteMemory(img, host_mem ? host_mem : (T*)img.host);
+    return img;
+}
+
+template<typename T>
+cl_mem createBuffer(size_t stride, size_t height, cl_mem_flags flags) {
+    HipaccContext &Ctx = HipaccContext::getInstance();
+    cl_int err = CL_SUCCESS;
+    cl_mem buffer = clCreateBuffer(Ctx.get_contexts()[0], flags, sizeof(T)*stride*height, NULL, &err);
+    checkErr(err, "clCreateBuffer()");
+    return buffer;
+}
+
+
 // Allocate memory with alignment specified
 template<typename T>
-HipaccImage hipaccCreateBuffer(T *host_mem, int width, int height, int alignment) {
-    cl_int err = CL_SUCCESS;
-    cl_mem buffer;
-    cl_mem_flags flags = CL_MEM_READ_WRITE;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
-    if (host_mem) {
-        flags |= CL_MEM_COPY_HOST_PTR | CL_MEM_ALLOC_HOST_PTR;
-    }
+HipaccImage hipaccCreateBuffer(T *host_mem, size_t width, size_t height, size_t alignment) {
     // alignment has to be a multiple of sizeof(T)
-    alignment = (int)ceilf((float)alignment/sizeof(T)) * sizeof(T);
-    // compute stride
-    int stride = (int)ceilf((float)(width)/(alignment/sizeof(T))) * (alignment/sizeof(T));
-    buffer = clCreateBuffer(Ctx.get_contexts()[0], flags, sizeof(T)*stride*height, host_mem, &err);
-    checkErr(err, "clCreateBuffer()");
+    alignment = (size_t)ceilf((float)alignment/sizeof(T)) * sizeof(T);
+    size_t stride = (size_t)ceilf((float)(width)/(alignment/sizeof(T))) * (alignment/sizeof(T));
 
-    HipaccImage img = HipaccImage(width, height, stride, alignment, sizeof(T), (void *)buffer);
-    Ctx.add_image(img);
-
-    return img;
+    cl_mem buffer = createBuffer<T>(stride, height, CL_MEM_READ_WRITE);
+    return createImage(host_mem, (void *)buffer, width, height, stride, alignment);
 }
 
 
 // Allocate memory without any alignment considerations
 template<typename T>
-HipaccImage hipaccCreateBuffer(T *host_mem, int width, int height) {
-    cl_int err = CL_SUCCESS;
-    cl_mem buffer;
-    cl_mem_flags flags = CL_MEM_READ_WRITE;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
-    if (host_mem) {
-        flags |= CL_MEM_COPY_HOST_PTR | CL_MEM_ALLOC_HOST_PTR;
-    }
-    int stride = width;
-    buffer = clCreateBuffer(Ctx.get_contexts()[0], flags, sizeof(T)*width*height, host_mem, &err);
-    checkErr(err, "clCreateBuffer()");
-
-    HipaccImage img = HipaccImage(width, height, stride, 0, sizeof(T), (void *)buffer);
-    Ctx.add_image(img);
-
-    return img;
+HipaccImage hipaccCreateBuffer(T *host_mem, size_t width, size_t height) {
+    cl_mem buffer = createBuffer<T>(width, height, CL_MEM_READ_WRITE);
+    return createImage(host_mem, (void *)buffer, width, height, width, 0);
 }
 
 
 // Allocate constant buffer
 template<typename T>
-HipaccImage hipaccCreateBufferConstant(int width, int height) {
-    cl_int err = CL_SUCCESS;
-    cl_mem buffer;
-    cl_mem_flags flags = CL_MEM_READ_ONLY;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
-    buffer = clCreateBuffer(Ctx.get_contexts()[0], flags, sizeof(T)*width*height, NULL, &err);
-    checkErr(err, "clCreateBuffer()");
-
-    HipaccImage img = HipaccImage(width, height, width, 0, sizeof(T), (void *)buffer);
-    Ctx.add_image(img);
-
-    return img;
+HipaccImage hipaccCreateBufferConstant(T *host_mem, size_t width, size_t height) {
+    cl_mem buffer = createBuffer<T>(width, height, CL_MEM_READ_ONLY);
+    return createImage(host_mem, (void *)buffer, width, height, width, 0);
 }
 
 
 // Allocate image - no alignment can be specified
 template<typename T>
-HipaccImage hipaccCreateImage(T *host_mem, int width, int height,
+HipaccImage hipaccCreateImage(T *host_mem, size_t width, size_t height,
         cl_channel_type channel_type, cl_channel_order channel_order) {
     cl_int err = CL_SUCCESS;
-    cl_mem image;
     cl_mem_flags flags = CL_MEM_READ_WRITE;
     cl_image_format image_format;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
     image_format.image_channel_order = channel_order;
     image_format.image_channel_data_type = channel_type;
+    HipaccContext &Ctx = HipaccContext::getInstance();
 
-    if (host_mem) {
-        flags |= CL_MEM_COPY_HOST_PTR | CL_MEM_ALLOC_HOST_PTR;
-    }
-    int stride = width;
     #ifdef CL_VERSION_1_2
     cl_image_desc image_desc;
     memset(&image_desc, '\0', sizeof(cl_image_desc));
@@ -664,23 +584,20 @@ HipaccImage hipaccCreateImage(T *host_mem, int width, int height,
     image_desc.image_width = width;
     image_desc.image_height = height;
 
-    image = clCreateImage(Ctx.get_contexts()[0], flags, &image_format, &image_desc, host_mem, &err);
+    cl_mem image = clCreateImage(Ctx.get_contexts()[0], flags, &image_format, &image_desc, NULL, &err);
     checkErr(err, "clCreateImage()");
     #else
-    image = clCreateImage2D(Ctx.get_contexts()[0], flags, &image_format, width, height, 0, host_mem, &err);
+    cl_mem image = clCreateImage2D(Ctx.get_contexts()[0], flags, &image_format, width, height, 0, NULL, &err);
     checkErr(err, "clCreateImage2D()");
     #endif
 
-    HipaccImage img = HipaccImage(width, height, stride, 0, sizeof(T), (void *)image, Array2D);
-    Ctx.add_image(img);
-
-    return img;
+    return createImage(host_mem, (void *)image, width, height, width, 0, Array2D);
 }
 template<typename T>
-HipaccImage hipaccCreateImage(T *host_mem, int width, int height);
+HipaccImage hipaccCreateImage(T *host_mem, size_t width, size_t height);
 #define CREATE_IMAGE(DATA_TYPE, CHANNEL_TYPE, CHANNEL_ORDER) \
 template <> \
-HipaccImage hipaccCreateImage<DATA_TYPE>(DATA_TYPE *host_mem, int width, int height) { \
+HipaccImage hipaccCreateImage<DATA_TYPE>(DATA_TYPE *host_mem, size_t width, size_t height) { \
     return hipaccCreateImage(host_mem, width, height, CHANNEL_TYPE, CHANNEL_ORDER); \
 }
 CREATE_IMAGE(char,                  CL_SIGNED_INT8,     CL_R)
@@ -705,8 +622,19 @@ cl_sampler hipaccCreateSampler(cl_bool normalized_coords, cl_addressing_mode add
     cl_sampler sampler;
     HipaccContext &Ctx = HipaccContext::getInstance();
 
+    #ifdef CL_VERSION_2_0
+    cl_sampler_properties sprops[7] = {
+        CL_SAMPLER_NORMALIZED_COORDS, normalized_coords,
+        CL_SAMPLER_ADDRESSING_MODE, addressing_mode,
+        CL_SAMPLER_FILTER_MODE, filter_mode,
+        0
+    };
+    sampler = clCreateSamplerWithProperties(Ctx.get_contexts()[0], sprops, &err);
+    checkErr(err, "clCreateSamplerWithProperties()");
+    #else
     sampler = clCreateSampler(Ctx.get_contexts()[0], normalized_coords, addressing_mode, filter_mode, &err);
     checkErr(err, "clCreateSampler()");
+    #endif
 
     return sampler;
 }
@@ -714,12 +642,10 @@ cl_sampler hipaccCreateSampler(cl_bool normalized_coords, cl_addressing_mode add
 
 // Release buffer or image
 void hipaccReleaseMemory(HipaccImage &img) {
-    cl_int err = CL_SUCCESS;
-    HipaccContext &Ctx = HipaccContext::getInstance();
-
-    err = clReleaseMemObject((cl_mem)img.mem);
+    cl_int err = clReleaseMemObject((cl_mem)img.mem);
     checkErr(err, "clReleaseMemObject()");
 
+    HipaccContext &Ctx = HipaccContext::getInstance();
     Ctx.del_image(img);
 }
 
@@ -727,25 +653,28 @@ void hipaccReleaseMemory(HipaccImage &img) {
 // Write to memory
 template<typename T>
 void hipaccWriteMemory(HipaccImage &img, T *host_mem, int num_device=0) {
-    cl_int err = CL_SUCCESS;
-    HipaccContext &Ctx = HipaccContext::getInstance();
+    if (host_mem == NULL) return;
 
-    std::copy(host_mem, host_mem + img.width*img.height, (T*)img.host);
+    size_t width  = img.width;
+    size_t height = img.height;
+    size_t stride = img.stride;
+
+    if ((char *)host_mem != img.host)
+        std::copy(host_mem, host_mem + width*height, (T*)img.host);
+
+    HipaccContext &Ctx = HipaccContext::getInstance();
+    cl_int err = CL_SUCCESS;
     if (img.mem_type >= Array2D) {
         const size_t origin[] = { 0, 0, 0 };
-        const size_t region[] = { (size_t)img.width, (size_t)img.height, 1 };
+        const size_t region[] = { width, height, 1 };
         // no stride supported for images in OpenCL
-        const size_t input_row_pitch = img.width*sizeof(T);
+        const size_t input_row_pitch = width*sizeof(T);
         const size_t input_slice_pitch = 0;
 
         err = clEnqueueWriteImage(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, origin, region, input_row_pitch, input_slice_pitch, host_mem, 0, NULL, NULL);
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         checkErr(err, "clEnqueueWriteImage()");
     } else {
-        size_t width = img.width;
-        size_t height = img.height;
-        size_t stride = img.stride;
-
         if (stride > width) {
             for (size_t i=0; i<height; ++i) {
                 err |= clEnqueueWriteBuffer(Ctx.get_command_queues()[num_device], (cl_mem)img.mem, CL_FALSE, i*sizeof(T)*stride, sizeof(T)*width, &host_mem[i*width], 0, NULL, NULL);
@@ -767,7 +696,7 @@ T *hipaccReadMemory(HipaccImage &img, int num_device=0) {
 
     if (img.mem_type >= Array2D) {
         const size_t origin[] = { 0, 0, 0 };
-        const size_t region[] = { (size_t)img.width, (size_t)img.height, 1 };
+        const size_t region[] = { img.width, img.height, 1 };
         // no stride supported for images in OpenCL
         const size_t row_pitch = img.width*sizeof(T);
         const size_t slice_pitch = 0;
@@ -798,16 +727,16 @@ T *hipaccReadMemory(HipaccImage &img, int num_device=0) {
 // Infer non-const Domain from non-const Mask
 template<typename T>
 void hipaccWriteDomainFromMask(HipaccImage &dom, T* host_mem) {
-  int size = dom.width * dom.height;
-  uchar *dom_mem = new uchar[size];
+    size_t size = dom.width * dom.height;
+    uchar *dom_mem = new uchar[size];
 
-  for (int i = 0; i < size; ++i) {
-    dom_mem[i] = (host_mem[i] == T(0) ? 0 : 1);
-  }
+    for (size_t i=0; i < size; ++i) {
+        dom_mem[i] = (host_mem[i] == T(0) ? 0 : 1);
+    }
 
-  hipaccWriteMemory(dom, dom_mem);
+    hipaccWriteMemory(dom, dom_mem);
 
-  delete[] dom_mem;
+    delete[] dom_mem;
 }
 
 
@@ -820,7 +749,7 @@ void hipaccCopyMemory(HipaccImage &src, HipaccImage &dst, int num_device=0) {
 
     if (src.mem_type >= Array2D) {
         const size_t origin[] = { 0, 0, 0 };
-        const size_t region[] = { (size_t)src.width, (size_t)src.height, 1 };
+        const size_t region[] = { src.width, src.height, 1 };
 
         err = clEnqueueCopyImage(Ctx.get_command_queues()[num_device], (cl_mem)src.mem, (cl_mem)dst.mem, origin, origin, region, 0, NULL, NULL);
         err |= clFinish(Ctx.get_command_queues()[num_device]);
@@ -834,14 +763,14 @@ void hipaccCopyMemory(HipaccImage &src, HipaccImage &dst, int num_device=0) {
 
 
 // Copy from memory region to memory region
-void hipaccCopyMemoryRegion(HipaccAccessor src, HipaccAccessor dst, int num_device=0) {
+void hipaccCopyMemoryRegion(const HipaccAccessor &src, const HipaccAccessor &dst, int num_device=0) {
     cl_int err = CL_SUCCESS;
     HipaccContext &Ctx = HipaccContext::getInstance();
 
     if (src.img.mem_type >= Array2D) {
         const size_t dst_origin[] = { (size_t)dst.offset_x, (size_t)dst.offset_y, 0 };
         const size_t src_origin[] = { (size_t)src.offset_x, (size_t)src.offset_y, 0 };
-        const size_t region[] = { (size_t)dst.width, (size_t)dst.height, 1 };
+        const size_t region[]     = { dst.width, dst.height, 1 };
 
         err = clEnqueueCopyImage(Ctx.get_command_queues()[num_device],
                 (cl_mem)src.img.mem, (cl_mem)dst.img.mem, src_origin, dst_origin,
@@ -849,9 +778,9 @@ void hipaccCopyMemoryRegion(HipaccAccessor src, HipaccAccessor dst, int num_devi
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         checkErr(err, "clEnqueueCopyImage()");
     } else {
-        const size_t dst_origin[] = { (size_t)dst.offset_x*dst.img.pixel_size, (size_t)dst.offset_y, 0 };
-        const size_t src_origin[] = { (size_t)src.offset_x*src.img.pixel_size, (size_t)src.offset_y, 0 };
-        const size_t region[] = { (size_t)dst.width*dst.img.pixel_size, (size_t)dst.height, 1 };
+        const size_t dst_origin[] = { dst.offset_x*dst.img.pixel_size, (size_t)dst.offset_y, 0 };
+        const size_t src_origin[] = { src.offset_x*src.img.pixel_size, (size_t)src.offset_y, 0 };
+        const size_t region[]     = { dst.width*dst.img.pixel_size, dst.height, 1 };
 
         err = clEnqueueCopyBufferRect(Ctx.get_command_queues()[num_device],
                 (cl_mem)src.img.mem, (cl_mem)dst.img.mem, src_origin, dst_origin,
@@ -928,16 +857,14 @@ double hipaccCopyBufferBenchmark(HipaccImage &src, HipaccImage &dst, int num_dev
 // Set a single argument of a kernel
 template<typename T>
 void hipaccSetKernelArg(cl_kernel kernel, unsigned int num, size_t size, T* param) {
-    cl_int err = CL_SUCCESS;
-
-    err = clSetKernelArg(kernel, num, size, param);
+    cl_int err = clSetKernelArg(kernel, num, size, param);
     checkErr(err, "clSetKernelArg()");
 }
 
 
 // Enqueue and launch kernel
 void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *local_work_size, bool print_timing=true) {
-    cl_int err = CL_SUCCESS;
+    cl_int err;
     #ifdef EVENT_TIMING
     cl_event event;
     cl_ulong end, start;
@@ -1349,7 +1276,7 @@ void hipaccKernelExploration(std::string filename, std::string kernel,
 
 
 template<typename T>
-HipaccImage hipaccCreatePyramidImage(HipaccImage &base, int width, int height) {
+HipaccImage hipaccCreatePyramidImage(HipaccImage &base, size_t width, size_t height) {
   switch (base.mem_type) {
     case Array2D:
       return hipaccCreateImage<T>(NULL, width, height);

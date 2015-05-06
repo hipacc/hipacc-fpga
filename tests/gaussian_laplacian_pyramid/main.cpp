@@ -24,15 +24,11 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
-#include <vector>
-
-#include <float.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <sys/time.h>
 
 #include "hipacc.hpp"
 
@@ -60,12 +56,12 @@ class Gaussian : public Kernel<char> {
           mask(mask),
           size_x(size_x),
           size_y(size_y) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     void kernel() {
       #ifdef USE_LAMBDA
-      output() = convolve(mask, HipaccSUM, [&] () {
+      output() = convolve(mask, Reduce::SUM, [&] () {
         return input(mask) * mask();
       });
       #else
@@ -79,7 +75,7 @@ class Gaussian : public Kernel<char> {
         }
       }
 
-      output() = (unsigned char) sum;
+      output() = (char) sum;
       #endif
     }
 };
@@ -92,7 +88,7 @@ class Subsample : public Kernel<char> {
     Subsample(IterationSpace<char> &iter, Accessor<char> &input)
         : Kernel(iter),
           input(input) {
-      addAccessor(&input);
+      add_accessor(&input);
     }
 
     void kernel() {
@@ -111,8 +107,8 @@ class DifferenceOfGaussian : public Kernel<char> {
         : Kernel(iter),
           input1(input1),
           input2(input2) {
-      addAccessor(&input1);
-      addAccessor(&input2);
+      add_accessor(&input1);
+      add_accessor(&input2);
     }
 
     void kernel() {
@@ -131,8 +127,8 @@ class Collapse : public Kernel<char> {
         : Kernel(iter),
           input1(input1),
           input2(input2) {
-      addAccessor(&input1);
-      addAccessor(&input2);
+      add_accessor(&input1);
+      add_accessor(&input2);
     }
 
     void kernel() {
@@ -152,7 +148,7 @@ int main(int argc, const char **argv) {
     // filter coefficients
     // only filter kernel sizes 3x3, 5x5, and 7x7 implemented
     if (size_x != size_y || !(size_x == 3 || size_x == 5 || size_x == 7)) {
-        fprintf(stderr, "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!\n");
+        std::cerr << "Wrong filter kernel size. Currently supported values: 3x3, 5x5, and 7x7!" << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -182,7 +178,7 @@ int main(int argc, const char **argv) {
     };
 
     // host memory for image of width x height pixels
-    char *input = (char *)malloc(sizeof(char)*width*height);
+    char *input = new char[width*height];
 
     // initialize data
     for (int y=0; y<height; ++y) {
@@ -192,12 +188,10 @@ int main(int argc, const char **argv) {
     }
 
     // input and output image of width x height pixels
-    Image<char> GAUS(width, height);
+    Image<char> GAUS(width, height, input);
     Image<char> TMP(width, height);
     Image<char> LAP(width, height);
     Mask<float> M(filter_xy);
-
-    GAUS = input;
 
     int depth = 1;
     {
@@ -215,59 +209,60 @@ int main(int argc, const char **argv) {
     Pyramid<char> PLAP(LAP, depth);
 
     traverse(PGAUS, PTMP, PLAP, [&] () {
-        if (!PGAUS.isTopLevel()) {
+        if (!PGAUS.is_top_level()) {
           // Construct gaussian pyramid
-          BoundaryCondition<char> BC(PGAUS(-1), M, BOUNDARY_CLAMP);
+          BoundaryCondition<char> BC(PGAUS(-1), M, Boundary::CLAMP);
           Accessor<char> Acc1(BC);
           IterationSpace<char> IS1(PTMP(-1));
           Gaussian Gaus(IS1, Acc1, M, size_x, size_y);
-          printf("Level %d: Gaussian\n", PGAUS.getLevel()-1);
+          std::cout << "Level " << PGAUS.level()-1 << ": Gaussian" << std::endl;
           Gaus.execute();
 
-          AccessorNN<char> Acc2(PTMP(-1));
+          Accessor<char> Acc2(PTMP(-1), Interpolate::NN);
           IterationSpace<char> IS2(PGAUS(0));
           Subsample Sub(IS2, Acc2);
-          printf("Level %d: Subsample\n", PGAUS.getLevel()-1);
+          std::cout << "Level " << PGAUS.level()-1 << ": Subsample" << std::endl;
           Sub.execute();
 
           // Construct lapacian pyramid
           Accessor<char> Acc3(PGAUS(-1));
-          AccessorLF<char> Acc4(PGAUS(0));
+          Accessor<char> Acc4(PGAUS(0), Interpolate::LF);
           IterationSpace<char> IS3(PLAP(-1));
           DifferenceOfGaussian DoG(IS3, Acc3, Acc4);
-          printf("Level %d: DifferenceOfGaussian\n", PGAUS.getLevel()-1);
+          std::cout << "Level " << PGAUS.level()-1 << ": DifferenceOfGaussian" << std::endl;
           DoG.execute();
         }
 
         traverse();
 
         // Collapse laplacian pyramid
-        if (!PGAUS.isBottomLevel()) {
-          AccessorLF<char> Acc1(PGAUS(1));
+        if (!PGAUS.is_bottom_level()) {
+          Accessor<char> Acc1(PGAUS(1), Interpolate::LF);
           Accessor<char> Acc2(PLAP(0));
           IterationSpace<char> IS(PGAUS(0));
           Collapse Col(IS, Acc1, Acc2);
-          printf("Level %d: Collapse\n", PGAUS.getLevel());
+          std::cout << "Level " << PGAUS.level() << ": Collapse" << std::endl;
           Col.execute();
         }
     });
 
     // get pointer to result data
-    char *output = GAUS.getData();
+    char *output = GAUS.data();
 
     for (int y = 0; y < height; ++y) {
       for (int x = 0; x < width; ++x) {
         if (input[y*height+x] != output[y*height+x]) {
-          fprintf(stderr, "Test FAILED, at (%d,%d): %hhu vs. %hhu\n",
-                  x, y, input[y*width + x], output[y*width + x]);
+          std::cerr << "Test FAILED, at (" << x << "," << y << "): "
+                    << (int)input[y*width + x] << " vs. "
+                    << (int)output[y*width + x] << std::endl;
           exit(EXIT_FAILURE);
         }
       }
     }
 
-    fprintf(stderr, "Test PASSED\n");
+    std::cerr << "Test PASSED" << std::endl;
 
-    free(input);
+    delete[] input;
 
     return EXIT_SUCCESS;
 }
