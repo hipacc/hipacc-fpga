@@ -70,6 +70,7 @@ void printUsage() {
     << "  -emit-opencl-acc        Emit OpenCL code for Accelerator devices\n"
     << "  -emit-opencl-cpu        Emit OpenCL code for CPU devices\n"
     << "  -emit-opencl-gpu        Emit OpenCL code for GPU devices\n"
+    << "  -emit-opencl-fpga       Emit OpenCL code for FPGA devices\n"
     << "  -emit-renderscript      Emit Renderscript code for Android\n"
     << "  -emit-filterscript      Emit Filterscript code for Android\n"
     << "  -emit-vivado            Emit C++ code for Vivado HLS\n"
@@ -141,6 +142,11 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (StringRef(argv[i]) == "-emit-opencl-gpu") {
+      compilerOptions.setTargetLang(Language::OpenCLGPU);
+      continue;
+    }
+    if (StringRef(argv[i]) == "-emit-opencl-fpga") {
+      //compilerOptions.setTargetLang(Language::OpenCLFPGA);
       compilerOptions.setTargetLang(Language::OpenCLGPU);
       continue;
     }

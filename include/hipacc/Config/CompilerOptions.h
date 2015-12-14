@@ -59,6 +59,7 @@ enum class Language : uint8_t {
   OpenCLACC,
   OpenCLCPU,
   OpenCLGPU,
+  //OpenCLFPGA,
   Renderscript,
   Filterscript,
   Vivado
