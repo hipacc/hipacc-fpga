@@ -95,12 +95,45 @@ Expr *ASTTranslate::removeISOffsetY(Expr *idx_y) {
 // access memory
 Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
     MemoryAccess mem_acc, Expr *local_offset_x, Expr *local_offset_y) {
-  Expr *idx_x = tileVars.global_id_x;
-  Expr *idx_y = gidYRef;
+  Expr *idx_x = nullptr;
+  Expr *idx_y = nullptr;
 
-  // step 0: add local offset: gid_[x|y] + local_offset_[x|y]
-  idx_x = addLocalOffset(idx_x, local_offset_x);
-  idx_y = addLocalOffset(idx_y, local_offset_y);
+  if (!compilerOptions.emitVivado()) {
+    idx_x = tileVars.global_id_x;
+    idx_y = gidYRef;
+
+    // step 0: add local offset: gid_[x|y] + local_offset_[x|y]
+    idx_x = addLocalOffset(idx_x, local_offset_x);
+    idx_y = addLocalOffset(idx_y, local_offset_y);
+  } else {
+    if (vivadoWindow) {
+      // access at center of mask
+      idx_x = createIntegerLiteral(Ctx, (int)vivadoWindow->getSizeX()/2);
+      idx_y = createIntegerLiteral(Ctx, (int)vivadoWindow->getSizeY()/2);
+    } else if (redDomains.size() > 0) {
+      // access at center of domain
+      idx_x = createIntegerLiteral(Ctx, (int)redDomains.back()->getSizeX()/2);
+      idx_y = createIntegerLiteral(Ctx, (int)redDomains.back()->getSizeY()/2);
+    }
+    if (local_offset_x != nullptr) {
+      idx_x = addLocalOffset(idx_x, local_offset_x);
+
+      // try to evaluate constant expr
+      llvm::APSInt result;
+      if (idx_x->EvaluateAsInt(result, Ctx, Expr::SideEffectsKind::SE_NoSideEffects)) {
+        idx_x = createIntegerLiteral(Ctx, (int)result.getLimitedValue(~0ULL));
+      }
+    }
+    if (local_offset_y != nullptr) {
+      idx_y = addLocalOffset(idx_y, local_offset_y);
+
+      // try to evaluate constant expr
+      llvm::APSInt result;
+      if (idx_y->EvaluateAsInt(result, Ctx, Expr::SideEffectsKind::SE_NoSideEffects)) {
+        idx_y = createIntegerLiteral(Ctx, (int)result.getLimitedValue(~0ULL));
+      }
+    }
+  }
 
   // step 1: remove is_offset and add interpolation & boundary handling
   switch (Acc->getInterpolationMode()) {
@@ -177,6 +210,13 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
         case Language::Renderscript:
         case Language::Filterscript:
           return accessMemAllocAt(LHS, mem_acc, idx_x, idx_y);
+        case Language::Vivado:
+          if (!vivadoWindow && redDomains.size() == 0) {// &&
+              //(idx_x == nullptr || idx_y == nullptr)) {
+            return accessMemStream(LHS);
+          } else {
+            return accessMemWindowAt(LHS, mem_acc, idx_x, idx_y);
+          }
       }
     case READ_WRITE: {
       unsigned DiagIDRW = Diags.getCustomDiagID(DiagnosticsEngine::Error,
@@ -490,6 +530,44 @@ FunctionDecl *ASTTranslate::getConvertFunction(QualType QT, bool isVecType) {
 }
 
 
+// get Vivado return conversion function convert_<type>(..., bool), which
+// converts <type> to ap_uint<...>
+FunctionDecl *ASTTranslate::getVivadoReturnConvertFunction(std::string name) {
+  if (name == "convert_char4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_char4);
+  } else if (name == "convert_uchar4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_uchar4);
+  } else if (name == "convert_short4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_short4);
+  } else if (name == "convert_ushort4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_ushort4);
+  } else if (name == "convert_int4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_int4);
+  } else if (name == "convert_uint4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_uint4);
+  } else if (name == "convert_long4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_long4);
+  } else if (name == "convert_ulong4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_ulong4);
+  } else if (name == "convert_float4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_float4);
+  } else if (name == "convert_double4") {
+      return builtins.getBuiltinFunction(VIVADOBIconvert_double4);
+  }
+  return nullptr;
+}
+
+
+// get setAt(wnd,val,x,y) and getAt(wnd,x,y) functions for Vivado windows
+FunctionDecl *ASTTranslate::getWindowFunction(MemoryAccess memAcc) {
+  if (memAcc==READ_ONLY) {
+    return builtins.getBuiltinFunction(VIVADOBIgetWindowAt);
+  } else {
+    return builtins.getBuiltinFunction(VIVADOBIsetWindowAt);
+  }
+}
+
+
 // access linear texture memory at given index
 Expr *ASTTranslate::accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
     MemoryAccess mem_acc, Expr *idx_x, Expr *idx_y) {
@@ -734,6 +812,33 @@ Expr *ASTTranslate::accessMemSharedAt(DeclRefExpr *LHS, Expr *idx_x, Expr
         VK_RValue), idx_x, QT, VK_LValue, OK_Ordinary, SourceLocation());
 
   return result;
+}
+
+
+// access Vivado HLS stream object (no parameters)
+Expr *ASTTranslate::accessMemStream(DeclRefExpr *LHS) {
+  return LHS;
+}
+
+
+// access Vivado HLS window
+Expr *ASTTranslate::accessMemWindowAt(DeclRefExpr *LHS, MemoryAccess memAcc,
+                                      Expr *idx_x, Expr *idx_y) {
+  // mark image as being used within the kernel
+  Kernel->setUsed(LHS->getNameInfo().getAsString());
+
+  FunctionDecl *window_function = getWindowFunction(memAcc);
+
+  SmallVector<Expr *, 16> args;
+  args.push_back(LHS);
+  if (memAcc == WRITE_ONLY) {
+    writeImageRHS = createParenExpr(Ctx, writeImageRHS);
+    args.push_back(writeImageRHS);
+  }
+  args.push_back(idx_x);
+  args.push_back(idx_y);
+
+  return createFunctionCall(Ctx, window_function, args);
 }
 
 

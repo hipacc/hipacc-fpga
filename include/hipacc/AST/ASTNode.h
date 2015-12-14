@@ -36,6 +36,7 @@
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Expr.h>
+#include "hipacc/DSL/ClassRepresentation.h"
 
 
 namespace clang {
@@ -106,6 +107,18 @@ IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, int32_t val);
 IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, uint32_t val);
 IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, int64_t val);
 IntegerLiteral *createIntegerLiteral(ASTContext &Ctx, uint64_t val);
+CXXBoolLiteralExpr *createCXXBoolLiteral(ASTContext &Ctx, bool val);
+
+typedef struct {
+  std::string elementType;
+  size_t elementCount;
+  size_t elementWidth;
+} VectorTypeInfo;
+
+size_t getBuiltinTypeSize(const BuiltinType *BT);
+VectorTypeInfo createVectorTypeInfo(const VectorType *VT);
+std::string getStdIntFromBitWidth(int bitwidth);
+std::string createVivadoTypeStr(HipaccImage *Img, size_t ppt);
 
 // create label/goto statements
 LabelDecl *createLabelDecl(ASTContext &Ctx, DeclContext *DC, StringRef Name);

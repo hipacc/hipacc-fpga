@@ -72,6 +72,7 @@ void printUsage() {
     << "  -emit-opencl-gpu        Emit OpenCL code for GPU devices\n"
     << "  -emit-renderscript      Emit Renderscript code for Android\n"
     << "  -emit-filterscript      Emit Filterscript code for Android\n"
+    << "  -emit-vivado            Emit C++ code for Vivado HLS\n"
     << "  -emit-padding <n>       Emit CUDA/OpenCL/Renderscript image padding, using alignment of <n> bytes for GPU devices\n"
     << "  -target <n>             Generate code for GPUs with code name <n>.\n"
     << "                          Code names for CUDA/OpenCL on NVIDIA devices are:\n"
@@ -97,6 +98,7 @@ void printUsage() {
     << "  -vectorize <o>          Enable/disable vectorization of generated CUDA/OpenCL code\n"
     << "                          Valid values: 'on' and 'off'\n"
     << "  -pixels-per-thread <n>  Specify how many pixels should be calculated per thread\n"
+    << "  -target-II <n>          Specify target Initiation Interval for Vivado\n"
     << "  -rs-package <string>    Specify Renderscript package name. (default: \"org.hipacc.rs\")\n"
     << "  -o <file>               Write output to <file>\n"
     << "  --help                  Display available options\n"
@@ -149,6 +151,10 @@ int main(int argc, char *argv[]) {
     if (StringRef(argv[i]) == "-emit-filterscript") {
       compilerOptions.setTargetLang(Language::Filterscript);
       compilerOptions.setPixelsPerThread(1);
+      continue;
+    }
+    if (StringRef(argv[i]) == "-emit-vivado") {
+      compilerOptions.setTargetLang(Language::Vivado);
       continue;
     }
     if (StringRef(argv[i]) == "-emit-padding") {
@@ -289,6 +295,20 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
       }
       compilerOptions.setPixelsPerThread(val);
+      ++i;
+      continue;
+    }
+    if (StringRef(argv[i]) == "-target-II") {
+      assert(i<(argc-1) && "Mandatory target Initiation Interval amount missing.");
+      std::istringstream buffer(argv[i+1]);
+      int val;
+      buffer >> val;
+      if (buffer.fail()) {
+        llvm::errs() << "ERROR: Expected Initiation Interval as number for -target-II switch.\n\n";
+        printUsage();
+        return EXIT_FAILURE;
+      }
+      compilerOptions.setTargetII(val);
       ++i;
       continue;
     }

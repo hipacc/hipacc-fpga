@@ -94,6 +94,7 @@ template<typename T> T get_init(Reduce mode) {
     case Reduce::MAX:    return std::numeric_limits<T>::min();
     case Reduce::PROD:   return 1;
     case Reduce::MEDIAN: assert(false && "median not yet supported");
+    default:             assert(false && "Unsupported reduction mode");
   }
 }
 
@@ -194,6 +195,7 @@ Stmt *ASTTranslate::addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var,
 
   Expr *dom_acc = nullptr;
   switch (compilerOptions.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:
     case Language::CUDA:
       // array subscript: Domain[y][x]
@@ -221,6 +223,46 @@ Stmt *ASTTranslate::addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var,
         SourceLocation()), BO_GT, Ctx.BoolTy);
 
   return createIfStmt(Ctx, check_dom, stmt);
+}
+
+
+// add check if the current iteration has been exited early
+Stmt *ASTTranslate::addBreakCheck(DeclRefExpr *break_var, Stmt *stmt) {
+
+  BinaryOperator *check_break = createBinaryOperator(Ctx, break_var,
+      createCXXBoolLiteral(Ctx, false), BO_EQ, Ctx.BoolTy);
+
+  return createIfStmt(Ctx, check_break, stmt);
+}
+
+
+// recursively search for break_iterate through body
+// don't follow convole/reduce/iterate
+bool ASTTranslate::searchForBreakIterate(Stmt *S) {
+  bool found = false;
+
+  if (S != nullptr) {
+    if (isa<CXXMemberCallExpr>(S)) {
+      CXXMemberCallExpr *MCE = dyn_cast<CXXMemberCallExpr>(S);
+      MemberExpr *ME = dyn_cast<MemberExpr>(MCE->getCallee());
+      if (isa<CXXThisExpr>(ME->getBase()->IgnoreImpCasts()) &&
+          MCE->getDirectCallee()) {
+        if (MCE->getDirectCallee()->getName().equals("convolve") ||
+            MCE->getDirectCallee()->getName().equals("reduce") ||
+            MCE->getDirectCallee()->getName().equals("iterate")) {
+          return false;
+        } else if (MCE->getDirectCallee()->getName().equals("break_iterate")) {
+          found = true;
+        }
+      }
+    }
+
+    for (auto it = S->child_begin(); !found && it != S->child_end(); ++it) {
+      found = searchForBreakIterate(*it);
+    }
+  }
+
+  return found;
 }
 
 
@@ -372,6 +414,15 @@ Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
   DC->addDecl(tmp_decl);
   DeclRefExpr *tmp_dre = createDeclRefExpr(Ctx, tmp_decl);
 
+  // check if current lambda expression contains an break_iterate
+  containsBreak.push_back(searchForBreakIterate(LE->getBody()));
+  if (containsBreak.back()) {
+    // create and store _break label
+    std::string break_lit("_break" + std::to_string(literalCount++));
+    LabelDecl *LD = createLabelDecl(Ctx, kernelDecl, break_lit);
+    breakLabels.push_back(LD);
+  }
+
   // introduce temporary for holding the convolution/reduction result
   CompoundStmt *outerCompountStmt = curCStmt;
 
@@ -456,6 +507,14 @@ Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
       break;
   }
 
+  if (containsBreak.back()) {
+    // insert break label
+    preStmts.push_back(createLabelStmt(Ctx, breakLabels.back(), nullptr));
+    preCStmt.push_back(outerCompountStmt);
+    breakLabels.pop_back();
+  }
+  containsBreak.pop_back();
+
   // result of convolution
   switch (method) {
     case Method::Convolve:
@@ -465,6 +524,8 @@ Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
           CK_LValueToRValue, tmp_dre, nullptr, VK_RValue);
     case Method::Iterate:
       return nullptr;
+    default:
+      assert(false && "Unsupported convolution method.");
   }
 }
 

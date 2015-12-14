@@ -48,6 +48,7 @@ enum ID {
   #define CUDABUILTIN(NAME, TYPE, CUDANAME) CUDABI##CUDANAME,
   #define OPENCLBUILTIN(NAME, TYPE, OPENCLNAME) OPENCLBI##OPENCLNAME,
   #define RSBUILTIN(NAME, TYPE, RSNAME) RSBI##RSNAME,
+  #define VIVADOBUILTIN(NAME, TYPE, VIVADONAME) VIVADOBI##VIVADONAME,
   #include "hipacc/Device/Builtins.def"
   LastBuiltin
 };
@@ -55,7 +56,7 @@ enum ID {
 struct Info {
   const char *Name, *Type;
   Language builtin_lang;
-  ID CUDA, OpenCL, Renderscript;
+  ID CUDA, OpenCL, Renderscript, Vivado;
   FunctionDecl *FD;
 
   bool operator==(const Info &RHS) const {

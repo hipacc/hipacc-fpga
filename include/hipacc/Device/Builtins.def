@@ -574,8 +574,22 @@ RSBUILTIN(rsSetElementAt_ulong4,    "viC*CE4ULiUiUi", rsSetElementAt_ulong4)
 RSBUILTIN(rsSetElementAt_float4,    "viC*CE4fUiUi",   rsSetElementAt_float4)
 RSBUILTIN(rsSetElementAt_double4,   "viC*CE4dUiUi",   rsSetElementAt_double4)
 
+VIVADOBUILTIN(getWindowAt,          "UiC*CUiUi",    getWindowAt)
+VIVADOBUILTIN(setWindowAt,          "viC*CUiUiUi",  setWindowAt)
+VIVADOBUILTIN(convert_char4,        "ciC*Uib",      convert_char4)
+VIVADOBUILTIN(convert_uchar4,       "UciC*Uib",     convert_uchar4)
+VIVADOBUILTIN(convert_short4,       "siC*Uib",      convert_short4)
+VIVADOBUILTIN(convert_ushort4,      "UsiC*Uib",     convert_ushort4)
+VIVADOBUILTIN(convert_int4,         "iC*Uib",       convert_int4)
+VIVADOBUILTIN(convert_uint4,        "UiC*Uib",      convert_uint4)
+VIVADOBUILTIN(convert_ulong4,       "ULiC*Uib",     convert_ulong4)
+VIVADOBUILTIN(convert_long4,        "LiC*Uib",      convert_long4)
+VIVADOBUILTIN(convert_float4,       "fC*Uib",       convert_float4)
+VIVADOBUILTIN(convert_double4,      "dC*Uib",       convert_double4)
+
 #undef HIPACCBUILTIN
 #undef CUDABUILTIN
 #undef OPENCLBUILTIN
 #undef RSBUILTIN
+#undef VIVADOBUILTIN
 

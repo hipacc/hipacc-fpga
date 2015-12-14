@@ -47,6 +47,7 @@ class Kernel {
         Accessor<data_t> output_;
         std::vector<AccessorBase *> inputs_;
         data_t reduction_result_;
+        bool break_iteration;
 
     public:
         Kernel(IterationSpace<data_t> &iteration_space) :
@@ -140,11 +141,15 @@ class Kernel {
         auto reduce(Domain &domain, Reduce mode, const Function &fun) -> decltype(fun());
         template <typename Function>
         void iterate(Domain &domain, const Function &fun);
+        void break_iterate() {
+          break_iteration = true;
+        }
 };
 
 
 template <typename data_t> template <typename data_m, typename Function>
 auto Kernel<data_t>::convolve(Mask<data_m> &mask, Reduce mode, const Function& fun) -> decltype(fun()) {
+    break_iteration = false;
     auto end  = mask.end();
     auto iter = mask.begin();
 
@@ -155,7 +160,7 @@ auto Kernel<data_t>::convolve(Mask<data_m> &mask, Reduce mode, const Function& f
     auto result = fun();
 
     // advance iterator and apply kernel to remaining iteration space
-    while (++iter != end) {
+    while (++iter != end && !break_iteration) {
         switch (mode) {
             case Reduce::SUM:    result += fun();                                    break;
             case Reduce::MIN:    result  = hipacc::math::min(fun(), result);         break;
@@ -174,6 +179,7 @@ auto Kernel<data_t>::convolve(Mask<data_m> &mask, Reduce mode, const Function& f
 
 template <typename data_t> template <typename Function>
 auto Kernel<data_t>::reduce(Domain &domain, Reduce mode, const Function &fun) -> decltype(fun()) {
+    break_iteration = false;
     auto end  = domain.end();
     auto iter = domain.begin();
 
@@ -184,7 +190,7 @@ auto Kernel<data_t>::reduce(Domain &domain, Reduce mode, const Function &fun) ->
     auto result = fun();
 
     // advance iterator and apply kernel to remaining iteration space
-    while (++iter != end) {
+    while (++iter != end && !break_iteration) {
         switch (mode) {
             case Reduce::SUM:    result += fun();                                    break;
             case Reduce::MIN:    result  = hipacc::math::min(fun(), result);         break;
@@ -203,6 +209,7 @@ auto Kernel<data_t>::reduce(Domain &domain, Reduce mode, const Function &fun) ->
 
 template <typename data_t> template <typename Function>
 void Kernel<data_t>::iterate(Domain &domain, const Function &fun) {
+    break_iteration = false;
     auto end  = domain.end();
     auto iter = domain.begin();
 
@@ -210,7 +217,7 @@ void Kernel<data_t>::iterate(Domain &domain, const Function &fun) {
     domain.setDI(&iter);
 
     // advance iterator and apply kernel to iteration space
-    while (iter != end) {
+    while (iter != end && !break_iteration) {
         fun();
         ++iter;
     }

@@ -42,6 +42,10 @@ void CreateHostStrings::writeHeaders(std::string &resultStr) {
   switch (options.getTargetLang()) {
     case Language::C99:
       resultStr += "#include \"hipacc_cpu.hpp\"\n\n"; break;
+    case Language::Vivado:
+      // do nothing here, we add this and forward declarations just before
+      // writing the file @see Rewrite::HandleTranslationUnit().
+      break;
     case Language::CUDA:
       resultStr += "#include \"hipacc_cu.hpp\"\n\n";  break;
     case Language::OpenCLACC:
@@ -57,6 +61,7 @@ void CreateHostStrings::writeHeaders(std::string &resultStr) {
 
 void CreateHostStrings::writeInitialization(std::string &resultStr) {
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99: break;
     case Language::CUDA:
       resultStr += "hipaccInitCUDA();\n";
@@ -101,6 +106,7 @@ void writeCLCompilation(std::string fileName, std::string kernel_name,
 void CreateHostStrings::writeKernelCompilation(HipaccKernel *K,
     std::string &resultStr) {
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:
     case Language::CUDA:
       break;
@@ -148,6 +154,7 @@ void CreateHostStrings::writeReductionDeclaration(HipaccKernel *K, std::string
   };
 
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:
     case Language::CUDA:
     case Language::OpenCLACC:
@@ -184,6 +191,7 @@ void CreateHostStrings::writeMemoryAllocation(HipaccImage *Img, std::string
     width, std::string height, std::string host, std::string &resultStr) {
   resultStr += "HipaccImage " + Img->getName() + " = ";
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:
       resultStr += "hipaccCreateMemory<" + Img->getTypeStr() + ">(";
       break;
@@ -215,7 +223,7 @@ void CreateHostStrings::writeMemoryAllocation(HipaccImage *Img, std::string
       options.getTextureType()==Texture::Array2D) {
     // OpenCL Image objects and CUDA Arrays don't support padding
   } else {
-    if (options.emitPadding()) {
+    if (options.emitPadding() && !options.emitVivado()) {
       resultStr += ", " + std::to_string(device.alignment);
     }
   }
@@ -227,6 +235,7 @@ void CreateHostStrings::writeMemoryAllocationConstant(HipaccMask *Buf,
     std::string &resultStr) {
   resultStr += "HipaccImage " + Buf->getName() + " = ";
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:
       resultStr += "hipaccCreateMemory<" + Buf->getTypeStr() + ">(";
       break;
@@ -256,7 +265,12 @@ void CreateHostStrings::writeMemoryTransfer(HipaccImage *Img, std::string mem,
       resultStr += ", " + mem + ");";
       break;
     case DEVICE_TO_HOST:
-      resultStr += "hipaccReadMemory<" + Img->getTypeStr() + ">(";
+      resultStr += "hipaccReadMemory";
+      if (!options.emitVivado()) {
+        resultStr += "<" + Img->getTypeStr() + ">(";
+      } else {
+        resultStr += "(" + mem + ", ";
+      }
       resultStr += Img->getName() + ");";
       break;
     case DEVICE_TO_DEVICE:
@@ -336,6 +350,7 @@ void CreateHostStrings::writeMemoryTransferSymbol(HipaccMask *Mask, std::string
         }
       }
       break;
+    case Language::Vivado:
     case Language::C99:
     case Language::Renderscript:
     case Language::Filterscript:
@@ -367,6 +382,7 @@ void CreateHostStrings::writeMemoryTransferDomainFromMask(
         }
       }
       break;
+    case Language::Vivado:
     case Language::C99:
     case Language::Renderscript:
     case Language::Filterscript:
@@ -407,6 +423,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
   std::string blockStr, gridStr, offsetStr, infoStr;
 
   switch (options.getTargetLang()) {
+    case Language::Vivado: return;
     case Language::C99: break;
     case Language::CUDA:
       blockStr = "block" + lit;
@@ -431,6 +448,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
     inc_indent();
     resultStr += "{\n";
     switch (options.getTargetLang()) {
+      case Language::Vivado:
       case Language::C99: break;
       case Language::CUDA:
         if (options.exploreConfig()) {
@@ -455,7 +473,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
     resultStr += indent;
   }
 
-  if (options.getTargetLang() != Language::C99) {
+  if (!options.emitC99() && !options.emitVivado()) {
     // hipacc_launch_info
     resultStr += "hipacc_launch_info " + infoStr + "(";
     resultStr += std::to_string(K->getMaxSizeX()) + ", ";
@@ -473,6 +491,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
 
   if (!options.exploreConfig()) {
     switch (options.getTargetLang()) {
+      case Language::Vivado:
       case Language::C99: break;
       case Language::CUDA:
         // dim3 block
@@ -663,6 +682,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
     if (options.exploreConfig() || options.timeKernels()) {
       // add kernel argument
       switch (options.getTargetLang()) {
+        case Language::Vivado:
         case Language::C99: break;
         case Language::CUDA:
           resultStr += "_args" + kernel_name + ".push_back(";
@@ -700,6 +720,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
     } else {
       // set kernel arguments
       switch (options.getTargetLang()) {
+        case Language::Vivado:
         case Language::C99:
           if (i==0) {
             resultStr += "hipaccStartTiming();\n";
@@ -764,6 +785,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
   // launch kernel
   if (options.exploreConfig() || options.timeKernels()) {
     switch (options.getTargetLang()) {
+      case Language::Vivado:
       case Language::C99: break;
       case Language::CUDA:
         if (options.timeKernels()) {
@@ -831,6 +853,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
     resultStr += indent + "}\n";
   } else {
     switch (options.getTargetLang()) {
+      case Language::Vivado:
       case Language::C99: break;
       case Language::CUDA:
         resultStr += "hipaccLaunchKernel((const void *)&";
@@ -867,6 +890,7 @@ void CreateHostStrings::writeReduceCall(HipaccKernel *K, std::string &resultStr)
 
   // print runtime function name plus name of reduction function
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99: break;
     case Language::CUDA:
       if (!options.exploreConfig()) {
@@ -989,6 +1013,7 @@ void CreateHostStrings::writeInterpolationDefinition(HipaccKernel *K,
       break;
   }
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:                                    break;
     case Language::CUDA:         resultStr += "_CUDA, ";   break;
     case Language::OpenCLACC:

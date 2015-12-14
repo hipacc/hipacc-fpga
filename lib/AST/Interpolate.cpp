@@ -54,6 +54,7 @@ std::string ASTTranslate::getInterpolationName(ASTContext &Ctx,
   }
 
   switch (compilerOptions.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:
     case Language::Renderscript:
     case Language::Filterscript:

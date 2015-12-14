@@ -20,6 +20,7 @@ ENDIF(USE_POLLY)
 
 LIST(APPEND HIPACC_LIBS
     hipaccKernelStatistics
+    hipaccHostDataDeps
     hipaccBuiltins
     hipaccASTNode)
 

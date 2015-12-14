@@ -60,7 +60,8 @@ enum class Language : uint8_t {
   OpenCLCPU,
   OpenCLGPU,
   Renderscript,
-  Filterscript
+  Filterscript,
+  Vivado
 };
 
 class CompilerOptions {
@@ -84,6 +85,7 @@ class CompilerOptions {
     int pixels_per_thread;
     Texture texture_type;
     std::string rs_package_name, rs_directory;
+    int target_ii;
 
     void getOptionAsString(CompilerOption option, int val=-1) {
       switch (option) {
@@ -124,7 +126,8 @@ class CompilerOptions {
       pixels_per_thread(1),
       texture_type(Texture::None),
       rs_package_name("org.hipacc.rs"),
-      rs_directory("/data/local/tmp")
+      rs_directory("/data/local/tmp"),
+      target_ii(1)
     {}
 
     bool emitC99() { return target_lang == Language::C99; }
@@ -134,6 +137,7 @@ class CompilerOptions {
              target_lang == Language::OpenCLCPU ||
              target_lang == Language::OpenCLGPU;
     }
+    bool emitVivado() { return target_lang == Language::Vivado; }
     bool emitOpenCLACC() { return target_lang == Language::OpenCLACC; }
     bool emitOpenCLCPU() { return target_lang == Language::OpenCLCPU; }
     bool emitOpenCLGPU() { return target_lang == Language::OpenCLGPU; }
@@ -180,6 +184,7 @@ class CompilerOptions {
     int getPixelsPerThread() { return pixels_per_thread; }
     std::string getRSPackageName() { return rs_package_name; }
     std::string getRSDirectory() { return rs_directory; }
+    int getTargetII() { return target_ii; }
 
     void setTargetLang(Language lang) { target_lang = lang; }
     void setTargetDevice(Device td) { target_device = td; }
@@ -217,8 +222,13 @@ class CompilerOptions {
       rs_directory = "/data/data/" + name;
     }
 
+    void setTargetII(int ii) {
+      target_ii = ii;
+    }
+
     std::string getTargetPrefix() {
       switch (target_lang) {
+        case Language::Vivado:
         case Language::C99:          return "cc";
         case Language::CUDA:         return "cu";
         case Language::OpenCLACC:
@@ -240,6 +250,7 @@ class CompilerOptions {
         case Language::OpenCLGPU:    llvm::errs() << "OpenCL (GPU)"; break;
         case Language::Renderscript: llvm::errs() << "Renderscript"; break;
         case Language::Filterscript: llvm::errs() << "Filterscript"; break;
+        case Language::Vivado:       llvm::errs() << "Vivado HLS";   break;
       }
       llvm::errs() << "' language.\n";
       llvm::errs() << "  Target device is '" << target_device << "'";

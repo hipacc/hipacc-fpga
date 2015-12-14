@@ -210,6 +210,9 @@ class HipaccAccessor {
     DeclRefExpr *widthDecl, *heightDecl, *strideDecl, *scaleXDecl, *scaleYDecl;
     DeclRefExpr *offsetXDecl, *offsetYDecl;
 
+  protected:
+    bool iterspace;
+
   public:
     HipaccAccessor(VarDecl *VD, HipaccBoundaryCondition *bc, Interpolate mode, bool crop) :
       VD(VD),
@@ -219,7 +222,8 @@ class HipaccAccessor {
       crop(crop),
       widthDecl(nullptr), heightDecl(nullptr), strideDecl(nullptr),
       scaleXDecl(nullptr), scaleYDecl(nullptr),
-      offsetXDecl(nullptr), offsetYDecl(nullptr)
+      offsetXDecl(nullptr), offsetYDecl(nullptr),
+      iterspace(false)
     {}
 
     void setWidthDecl(DeclRefExpr *width) { widthDecl = width; }
@@ -254,6 +258,7 @@ class HipaccAccessor {
       return bc->getBoundaryMode();
     }
     Expr *getConstExpr() { return bc->getConstExpr(); }
+    bool isIterationSpace() { return iterspace; }
 };
 
 
@@ -265,7 +270,9 @@ class HipaccIterationSpace : public HipaccAccessor {
     HipaccIterationSpace(VarDecl *VD, HipaccImage *img, bool crop) :
       HipaccAccessor(VD, new HipaccBoundaryCondition(VD, img), Interpolate::NO, crop),
       img(img)
-    {}
+    {
+      iterspace = true;
+    }
 
     HipaccImage *getImage() { return img; }
 };
@@ -774,6 +781,26 @@ class HipaccKernel : public HipaccKernelFeatures {
     }
     unsigned getPixelsPerThreadReduce() {
       return pixels_per_thread[GlobalOperator];
+    }
+
+    HipaccMask *getVivadoWindow() {
+      if (maskMap.size() > 0) {
+        // All masks must have same size, therefore it doesn't matter which one
+        // we return.
+        return maskMap.begin()->second;
+      } else {
+        return nullptr;
+      }
+    }
+
+    HipaccAccessor *getVivadoAccessor() {
+      if (imgMap.size() > 0) {
+        // All images must be of same type, therefore it doesn't matter which to
+        // return.
+        return imgMap.begin()->second;
+      } else {
+        return nullptr;
+      }
     }
 };
 } // namespace hipacc

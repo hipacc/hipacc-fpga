@@ -39,11 +39,12 @@ using namespace hipacc;
 using namespace hipacc::Builtin;
 
 static hipacc::Builtin::Info BuiltinInfo[] = {
-  { "not a builtin function", 0, Language::C99, static_cast<ID>(0), static_cast<ID>(0), static_cast<ID>(0), 0 },
-  #define HIPACCBUILTIN(NAME, TYPE, CUDAID, OPENCLID, RSID) { #NAME, TYPE, Language::C99, CUDAID, OPENCLID, RSID, 0 },
-  #define CUDABUILTIN(NAME, TYPE, CUDANAME) { #NAME, TYPE, Language::CUDA, (ID)0, (ID)0, (ID)0, 0 },
-  #define OPENCLBUILTIN(NAME, TYPE, OPENCLNAME) { #NAME, TYPE, Language::OpenCLCPU, (ID)0, (ID)0, (ID)0, 0 },
-  #define RSBUILTIN(NAME, TYPE, RSNAME) { #NAME, TYPE, Language::Renderscript, (ID)0, (ID)0, (ID)0, 0 },
+  { "not a builtin function", 0, Language::C99, static_cast<ID>(0), static_cast<ID>(0), static_cast<ID>(0), static_cast<ID>(0), 0 },
+  #define HIPACCBUILTIN(NAME, TYPE, CUDAID, OPENCLID, RSID) { #NAME, TYPE, Language::C99, CUDAID, OPENCLID, RSID, HIPACCBI##NAME, 0 },
+  #define CUDABUILTIN(NAME, TYPE, CUDANAME) { #NAME, TYPE, Language::CUDA, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
+  #define OPENCLBUILTIN(NAME, TYPE, OPENCLNAME) { #NAME, TYPE, Language::OpenCLCPU, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
+  #define RSBUILTIN(NAME, TYPE, RSNAME) { #NAME, TYPE, Language::Renderscript, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
+  #define VIVADOBUILTIN(NAME, TYPE, VIVADONAME) { #NAME, TYPE, Language::Vivado, (ID)0, (ID)0, (ID)0, (ID)0, 0 },
   #include "hipacc/Device/Builtins.def"
 };
 
@@ -352,6 +353,9 @@ void hipacc::Builtin::Context::getBuiltinNames(Language lang,
           case Language::Filterscript:
             if (!getBuiltinFunction(BuiltinInfo[i].Renderscript)) continue;
             break;
+          case Language::Vivado:
+            if (!getBuiltinFunction(BuiltinInfo[i].Vivado)) continue;
+            break;
         }
         break;
       case Language::CUDA:
@@ -368,6 +372,9 @@ void hipacc::Builtin::Context::getBuiltinNames(Language lang,
       case Language::Filterscript:
         if (lang == Language::Renderscript ||
             lang == Language::Filterscript) break;
+        continue;
+      case Language::Vivado:
+        if (lang == Language::Vivado) break;
         continue;
     }
     Names.push_back(BuiltinInfo[i].Name);
@@ -429,6 +436,8 @@ FunctionDecl *hipacc::Builtin::Context::getBuiltinFunction(StringRef Name,
             case Language::Renderscript:
             case Language::Filterscript:
               return getBuiltinFunction(BuiltinInfo[i].Renderscript);
+            case Language::Vivado:
+              return getBuiltinFunction(BuiltinInfo[i].Vivado);
           }
           break;
         case Language::CUDA:
@@ -443,6 +452,8 @@ FunctionDecl *hipacc::Builtin::Context::getBuiltinFunction(StringRef Name,
         case Language::Filterscript:
           if (lang == Language::Renderscript ||
               lang == Language::Filterscript) return BuiltinInfo[i].FD;
+        case Language::Vivado:
+          if (lang == Language::Vivado) return BuiltinInfo[i].FD;
       }
     }
   }

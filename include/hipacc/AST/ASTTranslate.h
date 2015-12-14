@@ -37,6 +37,7 @@
 #include <clang/AST/Attr.h>
 #include <clang/AST/Type.h>
 #include <clang/AST/StmtVisitor.h>
+#include <clang/AST/ExprCXX.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Sema/Ownership.h>
 #include <llvm/ADT/SmallVector.h>
@@ -92,6 +93,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     SmallVector<CompoundStmt *, 16> preCStmt, postCStmt;
     CompoundStmt *curCStmt;
     HipaccMask *convMask;
+    HipaccMask *vivadoWindow;
     DeclRefExpr *convTmp;
     Reduce convMode;
     int convIdxX, convIdxY;
@@ -100,6 +102,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     SmallVector<DeclRefExpr *, 4> redTmps;
     SmallVector<Reduce, 4> redModes;
     SmallVector<int, 4> redIdxX, redIdxY;
+    SmallVector<LabelDecl *, 4> breakLabels;
+    SmallVector<bool, 4> containsBreak;
 
     DeclRefExpr *bh_start_left, *bh_start_right, *bh_start_top,
                 *bh_start_bottom, *bh_fall_back;
@@ -163,6 +167,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     void initRenderscript(SmallVector<Stmt *, 16> &kernelBody);
     void updateTileVars();
     Expr *addCastToInt(Expr *E);
+    Expr *stripLiteralOperand(Expr *operand1, Expr *operand2, int val);
+    Expr *stripLiteralOperand(Expr *operand1, Expr *operand2, double val);
     FunctionDecl *cloneFunction(FunctionDecl *FD);
     template <typename T>
     T *lookup(std::string name, QualType QT, NamespaceDecl *NS=nullptr);
@@ -234,6 +240,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *getInitExpr(Reduce mode, QualType QT);
     Stmt *addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var, Stmt
         *stmt);
+    Stmt *addBreakCheck(DeclRefExpr *break_var, Stmt *stmt);
+    bool searchForBreakIterate(Stmt *S);
     Expr *convertConvolution(CXXMemberCallExpr *E);
 
     // Interpolation.cpp
@@ -245,6 +253,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     FunctionDecl *getAllocationFunction(const BuiltinType *BT, bool isVecType,
                                         MemoryAccess mem_acc);
     FunctionDecl *getConvertFunction(QualType QT, bool isVecType);
+    FunctionDecl *getVivadoReturnConvertFunction(std::string name);
+    FunctionDecl *getWindowFunction(MemoryAccess memAcc);
     Expr *addInterpolationCall(DeclRefExpr *LHS, HipaccAccessor *Acc, Expr
         *idx_x, Expr *idx_y);
 
@@ -269,6 +279,9 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *accessMemShared(DeclRefExpr *LHS, Expr *offset_x=nullptr, Expr
         *offset_y=nullptr);
     Expr *accessMemSharedAt(DeclRefExpr *LHS, Expr *idx_x, Expr *idx_y);
+    Expr *accessMemStream(DeclRefExpr *LHS);
+    Expr *accessMemWindowAt(DeclRefExpr *LHS, MemoryAccess memAcc,
+                            Expr *idx_x, Expr *idx_y);
     void stageLineToSharedMemory(ParmVarDecl *PVD, SmallVector<Stmt *, 16>
         &stageBody, Expr *local_offset_x, Expr *local_offset_y, Expr
         *global_offset_x, Expr *global_offset_y);
@@ -313,6 +326,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       literalCount(0),
       curCStmt(nullptr),
       convMask(nullptr),
+      vivadoWindow(nullptr),
       convTmp(nullptr),
       convIdxX(0),
       convIdxY(0),

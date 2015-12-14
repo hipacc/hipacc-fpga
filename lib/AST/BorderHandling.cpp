@@ -256,6 +256,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
     }
 
     switch (compilerOptions.getTargetLang()) {
+      case Language::Vivado:
       case Language::C99:
           RHS = accessMem2DAt(LHS, idx_x, idx_y);
           break;
@@ -342,6 +343,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
 
     // get data
     switch (compilerOptions.getTargetLang()) {
+      case Language::Vivado:
       case Language::C99:
           result = accessMem2DAt(LHS, idx_x, idx_y);
           break;

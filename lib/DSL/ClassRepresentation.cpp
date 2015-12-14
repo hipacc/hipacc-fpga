@@ -470,6 +470,7 @@ void HipaccKernel::setDefaultConfig() {
 void HipaccKernel::addParam(QualType QT1, QualType QT2, QualType QT3,
     std::string typeC, std::string typeO, std::string name, FieldDecl *fd) {
   switch (options.getTargetLang()) {
+    case Language::Vivado:
     case Language::C99:          argTypes.push_back(QT3);
                                  argTypeNames.push_back(typeC); break;
     case Language::CUDA:         argTypes.push_back(QT1);
@@ -521,21 +522,25 @@ void HipaccKernel::createArgInfo() {
               arg.field);
         }
 
-        // add types for image width/height plus stride
-        addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_width", nullptr);
-        addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_height", nullptr);
-
-        // stride
-        if (options.emitPadding() || getImgFromMapping(arg.field)->isCrop()) {
-          addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_stride", nullptr);
+        if (!options.emitVivado() ||
+            arg.kind == HipaccKernelClass::FieldKind::IterationSpace) {
+          // add types for image width/height plus stride
+          addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_width", nullptr);
+          addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_height", nullptr);
         }
+        if (!options.emitVivado()) {
+          // stride
+          if (options.emitPadding() || getImgFromMapping(arg.field)->isCrop()) {
+            addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_stride", nullptr);
+          }
 
-        // offset_x, offset_y
-        if (getImgFromMapping(arg.field)->isCrop()) {
-          addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_offset_x",
-              nullptr);
-          addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_offset_y",
-              nullptr);
+          // offset_x, offset_y
+          if (getImgFromMapping(arg.field)->isCrop()) {
+            addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_offset_x",
+                nullptr);
+            addParam(Ctx.getConstType(Ctx.IntTy), arg.name + "_offset_y",
+                nullptr);
+          }
         }
 
         break;

@@ -163,6 +163,9 @@ CONFIGURE_FILE(
     "${HIPACC_SOURCE_DIR}/tests/CMakeLists.txt.cmake"
     "${HIPACC_BINARY_DIR}/tests/CMakeLists.txt"
     @ONLY)
+CONFIGURE_FILE(
+    "${HIPACC_SOURCE_DIR}/tests/vivado/Makefile.cmake"
+    "${HIPACC_BINARY_DIR}/tests/vivado/Makefile")
 
 
 # install dsl and runtime header files
@@ -180,6 +183,7 @@ INSTALL(DIRECTORY ${HIPACC_BINARY_DIR}/tests/
 
 # install Makefiles for test cases
 FILE(GLOB TEST_DIRS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/tests ${CMAKE_CURRENT_SOURCE_DIR}/tests/*)
+LIST(REMOVE_ITEM TEST_DIRS "vivado")
 FOREACH(DIR IN LISTS TEST_DIRS)
     IF(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/${DIR})
         IF(${DIR} MATCHES "opencv_*")
@@ -193,4 +197,8 @@ FOREACH(DIR IN LISTS TEST_DIRS)
         ENDIF(${DIR} MATCHES "opencv_*")
     ENDIF(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/${DIR})
 ENDFOREACH(DIR IN LISTS TEST_DIRS)
+
+# install Makefile for Vivado test cases
+INSTALL(FILES ${HIPACC_BINARY_DIR}/tests/vivado/Makefile
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/tests/vivado/)
 
