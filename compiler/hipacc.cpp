@@ -146,8 +146,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
     if (StringRef(argv[i]) == "-emit-opencl-fpga") {
-      //compilerOptions.setTargetLang(Language::OpenCLFPGA);
-      compilerOptions.setTargetLang(Language::OpenCLGPU);
+      compilerOptions.setTargetLang(Language::OpenCLFPGA);
       continue;
     }
     if (StringRef(argv[i]) == "-emit-renderscript") {

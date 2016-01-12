@@ -57,9 +57,9 @@ enum class Language : uint8_t {
   C99,
   CUDA,
   OpenCLACC,
+  OpenCLFPGA,
   OpenCLCPU,
   OpenCLGPU,
-  //OpenCLFPGA,
   Renderscript,
   Filterscript,
   Vivado
@@ -135,11 +135,13 @@ class CompilerOptions {
     bool emitCUDA() { return target_lang == Language::CUDA; }
     bool emitOpenCL() {
       return target_lang == Language::OpenCLACC ||
+             target_lang == Language::OpenCLFPGA ||
              target_lang == Language::OpenCLCPU ||
              target_lang == Language::OpenCLGPU;
     }
     bool emitVivado() { return target_lang == Language::Vivado; }
     bool emitOpenCLACC() { return target_lang == Language::OpenCLACC; }
+    bool emitOpenCLFPGA() { return target_lang == Language::OpenCLFPGA; }
     bool emitOpenCLCPU() { return target_lang == Language::OpenCLCPU; }
     bool emitOpenCLGPU() { return target_lang == Language::OpenCLGPU; }
     bool emitRenderscript() { return target_lang == Language::Renderscript; }
@@ -233,6 +235,7 @@ class CompilerOptions {
         case Language::C99:          return "cc";
         case Language::CUDA:         return "cu";
         case Language::OpenCLACC:
+        case Language::OpenCLFPGA:
         case Language::OpenCLCPU:
         case Language::OpenCLGPU:    return "cl";
         case Language::Renderscript: return "rs";
@@ -247,6 +250,7 @@ class CompilerOptions {
         case Language::C99:          llvm::errs() << "C/C++";        break;
         case Language::CUDA:         llvm::errs() << "CUDA";         break;
         case Language::OpenCLACC:    llvm::errs() << "OpenCL (ACC)"; break;
+        case Language::OpenCLFPGA:    llvm::errs() << "OpenCL (FPGA)"; break;
         case Language::OpenCLCPU:    llvm::errs() << "OpenCL (CPU)"; break;
         case Language::OpenCLGPU:    llvm::errs() << "OpenCL (GPU)"; break;
         case Language::Renderscript: llvm::errs() << "Renderscript"; break;

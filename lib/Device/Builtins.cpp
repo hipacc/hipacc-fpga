@@ -346,6 +346,7 @@ void hipacc::Builtin::Context::getBuiltinNames(Language lang,
             break;
           case Language::OpenCLACC:
           case Language::OpenCLCPU:
+          case Language::OpenCLFPGA:
           case Language::OpenCLGPU:
             if (!getBuiltinFunction(BuiltinInfo[i].OpenCL)) continue;
             break;
@@ -363,9 +364,11 @@ void hipacc::Builtin::Context::getBuiltinNames(Language lang,
         continue;
       case Language::OpenCLACC:
       case Language::OpenCLCPU:
+      case Language::OpenCLFPGA:
       case Language::OpenCLGPU:
-        if (lang == Language::OpenCLACC ||
-            lang == Language::OpenCLCPU ||
+        if (lang == Language::OpenCLACC  ||
+            lang == Language::OpenCLCPU  ||
+            lang == Language::OpenCLFPGA ||
             lang == Language::OpenCLGPU) break;
         continue;
       case Language::Renderscript:
@@ -431,6 +434,7 @@ FunctionDecl *hipacc::Builtin::Context::getBuiltinFunction(StringRef Name,
               return getBuiltinFunction(BuiltinInfo[i].CUDA);
             case Language::OpenCLACC:
             case Language::OpenCLCPU:
+            case Language::OpenCLFPGA:
             case Language::OpenCLGPU:
               return getBuiltinFunction(BuiltinInfo[i].OpenCL);
             case Language::Renderscript:
@@ -444,9 +448,11 @@ FunctionDecl *hipacc::Builtin::Context::getBuiltinFunction(StringRef Name,
           if (lang == Language::CUDA) return BuiltinInfo[i].FD;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
+        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           if (lang == Language::OpenCLACC ||
               lang == Language::OpenCLCPU ||
+              lang == Language::OpenCLFPGA ||
               lang == Language::OpenCLGPU) return BuiltinInfo[i].FD;
         case Language::Renderscript:
         case Language::Filterscript:

@@ -477,6 +477,7 @@ void HipaccKernel::addParam(QualType QT1, QualType QT2, QualType QT3,
                                  argTypeNames.push_back(typeC); break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:    argTypes.push_back(QT2);
                                  argTypeNames.push_back(typeO); break;
     case Language::Renderscript:
