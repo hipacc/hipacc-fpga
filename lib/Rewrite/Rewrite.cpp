@@ -1408,6 +1408,7 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
               Context.getTranslationUnitDecl(), K->getKernelName(),
               Context.VoidTy, K->getArgTypes(), K->getDeviceArgNames());
 
+
           // write CUDA/OpenCL kernel function to file clone old body,
           // replacing member variables
           ASTTranslate *Hipacc = new ASTTranslate(Context, kernelDecl, K, KC,
@@ -2184,6 +2185,7 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
     case Language::C99: break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       if (compilerOptions.useTextureMemory() &&
           compilerOptions.getTextureType()==Texture::Array2D) {
@@ -2262,6 +2264,7 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
     case Language::C99: break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       // 2D reduction
       *OS << "REDUCTION_CL_2D(" << K->getReduceName() << "2D, "
@@ -2344,6 +2347,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       Policy.LangOpts.CUDA = 1; break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       Policy.LangOpts.OpenCL = 1; break;
   }
@@ -2357,6 +2361,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     case Language::CUDA:         filename += ".cu"; ifdef += "CU_"; break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:   filename += ".cl"; ifdef += "CL_"; break;
     case Language::OpenCLGPU:    filename += ".cl"; ifdef += "CL_"; break;
     case Language::Renderscript: filename += ".rs"; ifdef += "RS_"; break;
     case Language::Filterscript: filename += ".fs"; ifdef += "FS_"; break;
@@ -2418,6 +2423,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
             break;
           case Language::OpenCLACC:
           case Language::OpenCLCPU:
+          case Language::OpenCLFPGA:
           case Language::OpenCLGPU:
             *OS << "#include \"hipacc_cl_interpolate.hpp\"\n\n";
             break;
@@ -2547,6 +2553,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         switch (compilerOptions.getTargetLang()) {
           case Language::OpenCLACC:
           case Language::OpenCLCPU:
+          case Language::OpenCLFPGA:
           case Language::OpenCLGPU:
             *OS << "__constant ";
             break;
@@ -2626,6 +2633,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       case Language::C99:
       case Language::OpenCLACC:
       case Language::OpenCLCPU:
+      case Language::OpenCLFPGA:
       case Language::OpenCLGPU:
         *OS << "inline "; break;
       case Language::CUDA:
@@ -2653,6 +2661,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       if (compilerOptions.useTextureMemory() &&
           compilerOptions.getTextureType()==Texture::Array2D) {
@@ -2859,6 +2868,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           break;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
+        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           if (comma++) *OS << ", ";
           *OS << "__constant ";
@@ -2910,6 +2920,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           break;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
+        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           // __global keyword to specify memory location is only needed for OpenCL
           if (comma++) *OS << ", ";
