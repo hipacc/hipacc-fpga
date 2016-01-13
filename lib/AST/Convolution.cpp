@@ -204,6 +204,7 @@ Stmt *ASTTranslate::addDomainCheck(HipaccMask *Domain, DeclRefExpr *domain_var,
       break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       // array subscript: Domain[y*width + x]
       dom_acc = accessMemArrAt(domain_var, createIntegerLiteral(Ctx,

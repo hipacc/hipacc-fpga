@@ -202,6 +202,7 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
           // fall through
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
+        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           if (Kernel->useTextureMemory(Acc)!=Texture::None) {
             return accessMemImgAt(LHS, Acc, mem_acc, idx_x, idx_y);

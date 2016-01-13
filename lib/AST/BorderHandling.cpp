@@ -268,6 +268,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
         // fall through
       case Language::OpenCLACC:
       case Language::OpenCLCPU:
+      case Language::OpenCLFPGA:
       case Language::OpenCLGPU:
         if (Kernel->useTextureMemory(Acc)!=Texture::None) {
           RHS = accessMemImgAt(LHS, Acc, READ_ONLY, idx_x, idx_y);
@@ -355,6 +356,7 @@ Expr *ASTTranslate::addBorderHandling(DeclRefExpr *LHS, Expr *local_offset_x,
         // fall through
       case Language::OpenCLACC:
       case Language::OpenCLCPU:
+      case Language::OpenCLFPGA:
       case Language::OpenCLGPU:
         if (Kernel->useTextureMemory(Acc)!=Texture::None) {
           result = accessMemImgAt(LHS, Acc, READ_ONLY, idx_x, idx_y);

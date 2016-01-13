@@ -530,6 +530,7 @@ void ASTTranslate::updateTileVars() {
     case Language::CUDA:
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       tileVars.local_id_x = addCastToInt(tileVars.local_id_x);
       tileVars.local_id_y = addCastToInt(tileVars.local_id_y);
@@ -664,6 +665,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       initOpenCL(kernelBody);
       // void barrier(cl_mem_fence_flags);
@@ -851,6 +853,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
           break;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
+        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           VD = createVarDecl(Ctx, DC, sharedName, Ctx.getAddrSpaceQualType(QT,
                 LangAS::opencl_local), nullptr);
@@ -1249,6 +1252,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
           break;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
+        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           // CLK_LOCAL_MEM_FENCE -> 1
           // CLK_GLOBAL_MEM_FENCE -> 2
@@ -2090,6 +2094,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
               break;
             case Language::OpenCLACC:
             case Language::OpenCLCPU:
+            case Language::OpenCLFPGA:
             case Language::OpenCLGPU:
               // array subscript: Mask[(conv_y)*width + conv_x]
               result = accessMemArrAt(LHS, createIntegerLiteral(Ctx,
@@ -2144,6 +2149,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
               break;
             case Language::OpenCLACC:
             case Language::OpenCLCPU:
+            case Language::OpenCLFPGA:
             case Language::OpenCLGPU:
               // array subscript: Mask[(conv_y)*width + conv_x]
               result = accessMemArrAt(LHS, createIntegerLiteral(Ctx,
@@ -2181,6 +2187,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             break;
           case Language::OpenCLACC:
           case Language::OpenCLCPU:
+          case Language::OpenCLFPGA:
           case Language::OpenCLGPU:
             if (mask->isConstant()) {
               // array subscript: Mask[y+size_y/2][x+size_x/2]
@@ -2385,6 +2392,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
         break;
       case Language::OpenCLACC:
       case Language::OpenCLCPU:
+      case Language::OpenCLFPGA:
       case Language::OpenCLGPU:
         if (Kernel->useTextureMemory(acc)!=Texture::None) {
           result = accessMemImgAt(LHS, acc, mem_acc, idx_x, idx_y);
@@ -2453,6 +2461,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
         case Language::CUDA:
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
+        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           result = accessMem(LHS, acc, mem_acc);
           break;
