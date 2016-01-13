@@ -8,7 +8,7 @@ COMPILER_INC   ?= -std=c++11 $(COMMON_INC) \
                   -I`@LLVM_CONFIG_EXECUTABLE@ --includedir` \
                   -I`@LLVM_CONFIG_EXECUTABLE@ --includedir`/c++/v1 \
                   -I$(HIPACC_DIR)/include/dsl
-TEST_CASE      ?= ./tests/opencv_blur_8uc1
+TEST_CASE      ?= ./tests/mean_filter
 MYFLAGS        ?= -DWIDTH=2048 -DHEIGHT=2048 -DSIZE_X=5 -DSIZE_Y=5
 NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" \
                   -Xptxas -v #-keep
@@ -21,6 +21,7 @@ CC_LINK         = -lm -ldl -lstdc++ @THREADS_LINK@ @RT_LIBRARIES@ @OPENCV_LIBRAR
 CL_LINK         = $(CC_LINK) @OPENCL_LFLAGS@
 CU_LINK         = $(CC_LINK) @CUDA_LINK@
 ALTERA_RUN      = LD_LIBRARY_PATH=$$LD_LIBRARAY_PATH$$(aocl link-config | sed 's/\ /\n/g' | grep "^\-L" | sed 's/-L/:/g' | tr -d '\n')
+ALTERA_CXX     := arm-linux-gnueabihf-g++
 
 
 # Source-to-source compiler configuration
@@ -104,13 +105,19 @@ opencl-fpga:
 	@echo 'Executing Hipacc Compiler for OpenCL:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-$@ $(HIPACC_OPTS) -o main.cc
 
-altera: opencl-fpga
-	@echo 'Generate aocx for Altera'
-	aoc -march=emulator *.cl
-	@echo 'Compiling Host file for Altera Emulation'
-	g++ -DALTERACL -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) -Wl,--no-as-needed $(shell aocl link-config) -lstdc++ -static-libstdc++ -o main_altera main.cc
+altera-emulate: opencl-fpga
+	@echo 'Compiling Host Code for Altera Emulation'
+	g++ -DALTERACL -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) -Wl,--no-as-needed $(shell aocl link-config) -lstdc++ -static-libstdc++ -o main_altera_em main.cc
+	echo 'Generate aocx for Altera Emulation'
+	aoc -v -march=emulator *.cl
 	@echo 'Emulate Generated Binaries'
-	CL_CONTEXT_EMULATOR_DEVICE_ALTERA=s5_ref $(ALTERA_RUN) ./main_altera
+	CL_CONTEXT_EMULATOR_DEVICE_ALTERA=s5_ref $(ALTERA_RUN) ./main_altera_em
+
+altera-compile: opencl-fpga
+	@echo 'Compiling Host Code for Target Architecture'
+	$(ECHO)$(ALTERA_CXX)  -DALTERACL -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) main.cc $(shell aocl link-config) -static-libstdc++ -o ./main_altera_syn
+	@echo 'Generate aocx for Target Altera Device'
+	aoc -v --report *.cl
 
 filterscript renderscript:
 	rm -f *.rs *.fs
@@ -132,6 +139,6 @@ filterscript renderscript:
 	adb shell /data/local/tmp/main_$@
 
 clean:
-	rm -f main_* *.cu *.cc *.cubin *.cl *.isa *.rs *.fs
-	rm -rf build_*
+	rm -f main_* *.cu *.cc *.cubin *.cl *.isa *.rs *.fs *.aoco *.aocx
+	rm -rf build_* bin_*
 
