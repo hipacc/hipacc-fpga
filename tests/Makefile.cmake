@@ -20,6 +20,7 @@ CU_CC           = @NVCC@ @NVCC_COMP@ -Xcompiler -Wall -Xcompiler -Wunused $(NVCC
 CC_LINK         = -lm -ldl -lstdc++ @THREADS_LINK@ @RT_LIBRARIES@ @OPENCV_LIBRARIES@
 CL_LINK         = $(CC_LINK) @OPENCL_LFLAGS@
 CU_LINK         = $(CC_LINK) @CUDA_LINK@
+ALTERA_RUN      = LD_LIBRARY_PATH=$$LD_LIBRARAY_PATH$$(aocl link-config | sed 's/\ /\n/g' | grep "^\-L" | sed 's/-L/:/g' | tr -d '\n')
 
 
 # Source-to-source compiler configuration
@@ -98,6 +99,18 @@ opencl-acc opencl-cpu opencl-gpu:
 	$(CL_CC) -I$(HIPACC_DIR)/include $(COMMON_INC) $(MYFLAGS) $(OFLAGS) -o main_opencl main.cc $(CL_LINK)
 	@echo 'Executing OpenCL binary'
 	./main_opencl
+
+opencl-fpga:
+	@echo 'Executing Hipacc Compiler for OpenCL:'
+	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-$@ $(HIPACC_OPTS) -o main.cc
+
+altera: opencl-fpga
+	@echo 'Generate aocx for Altera'
+	aoc -march=emulator *.cl
+	@echo 'Compiling Host file for Altera Emulation'
+	g++ -DALTERACL -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) -Wl,--no-as-needed $(shell aocl link-config) -lstdc++ -static-libstdc++ -o main_altera main.cc
+	@echo 'Emulate Generated Binaries'
+	CL_CONTEXT_EMULATOR_DEVICE_ALTERA=s5_ref $(ALTERA_RUN) ./main_altera
 
 filterscript renderscript:
 	rm -f *.rs *.fs
