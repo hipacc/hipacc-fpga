@@ -58,7 +58,8 @@ enum cl_platform_name {
     ARM     = 0x4,
     INTEL   = 0x8,
     NVIDIA  = 0x10,
-    ALL     = (AMD|APPLE|ARM|INTEL|NVIDIA)
+    ALTERA  = 0x20,
+    ALL     = (AMD|APPLE|ARM|INTEL|NVIDIA|ALTERA)
 };
 
 
@@ -192,7 +193,7 @@ std::string getOpenCLErrorCodeStr(int error) {
         CL_ERROR_CODE(CL_INVALID_MIP_LEVEL)
         CL_ERROR_CODE(CL_INVALID_GLOBAL_WORK_SIZE)
         #ifdef CL_VERSION_1_1
-        CL_ERROR_CODE(CL_INVALID_PROPERTY)
+        //CL_ERROR_CODE(CL_INVALID_PROPERTY)
         #endif
         #ifdef CL_VERSION_1_2
         CL_ERROR_CODE(CL_INVALID_IMAGE_DESCRIPTOR)
@@ -272,6 +273,7 @@ void hipaccInitPlatformsAndDevices(cl_device_type dev_type, cl_platform_name pla
             else if (strncmp(pnBuffer, "ARM", 3) == 0) platform_names[i] = ARM;
             else if (strncmp(pnBuffer, "Intel", 3) == 0) platform_names[i] = INTEL;
             else if (strncmp(pnBuffer, "NVIDIA", 3) == 0) platform_names[i] = NVIDIA;
+            else if (strncmp(pnBuffer, "Altera", 3) == 0) platform_names[i] = ALTERA;
             else platform_names[i] = ALL;
 
             // Use first platform supporting desired device type
@@ -427,46 +429,96 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
     cl_kernel kernel;
     HipaccContext &Ctx = HipaccContext::getInstance();
 
-    std::ifstream srcFile(file_name.c_str());
-    if (!srcFile.is_open()) {
-        std::cerr << "ERROR: Can't open OpenCL source file '" << file_name << "'!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    std::string clString(std::istreambuf_iterator<char>(srcFile),
-            (std::istreambuf_iterator<char>()));
-
-    const size_t length = clString.length();
-    const char *c_str = clString.c_str();
-
-    if (print_progress) std::cerr << "<HIPACC:> Compiling '" << kernel_name << "' .";
-    program = clCreateProgramWithSource(Ctx.get_contexts()[0], 1, (const char **)&c_str, &length, &err);
-    checkErr(err, "clCreateProgramWithSource()");
 
     cl_platform_name platform_name = Ctx.get_platform_names()[0];
-    if (build_options.empty()) {
-        switch (platform_name) {
-            case AMD:
-                build_options = "-cl-single-precision-constant -cl-denorms-are-zero";
-                #ifdef CL_VERSION_1_2
-                build_options += " -save-temps";
-                #endif
-                break;
-            case NVIDIA:
-                build_options = "-cl-single-precision-constant -cl-denorms-are-zero -cl-nv-verbose";
-                break;
-            case APPLE:
-            case ARM:
-            case INTEL:
-            case ALL:
-                build_options = "-cl-single-precision-constant -cl-denorms-are-zero";
-                break;
+    if(platform_name == ALTERA)
+    {
+
+        FILE* srcFile;
+#ifdef _WIN32
+        if(fopen_s(&srcFile, file_name.c_str(), "rb") != 0) {
+            std::cerr << "ERROR: Can't open AOCX file '" << file_name << "'!" << std::endl;
+            exit(EXIT_FAILURE);
         }
+#else
+        srcFile = fopen (file_name.c_str(),"rb");
+        if (srcFile==NULL){
+            std::cerr << "ERROR: Can't open AOCX file '" << file_name << "'!" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+#endif
+        // Calculate the size of the file
+        fseek(srcFile, 0, SEEK_END);
+        size_t binary_length = ftell(srcFile);
+
+        // Allocate space for the binary
+        unsigned char *binary = new unsigned char[binary_length];
+
+        // Go back to the file start
+        rewind(srcFile);
+
+        // Read the file into the binary
+        if(fread((void*)binary, binary_length, 1, srcFile) == 0) {
+          delete[] binary;
+          fclose(srcFile);
+          return NULL;
+        }
+
+        if(binary == NULL) {
+          std::cerr << "ERROR: Can't Load Binary File for AOCX file "<< file_name << "'!" << std::endl;
+        }
+
+        cl_int binary_status;
+        program = clCreateProgramWithBinary(Ctx.get_contexts()[0], 1, &Ctx.get_devices()[0], &binary_length,
+                                           (const unsigned char **) &binary, &binary_status, &err);
+        checkErr(err, "clCreateProgramWithBinary");
+        checkErr(binary_status, "ERROR: Can't load binary for device!");
+
+        err = clBuildProgram(program, 0, NULL, "", NULL, NULL);
     }
-    if (!build_includes.empty()) {
-        build_options += " " + build_includes;
+    else
+    {
+        std::ifstream srcFile(file_name.c_str());
+        if (!srcFile.is_open()) {
+            std::cerr << "ERROR: Can't open OpenCL source file '" << file_name << "'!" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+
+        std::string clString(std::istreambuf_iterator<char>(srcFile),
+                (std::istreambuf_iterator<char>()));
+
+        const size_t length = clString.length();
+        const char *c_str = clString.c_str();
+
+        if (print_progress) std::cerr << "<HIPACC:> Compiling '" << kernel_name << "' .";
+        program = clCreateProgramWithSource(Ctx.get_contexts()[0], 1, (const char **)&c_str, &length, &err);
+        checkErr(err, "clCreateProgramWithSource()");
+
+        //cl_platform_name platform_name = Ctx.get_platform_names()[0];
+        if (build_options.empty()) {
+            switch (platform_name) {
+                case AMD:
+                    build_options = "-cl-single-precision-constant -cl-denorms-are-zero";
+                    #ifdef CL_VERSION_1_2
+                    build_options += " -save-temps";
+                    #endif
+                    break;
+                case NVIDIA:
+                    build_options = "-cl-single-precision-constant -cl-denorms-are-zero -cl-nv-verbose";
+                    break;
+                case APPLE:
+                case ARM:
+                case INTEL:
+                case ALL:
+                    build_options = "-cl-single-precision-constant -cl-denorms-are-zero";
+                    break;
+            }
+        }
+        if (!build_includes.empty()) {
+            build_options += " " + build_includes;
+        }
+        err = clBuildProgram(program, 0, NULL, build_options.c_str(), NULL, NULL);
     }
-    err = clBuildProgram(program, 0, NULL, build_options.c_str(), NULL, NULL);
     if (print_progress) std::cerr << ".";
 
     cl_build_status build_status;
@@ -778,6 +830,9 @@ void hipaccCopyMemoryRegion(const HipaccAccessor &src, const HipaccAccessor &dst
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         checkErr(err, "clEnqueueCopyImage()");
     } else {
+#ifdef ALTERACL
+        assert(1 && "clEnqueueCopyBufferRect() is not supported for Altera");
+#else
         const size_t dst_origin[] = { dst.offset_x*dst.img.pixel_size, (size_t)dst.offset_y, 0 };
         const size_t src_origin[] = { src.offset_x*src.img.pixel_size, (size_t)src.offset_y, 0 };
         const size_t region[]     = { dst.width*dst.img.pixel_size, dst.height, 1 };
@@ -788,6 +843,7 @@ void hipaccCopyMemoryRegion(const HipaccAccessor &src, const HipaccAccessor &dst
                 dst.img.stride*dst.img.pixel_size, 0, 0, NULL, NULL);
         err |= clFinish(Ctx.get_command_queues()[num_device]);
         checkErr(err, "clEnqueueCopyBufferRect()");
+#endif
     }
 }
 
