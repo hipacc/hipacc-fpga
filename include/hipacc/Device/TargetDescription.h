@@ -394,6 +394,7 @@ class HipaccDevice : public HipaccDeviceOptions {
         case Device::Midgard:         return "ARM Midgard: Mali-T6xx";
         case Device::KnightsCorner:   return "Intel MIC: Knights Corner";
       }
+      return "";
     }
 
     std::string getCompileCommand(bool emitCUDA) {
