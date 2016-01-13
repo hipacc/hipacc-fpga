@@ -241,6 +241,7 @@ class CompilerOptions {
         case Language::Renderscript: return "rs";
         case Language::Filterscript: return "fs";
       }
+      return "";
     }
 
     void printSummary(std::string target_device) {
