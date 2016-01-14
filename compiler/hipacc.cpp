@@ -437,6 +437,15 @@ int main(int argc, char *argv[]) {
     // kernels are timed internally by the runtime in case of exploration
     compilerOptions.setTimeKernels(OFF);
   }
+  // Invalid OpenCL FPGA specification for kernel configuration
+  if (compilerOptions.emitOpenCLFPGA()){
+    if ( compilerOptions.getKernelConfigX() != 1 || 
+         compilerOptions.getKernelConfigY() != 1){
+      // Only Supportd Kernel Configuration for FPGA is (1, 1)
+      compilerOptions.setKernelConfig(1, 1);
+      llvm::errs() << "Warning: Using only supported FPGA kernel configuration 1x1 for kernel!\n";
+    }
+  }
 
   // print summary of compiler options
   compilerOptions.printSummary(targetDevice.getTargetDeviceName());

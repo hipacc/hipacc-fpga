@@ -8,7 +8,7 @@ COMPILER_INC   ?= -std=c++11 $(COMMON_INC) \
                   -I`@LLVM_CONFIG_EXECUTABLE@ --includedir` \
                   -I`@LLVM_CONFIG_EXECUTABLE@ --includedir`/c++/v1 \
                   -I$(HIPACC_DIR)/include/dsl
-TEST_CASE      ?= ./tests/mean_filter
+TEST_CASE      ?= ./tests/opencv_blur_8uc1
 MYFLAGS        ?= -DWIDTH=2048 -DHEIGHT=2048 -DSIZE_X=5 -DSIZE_Y=5
 NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" \
                   -Xptxas -v #-keep
@@ -107,17 +107,17 @@ opencl-fpga:
 
 altera-emulate: opencl-fpga
 	@echo 'Compiling Host Code for Altera Emulation'
-	g++ -DALTERACL -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) -Wl,--no-as-needed $(shell aocl link-config) -lstdc++ -static-libstdc++ -o main_altera_em main.cc
+	g++ -DALTERACL $(MYFLAGS) -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) -Wl,--no-as-needed $(shell aocl link-config) -lstdc++ -static-libstdc++ -o main_altera_em main.cc
 	echo 'Generate aocx for Altera Emulation'
-	aoc -v -march=emulator *.cl
+	aoc $(MYFLAGS) -v -march=emulator *.cl
 	@echo 'Emulate Generated Binaries'
 	CL_CONTEXT_EMULATOR_DEVICE_ALTERA=s5_ref $(ALTERA_RUN) ./main_altera_em
 
 altera-compile: opencl-fpga
 	@echo 'Compiling Host Code for Target Architecture'
-	$(ECHO)$(ALTERA_CXX)  -DALTERACL -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) main.cc $(shell aocl link-config) -static-libstdc++ -o ./main_altera_syn
+	$(ECHO)$(ALTERA_CXX) -DALTERACL $(MYFLAGS) -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) main.cc $(shell aocl link-config) -static-libstdc++ -o ./main_altera_syn
 	@echo 'Generate aocx for Target Altera Device'
-	aoc -v --report *.cl
+	aoc $(MYFLAGS) -v --report *.cl
 
 filterscript renderscript:
 	rm -f *.rs *.fs
