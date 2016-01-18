@@ -47,6 +47,8 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
+#include <map>
 
 #include "hipacc_base.hpp"
 
@@ -69,7 +71,8 @@ class HipaccContext : public HipaccContextBase {
         std::vector<cl_platform_name> platform_names;
         std::vector<cl_device_id> devices, devices_all;
         std::vector<cl_context> contexts;
-        std::vector<cl_command_queue> queues;
+        std::map<int, std::vector<cl_command_queue> > queues;
+        std::map<std::string, cl_program> programs;
 
     public:
         static HipaccContext &getInstance() {
@@ -84,13 +87,17 @@ class HipaccContext : public HipaccContextBase {
         void add_device(cl_device_id id) { devices.push_back(id); }
         void add_device_all(cl_device_id id) { devices_all.push_back(id); }
         void add_context(cl_context id) { contexts.push_back(id); }
-        void add_command_queue(cl_command_queue id) { queues.push_back(id); }
+        void add_command_queue(cl_command_queue id, int num_kernel=0) { queues[num_kernel].push_back(id); }
+        void add_program(cl_program program, std::string filename) { programs[filename] = program; }
+        bool has_command_queue(int num_kernel=0) { return queues.find(num_kernel) != queues.end(); }
+        bool has_program(std::string filename) { return programs.find(filename) != programs.end(); }
         std::vector<cl_platform_id> get_platforms() { return platforms; }
         std::vector<cl_platform_name> get_platform_names() { return platform_names; }
         std::vector<cl_device_id> get_devices() { return devices; }
         std::vector<cl_device_id> get_devices_all() { return devices_all; }
         std::vector<cl_context> get_contexts() { return contexts; }
-        std::vector<cl_command_queue> get_command_queues() { return queues; }
+        std::vector<cl_command_queue> get_command_queues(int num_kernel=0) { return queues[num_kernel]; }
+        cl_program get_program(std::string filename) { return programs[filename]; }
 };
 
 
@@ -349,15 +356,33 @@ std::vector<cl_device_id> hipaccGetAllDevices() {
 }
 
 
+void hipaccCreateCommandQueue(cl_context context, cl_device_id device, int num_kernel=0) {
+    cl_int err = CL_SUCCESS;
+    cl_command_queue command_queue;
+    HipaccContext &Ctx = HipaccContext::getInstance();
+
+    #ifdef CL_VERSION_2_0
+    cl_queue_properties cprops[3] = { CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE, 0 };
+    command_queue = clCreateCommandQueueWithProperties(context, device, cprops, &err);
+    checkErr(err, "clCreateCommandQueueWithProperties()");
+    #else
+    command_queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
+    checkErr(err, "clCreateCommandQueue()");
+    #endif
+
+    Ctx.add_command_queue(command_queue, num_kernel);
+}
+
+
 // Create context and command queue for each device
-void hipaccCreateContextsAndCommandQueues(bool all_devies=false) {
+void hipaccCreateContextsAndCommandQueues(bool all_devices=false, int num_kernel=0) {
     cl_int err = CL_SUCCESS;
     cl_context context;
     cl_command_queue command_queue;
     HipaccContext &Ctx = HipaccContext::getInstance();
 
     std::vector<cl_platform_id> platforms = Ctx.get_platforms();
-    std::vector<cl_device_id> devices = all_devies?Ctx.get_devices_all():Ctx.get_devices();
+    std::vector<cl_device_id> devices = all_devices?Ctx.get_devices_all():Ctx.get_devices();
 
     // Create context
     cl_context_properties cprops[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)platforms[0], 0 };
@@ -368,16 +393,7 @@ void hipaccCreateContextsAndCommandQueues(bool all_devies=false) {
 
     // Create command queues
     for (auto device : devices) {
-        #ifdef CL_VERSION_2_0
-        cl_queue_properties cprops[3] = { CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE, 0 };
-        command_queue = clCreateCommandQueueWithProperties(context, device, cprops, &err);
-        checkErr(err, "clCreateCommandQueueWithProperties()");
-        #else
-        command_queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
-        checkErr(err, "clCreateCommandQueue()");
-        #endif
-
-        Ctx.add_command_queue(command_queue);
+        hipaccCreateCommandQueue(context, device, num_kernel);
     }
 }
 
@@ -433,48 +449,51 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
     cl_platform_name platform_name = Ctx.get_platform_names()[0];
     if(platform_name == ALTERA)
     {
-
-        FILE* srcFile;
+        if (Ctx.has_program(file_name)) {
+            program = Ctx.get_program(file_name);
+        } else {
+            FILE* srcFile;
 #ifdef _WIN32
-        if(fopen_s(&srcFile, file_name.c_str(), "rb") != 0) {
-            std::cerr << "ERROR: Can't open AOCX file '" << file_name << "'!" << std::endl;
-            exit(EXIT_FAILURE);
-        }
+            if(fopen_s(&srcFile, file_name.c_str(), "rb") != 0) {
+                std::cerr << "ERROR: Can't open AOCX file '" << file_name << "'!" << std::endl;
+                exit(EXIT_FAILURE);
+            }
 #else
-        srcFile = fopen (file_name.c_str(),"rb");
-        if (srcFile==NULL){
-            std::cerr << "ERROR: Can't open AOCX file '" << file_name << "'!" << std::endl;
-            exit(EXIT_FAILURE);
-        }
+            srcFile = fopen (file_name.c_str(),"rb");
+            if (srcFile==NULL){
+                std::cerr << "ERROR: Can't open AOCX file '" << file_name << "'!" << std::endl;
+                exit(EXIT_FAILURE);
+            }
 #endif
-        // Calculate the size of the file
-        fseek(srcFile, 0, SEEK_END);
-        size_t binary_length = ftell(srcFile);
+            // Calculate the size of the file
+            fseek(srcFile, 0, SEEK_END);
+            size_t binary_length = ftell(srcFile);
 
-        // Allocate space for the binary
-        unsigned char *binary = new unsigned char[binary_length];
+            // Allocate space for the binary
+            unsigned char *binary = new unsigned char[binary_length];
 
-        // Go back to the file start
-        rewind(srcFile);
+            // Go back to the file start
+            rewind(srcFile);
 
-        // Read the file into the binary
-        if(fread((void*)binary, binary_length, 1, srcFile) == 0) {
-          delete[] binary;
-          fclose(srcFile);
-          return NULL;
+            // Read the file into the binary
+            if(fread((void*)binary, binary_length, 1, srcFile) == 0) {
+              delete[] binary;
+              fclose(srcFile);
+              return NULL;
+            }
+
+            if(binary == NULL) {
+              std::cerr << "ERROR: Can't Load Binary File for AOCX file "<< file_name << "'!" << std::endl;
+            }
+
+            cl_int binary_status;
+            program = clCreateProgramWithBinary(Ctx.get_contexts()[0], 1, &Ctx.get_devices()[0], &binary_length,
+                                               (const unsigned char **) &binary, &binary_status, &err);
+            checkErr(err, "clCreateProgramWithBinary");
+            checkErr(binary_status, "ERROR: Can't load binary for device!");
+
+            err = clBuildProgram(program, 0, NULL, "", NULL, NULL);
         }
-
-        if(binary == NULL) {
-          std::cerr << "ERROR: Can't Load Binary File for AOCX file "<< file_name << "'!" << std::endl;
-        }
-
-        cl_int binary_status;
-        program = clCreateProgramWithBinary(Ctx.get_contexts()[0], 1, &Ctx.get_devices()[0], &binary_length,
-                                           (const unsigned char **) &binary, &binary_status, &err);
-        checkErr(err, "clCreateProgramWithBinary");
-        checkErr(binary_status, "ERROR: Can't load binary for device!");
-
-        err = clBuildProgram(program, 0, NULL, "", NULL, NULL);
     }
     else
     {
@@ -552,6 +571,8 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
         delete[] program_build_log;
     }
     checkErr(err, "clBuildProgram(), clGetProgramBuildInfo()");
+
+    Ctx.add_program(program, file_name);
 
     if (dump_binary) hipaccDumpBinary(program, Ctx.get_devices()[0]);
 
@@ -716,6 +737,7 @@ void hipaccWriteMemory(HipaccImage &img, T *host_mem, int num_device=0) {
 
     HipaccContext &Ctx = HipaccContext::getInstance();
     cl_int err = CL_SUCCESS;
+
     if (img.mem_type >= Array2D) {
         const size_t origin[] = { 0, 0, 0 };
         const size_t region[] = { width, height, 1 };
@@ -911,7 +933,7 @@ void hipaccSetKernelArg(cl_kernel kernel, unsigned int num, size_t size, T* para
 
 
 // Enqueue and launch kernel
-void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *local_work_size, bool print_timing=true) {
+void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *local_work_size, int num_kernel=0, bool print_timing=true) {
     cl_int err;
     cl_ulong end, start;
     #ifdef EVENT_TIMING
@@ -919,10 +941,23 @@ void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *loc
     #endif
     HipaccContext &Ctx = HipaccContext::getInstance();
 
+#ifdef ALTERACL
+    if (!Ctx.has_command_queue(num_kernel)) {
+        bool all_devices=false;
+        std::vector<cl_device_id> devices = all_devices?Ctx.get_devices_all():Ctx.get_devices();
+        cl_context context = Ctx.get_contexts()[0];
+        for (auto device : devices) {
+            hipaccCreateCommandQueue(context, device, num_kernel);
+        }
+    }
+#endif
+
     #ifdef EVENT_TIMING
-    err = clEnqueueNDRangeKernel(Ctx.get_command_queues()[0], kernel, 2, NULL, global_work_size, local_work_size, 0, NULL, &event);
-    err |= clFinish(Ctx.get_command_queues()[0]);
+    err = clEnqueueNDRangeKernel(Ctx.get_command_queues(num_kernel)[0], kernel, 2, NULL, global_work_size, local_work_size, 0, NULL, &event);
     checkErr(err, "clEnqueueNDRangeKernel()");
+#ifndef ALTERACL
+    err |= clFinish(Ctx.get_command_queues(num_kernel)[0]);
+    checkErr(err, "clFinish()");
 
     err = clWaitForEvents(1, &event);
     checkErr(err, "clWaitForEvents()");
@@ -934,20 +969,36 @@ void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *loc
 
     err = clReleaseEvent(event);
     checkErr(err, "clReleaseEvent()");
+#endif
     #else
-    clFinish(Ctx.get_command_queues()[0]);
+#ifndef ALTERACL
+    clFinish(Ctx.get_command_queues(num_kernel)[0]);
     start = getMicroTime();
-    err = clEnqueueNDRangeKernel(Ctx.get_command_queues()[0], kernel, 2, NULL, global_work_size, local_work_size, 0, NULL, NULL);
-    err |= clFinish(Ctx.get_command_queues()[0]);
-    end = getMicroTime();
+#endif
+    err = clEnqueueNDRangeKernel(Ctx.get_command_queues(num_kernel)[0], kernel, 2, NULL, global_work_size, local_work_size, 0, NULL, NULL);
     checkErr(err, "clEnqueueNDRangeKernel()");
+#ifndef ALTERACL
+    err |= clFinish(Ctx.get_command_queues(num_kernel)[0]);
+    end = getMicroTime();
+    checkErr(err, "clFinish()");
     #endif
 
     last_gpu_timing = (end-start)*1.0e-3f;
     if (print_timing) {
         std::cerr << "<HIPACC:> Kernel timing (" << local_work_size[0]*local_work_size[1] << ": " << local_work_size[0] << "x" << local_work_size[1] << "): " << last_gpu_timing << "(ms)" << std::endl;
     }
+#endif
 }
+
+
+#ifdef ALTERACL
+void hipaccFinish(int num_kernel=0) {
+    cl_int err;
+    HipaccContext &Ctx = HipaccContext::getInstance();
+    err = clFinish(Ctx.get_command_queues(num_kernel)[0]);
+    checkErr(err, "clFinish()");
+}
+#endif
 
 
 // Perform global reduction and return result
