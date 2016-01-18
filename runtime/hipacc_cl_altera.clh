@@ -1,0 +1,80 @@
+#pragma OPENCL EXTENSION cl_altera_channels : enable
+
+#define BUFFER    ((WIDTH*(SIZE_Y-1)) + SIZE_X)
+#define SIZE      (WIDTH*HEIGHT)
+#define DELAY     ((WIDTH*(SIZE_Y/2)) + (SIZE_X/2))
+
+#define getWindowAt(ARRAY, x, y) ARRAY[y * WIDTH + x]
+
+#define processAA(INTYPE, OUTTYPE, INARRAY, OUTARRAY, KERNEL) \
+    INTYPE rows[BUFFER]; \
+    uint count = 0; \
+    while (count != SIZE+DELAY) { \
+        _Pragma("unroll") \
+        for (uint i = BUFFER-1; i > 0; --i) { \
+            rows[i] = rows[i - 1]; \
+        } \
+        if (count < SIZE) { \
+            rows[0] = INARRAY[count]; \
+        } \
+        if (count >= DELAY) { \
+            OUTARRAY[count-DELAY] = KERNEL(rows); \
+        } \
+        ++count; \
+    }
+
+#define processAC(INTYPE, OUTTYPE, INARRAY, OUTCHAN, KERNEL) \
+    INTYPE rows[BUFFER]; \
+    uint count = 0; \
+    while (count != SIZE+DELAY) { \
+        _Pragma("unroll") \
+        for (uint i = BUFFER-1; i > 0; --i) { \
+            rows[i] = rows[i - 1]; \
+        } \
+        if (count < SIZE) { \
+            rows[0] = INARRAY[count]; \
+        } \
+        if (count >= DELAY) { \
+            write_channel_altera(OUTCHAN, KERNEL(rows)); \
+            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+        } \
+        ++count; \
+    }
+
+#define processCA(INTYPE, OUTTYPE, INCHAN, OUTARRAY, KERNEL) \
+    INTYPE rows[BUFFER]; \
+    uint count = 0; \
+    while (count != SIZE+DELAY) { \
+        _Pragma("unroll") \
+        for (uint i = BUFFER-1; i > 0; --i) { \
+            rows[i] = rows[i - 1]; \
+        } \
+        if (count < SIZE) { \
+            rows[0] = read_channel_altera(INCHAN); \
+            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+        } \
+        if (count >= DELAY) { \
+            OUTARRAY[count-DELAY] = KERNEL(rows); \
+        } \
+        ++count; \
+    }
+
+#define processCC(INTYPE, OUTTYPE, INCHAN, OUTCHAN, KERNEL) \
+    INTYPE rows[BUFFER]; \
+    uint count = 0; \
+    while (count != SIZE+DELAY) { \
+        _Pragma("unroll") \
+        for (uint i = BUFFER-1; i > 0; --i) { \
+            rows[i] = rows[i - 1]; \
+        } \
+        if (count < SIZE) { \
+            rows[0] = read_channel_altera(INCHAN); \
+            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+        } \
+        if (count >= DELAY) { \
+            write_channel_altera(OUTCHAN, KERNEL(rows)); \
+            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+        } \
+        ++count; \
+    }
+
