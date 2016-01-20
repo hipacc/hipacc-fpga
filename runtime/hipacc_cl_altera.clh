@@ -2,78 +2,238 @@
 
 #define BUFFER    ((WIDTH*(SIZE_Y-1)) + SIZE_X)
 #define SIZE      (WIDTH*HEIGHT)
-#define DELAY     ((WIDTH*(SIZE_Y/2)) + (SIZE_X/2))
+#define DELAY     ((WIDTH*(SIZE_Y >> 1)) + (SIZE_X >> 1))
 
-#define getWindowAt(ARRAY, x, y) ARRAY[y * WIDTH + x]
+#define getWindowAt(ARRAY, x, y) ARRAY[y][x]
 
-#define processAA(INTYPE, OUTTYPE, INARRAY, OUTARRAY, KERNEL) \
+#define BORDER_UNDEF(wnd, x, y, i, j) \
+            wnd[j][i]
+
+#define BORDER_CLAMP(wnd, x, y, i, j) \
+            wnd[ \
+                (y + j < (SIZE_Y >> 1)) ? \
+                    (SIZE_Y >> 1) - y : \
+                    (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
+                        ((SIZE_Y >> 1) + ((HEIGHT-1)-y)) : j \
+            ][ \
+                (x + i < (SIZE_X >> 1)) ? \
+                    (SIZE_X >> 1) - x : \
+                    (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
+                        ((SIZE_X >> 1) + ((WIDTH-1)-x)) : i \
+            ]
+
+#define BORDER_MIRROR(wnd, x, y, i, j) \
+            wnd[ \
+                (y + j < (SIZE_Y >> 1)) ? \
+                    (SIZE_Y - y - y - 2 - j) : \
+                    (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
+                        (SIZE_Y - y - y + HEIGHT + HEIGHT - 2 - j) : j \
+            ][ \
+                (x + i < (SIZE_X >> 1)) ? \
+                    (SIZE_X - x - x - 2 - i) : \
+                    (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
+                        (SIZE_X - x - x + WIDTH + WIDTH - 2 - i) : i \
+            ]
+
+#define BORDER_MIRROR_101(wnd, x, y, i, j) \
+            wnd[ \
+                (y + j < (SIZE_Y >> 1)) ? \
+                    (SIZE_Y - y - y - 1 - j) : \
+                    (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
+                        (SIZE_Y - y - y + HEIGHT + HEIGHT - 3 - j) : j \
+            ][ \
+                (x + i < (SIZE_X >> 1)) ? \
+                    (SIZE_X - x - x - 1 - i) : \
+                    (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
+                        (SIZE_X - x - x + WIDTH + WIDTH - 3 - i) : i \
+            ]
+
+#define BORDER_CONST(wnd, x, y, i, j, val) \
+            (y + j < (SIZE_Y >> 1)) ? \
+                val : \
+                (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
+                    val : \
+                    (x + i < (SIZE_X >> 1)) ? \
+                        val : \
+                        (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
+                            val : wnd[j][i]
+
+#define processAA(INTYPE, OUTTYPE, INARRAY, OUTARRAY, KERNEL, BORDER, ...) \
+    INTYPE pixel; \
     INTYPE rows[BUFFER]; \
+    INTYPE wnd[SIZE_Y][SIZE_X]; \
+    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
     uint count = 0; \
+    uint x = 0; \
+    uint y = 0; \
     while (count != SIZE+DELAY) { \
         _Pragma("unroll") \
         for (uint i = BUFFER-1; i > 0; --i) { \
             rows[i] = rows[i - 1]; \
         } \
+        _Pragma("unroll") \
+        for (uint j = 0; j < SIZE_Y; ++j) { \
+            for (uint i = 0; i < SIZE_X-1; ++i) { \
+                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
+            } \
+            if (j < SIZE_Y-1) { \
+                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
+            } \
+        } \
         if (count < SIZE) { \
-            rows[0] = INARRAY[count]; \
+            pixel = INARRAY[count]; \
+            rows[0] = pixel; \
+            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
         } \
         if (count >= DELAY) { \
-            OUTARRAY[count-DELAY] = KERNEL(rows); \
+            _Pragma("unroll") \
+            for (uint j = 0; j < SIZE_Y; ++j) { \
+                for (uint i = 0; i < SIZE_X; ++i) { \
+                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
+                } \
+            } \
+            OUTARRAY[count-DELAY] = KERNEL(wnd); \
+            ++x; \
+            if (x == WIDTH) { \
+                x = 0; \
+                ++y; \
+            } \
         } \
         ++count; \
     }
 
-#define processAC(INTYPE, OUTTYPE, INARRAY, OUTCHAN, KERNEL) \
+#define processAC(INTYPE, OUTTYPE, INARRAY, OUTCHAN, KERNEL, BORDER, ...) \
+    INTYPE pixel; \
     INTYPE rows[BUFFER]; \
+    INTYPE wnd[SIZE_Y][SIZE_X]; \
+    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
     uint count = 0; \
+    uint x = 0; \
+    uint y = 0; \
     while (count != SIZE+DELAY) { \
         _Pragma("unroll") \
         for (uint i = BUFFER-1; i > 0; --i) { \
             rows[i] = rows[i - 1]; \
         } \
+        _Pragma("unroll") \
+        for (uint j = 0; j < SIZE_Y; ++j) { \
+            for (uint i = 0; i < SIZE_X-1; ++i) { \
+                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
+            } \
+            if (j < SIZE_Y-1) { \
+                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
+            } \
+        } \
         if (count < SIZE) { \
-            rows[0] = INARRAY[count]; \
+            pixel = INARRAY[count]; \
+            rows[0] = pixel; \
+            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
         } \
         if (count >= DELAY) { \
-            write_channel_altera(OUTCHAN, KERNEL(rows)); \
+            _Pragma("unroll") \
+            for (uint j = 0; j < SIZE_Y; ++j) { \
+                for (uint i = 0; i < SIZE_X; ++i) { \
+                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
+                } \
+            } \
+            write_channel_altera(OUTCHAN, KERNEL(wnd)); \
             mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+            ++x; \
+            if (x == WIDTH) { \
+                x = 0; \
+                ++y; \
+            } \
         } \
         ++count; \
     }
 
-#define processCA(INTYPE, OUTTYPE, INCHAN, OUTARRAY, KERNEL) \
+#define processCA(INTYPE, OUTTYPE, INCHAN, OUTARRAY, KERNEL, BORDER, ...) \
+    INTYPE pixel; \
     INTYPE rows[BUFFER]; \
+    INTYPE wnd[SIZE_Y][SIZE_X]; \
+    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
     uint count = 0; \
+    uint x = 0; \
+    uint y = 0; \
     while (count != SIZE+DELAY) { \
         _Pragma("unroll") \
         for (uint i = BUFFER-1; i > 0; --i) { \
             rows[i] = rows[i - 1]; \
         } \
+        _Pragma("unroll") \
+        for (uint j = 0; j < SIZE_Y; ++j) { \
+            for (uint i = 0; i < SIZE_X-1; ++i) { \
+                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
+            } \
+            if (j < SIZE_Y-1) { \
+                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
+            } \
+        } \
         if (count < SIZE) { \
-            rows[0] = read_channel_altera(INCHAN); \
+            pixel = read_channel_altera(INCHAN); \
             mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+            rows[0] = pixel; \
+            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
         } \
         if (count >= DELAY) { \
-            OUTARRAY[count-DELAY] = KERNEL(rows); \
+            _Pragma("unroll") \
+            for (uint j = 0; j < SIZE_Y; ++j) { \
+                for (uint i = 0; i < SIZE_X; ++i) { \
+                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
+                } \
+            } \
+            OUTARRAY[count-DELAY] = KERNEL(wnd); \
+            ++x; \
+            if (x == WIDTH) { \
+                x = 0; \
+                ++y; \
+            } \
         } \
         ++count; \
     }
 
-#define processCC(INTYPE, OUTTYPE, INCHAN, OUTCHAN, KERNEL) \
+#define processCC(INTYPE, OUTTYPE, INCHAN, OUTCHAN, KERNEL, BORDER, ...) \
+    INTYPE pixel; \
     INTYPE rows[BUFFER]; \
+    INTYPE wnd[SIZE_Y][SIZE_X]; \
+    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
     uint count = 0; \
+    uint x = 0; \
+    uint y = 0; \
     while (count != SIZE+DELAY) { \
         _Pragma("unroll") \
         for (uint i = BUFFER-1; i > 0; --i) { \
             rows[i] = rows[i - 1]; \
         } \
+        _Pragma("unroll") \
+        for (uint j = 0; j < SIZE_Y; ++j) { \
+            for (uint i = 0; i < SIZE_X-1; ++i) { \
+                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
+            } \
+            if (j < SIZE_Y-1) { \
+                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
+            } \
+        } \
         if (count < SIZE) { \
-            rows[0] = read_channel_altera(INCHAN); \
+            pixel = read_channel_altera(INCHAN); \
             mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+            rows[0] = pixel; \
+            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
         } \
         if (count >= DELAY) { \
-            write_channel_altera(OUTCHAN, KERNEL(rows)); \
+            _Pragma("unroll") \
+            for (uint j = 0; j < SIZE_Y; ++j) { \
+                for (uint i = 0; i < SIZE_X; ++i) { \
+                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
+                } \
+            } \
+            write_channel_altera(OUTCHAN, KERNEL(wnd)); \
             mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+            ++x; \
+            if (x == WIDTH) { \
+                x = 0; \
+                ++y; \
+            } \
         } \
         ++count; \
     }
