@@ -571,7 +571,6 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
         break;
       case Language::OpenCLACC:
       case Language::OpenCLCPU:
-      case Language::OpenCLFPGA:
       case Language::OpenCLGPU:
         // size_t block
         resultStr += "size_t " + blockStr + "[2];\n";
@@ -596,7 +595,6 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
         resultStr += blockStr + ");\n\n";
         resultStr += indent;
         break;
-<<<<<<< HEAD
       case Language::OpenCLFPGA:
         // size_t block
         resultStr += "size_t " + blockStr + "[2];\n";
@@ -610,28 +608,6 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
         resultStr += indent + gridStr + "[1] = 1;\n\n";
         resultStr += indent;
         break;
-||||||| 1e93a56... Blockid is always 1 for FPGA
-      case Language::OpenCLPGA:
-        // size_t block
-        resultStr += "size_t " + blockStr + "[2];\n";
-        resultStr += indent + blockStr + "[0] = " + threads_x + ";\n";
-        resultStr += indent + blockStr + "[1] = " + threads_y + ";\n";
-        resultStr += indent;
-
-        // size_t grid
-        resultStr += "size_t " + gridStr + "[2];\n\n";
-        resultStr += indent + gridStr + "[0] = 1;";
-        resultStr += indent + gridStr + "[1] = 1;";
-        resultStr += indent;
-
-        // hipaccPrepareKernelLaunch
-        resultStr += "hipaccPrepareKernelLaunch(";
-        resultStr += infoStr + ", ";
-        resultStr += blockStr + ");\n\n";
-        resultStr += indent;
-        break;
-=======
->>>>>>> parent of 1e93a56... Blockid is always 1 for FPGA
     }
   }
 
