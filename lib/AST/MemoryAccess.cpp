@@ -98,7 +98,7 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
   Expr *idx_x = nullptr;
   Expr *idx_y = nullptr;
 
-  if (!compilerOptions.emitVivado()) {
+  if (!compilerOptions.emitVivado() && !compilerOptions.emitOpenCLFPGA()) {
     idx_x = tileVars.global_id_x;
     idx_y = gidYRef;
 
@@ -106,10 +106,10 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
     idx_x = addLocalOffset(idx_x, local_offset_x);
     idx_y = addLocalOffset(idx_y, local_offset_y);
   } else {
-    if (vivadoWindow) {
+    if (localWindow) {
       // access at center of mask
-      idx_x = createIntegerLiteral(Ctx, (int)vivadoWindow->getSizeX()/2);
-      idx_y = createIntegerLiteral(Ctx, (int)vivadoWindow->getSizeY()/2);
+      idx_x = createIntegerLiteral(Ctx, (int)localWindow->getSizeX()/2);
+      idx_y = createIntegerLiteral(Ctx, (int)localWindow->getSizeY()/2);
     } else if (redDomains.size() > 0) {
       // access at center of domain
       idx_x = createIntegerLiteral(Ctx, (int)redDomains.back()->getSizeX()/2);
@@ -202,7 +202,6 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
           // fall through
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
-        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           if (Kernel->useTextureMemory(Acc)!=Texture::None) {
             return accessMemImgAt(LHS, Acc, mem_acc, idx_x, idx_y);
@@ -211,8 +210,9 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
         case Language::Renderscript:
         case Language::Filterscript:
           return accessMemAllocAt(LHS, mem_acc, idx_x, idx_y);
+        case Language::OpenCLFPGA:
         case Language::Vivado:
-          if (!vivadoWindow && redDomains.size() == 0) {// &&
+          if (!localWindow && redDomains.size() == 0) {// &&
               //(idx_x == nullptr || idx_y == nullptr)) {
             return accessMemStream(LHS);
           } else {
@@ -561,11 +561,14 @@ FunctionDecl *ASTTranslate::getVivadoReturnConvertFunction(std::string name) {
 
 // get setAt(wnd,val,x,y) and getAt(wnd,x,y) functions for Vivado windows
 FunctionDecl *ASTTranslate::getWindowFunction(MemoryAccess memAcc) {
-  if (memAcc==READ_ONLY) {
-    return builtins.getBuiltinFunction(VIVADOBIgetWindowAt);
+  unsigned int id;
+  if (compilerOptions.emitOpenCLFPGA()) {
+    assert(memAcc==READ_ONLY && "Writes to local window are not allowed");
+    id = OPENCLBIgetWindowAt;
   } else {
-    return builtins.getBuiltinFunction(VIVADOBIsetWindowAt);
+    id = (memAcc==READ_ONLY) ? VIVADOBIgetWindowAt : VIVADOBIsetWindowAt;
   }
+  return builtins.getBuiltinFunction(id);
 }
 
 
@@ -818,6 +821,7 @@ Expr *ASTTranslate::accessMemSharedAt(DeclRefExpr *LHS, Expr *idx_x, Expr
 
 // access Vivado HLS stream object (no parameters)
 Expr *ASTTranslate::accessMemStream(DeclRefExpr *LHS) {
+  //Oliver: TODO OpenCL channels
   return LHS;
 }
 

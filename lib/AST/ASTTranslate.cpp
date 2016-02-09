@@ -216,7 +216,7 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
 
   if (compilerOptions.emitVivado()) {
     // retValRef: Variable storing output value to return from kernel
-    VarDecl *output = createVarDecl(Ctx, kernelDecl, "VivadoDummyOutputVal",
+    VarDecl *output = createVarDecl(Ctx, kernelDecl, "DummyOutputVal",
         Kernel->getIterationSpace()->getImage()->getType());
     retValRef = createDeclRefExpr(Ctx, output);
   }
@@ -362,7 +362,7 @@ void ASTTranslate::initCUDA(SmallVector<Stmt *, 16> &kernelBody) {
 
 
 // OpenCL initialization
-void ASTTranslate::initOpenCL(SmallVector<Stmt *, 16> &kernelBody) {
+void ASTTranslate::initOpenCL(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
   VarDecl *gid_x = nullptr, *gid_y = nullptr;
   // uint get_work_dim();
   //FunctionDecl *get_work_dim =
@@ -450,15 +450,30 @@ void ASTTranslate::initOpenCL(SmallVector<Stmt *, 16> &kernelBody) {
   gid_y = createVarDecl(Ctx, kernelDecl, "gid_y", Ctx.getConstType(Ctx.IntTy),
       YE);
 
-  // add gid_x and gid_y statements
-  DeclContext *DC = FunctionDecl::castToDeclContext(kernelDecl);
-  DC->addDecl(gid_x);
-  DC->addDecl(gid_y);
-  kernelBody.push_back(createDeclStmt(Ctx, gid_x));
-  kernelBody.push_back(createDeclStmt(Ctx, gid_y));
+  if (compilerOptions.emitOpenCLFPGA()) {
+    // retValRef: Variable storing output value to return from kernel
+    VarDecl *output = createVarDecl(Ctx, kernelDecl, "DummyOutputVal",
+        Kernel->getIterationSpace()->getImage()->getType());
+    retValRef = createDeclRefExpr(Ctx, output);
+    Kernel->setUsed(Kernel->getIterationSpace()->getName());
+  }
+  // convert the function body to kernel syntax
+  Stmt *clonedStmt = Clone(S);
+  assert(isa<CompoundStmt>(clonedStmt) && "CompoundStmt for kernel function body expected!");
 
-  tileVars.global_id_x = createDeclRefExpr(Ctx, gid_x);
-  tileVars.global_id_y = createDeclRefExpr(Ctx, gid_y);
+  if (compilerOptions.emitOpenCLFPGA()) {
+    kernelBody.push_back(clonedStmt);
+  } else {
+    // add gid_x and gid_y statements
+    DeclContext *DC = FunctionDecl::castToDeclContext(kernelDecl);
+    DC->addDecl(gid_x);
+    DC->addDecl(gid_y);
+    kernelBody.push_back(createDeclStmt(Ctx, gid_x));
+    kernelBody.push_back(createDeclStmt(Ctx, gid_y));
+
+    tileVars.global_id_x = createDeclRefExpr(Ctx, gid_x);
+    tileVars.global_id_y = createDeclRefExpr(Ctx, gid_y);
+  }
 }
 
 
@@ -667,9 +682,12 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
     case Language::OpenCLCPU:
     case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
-      initOpenCL(kernelBody);
+      initOpenCL(kernelBody, S);
       // void barrier(cl_mem_fence_flags);
       barrier = builtins.getBuiltinFunction(OPENCLBIbarrier);
+      if (compilerOptions.getTargetLang() == Language::OpenCLFPGA) {
+          return createCompoundStmt(Ctx, kernelBody);
+      }
       break;
     case Language::Renderscript:
     case Language::Filterscript:
@@ -1853,9 +1871,9 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
 
   setExprProps(E, result);
 
-  // Vivado-specific optimization:
+  // FPGA-specific optimization:
   // Remove neutral element operand from binary operator expression
-  if (compilerOptions.emitVivado() && isa<BinaryOperator>(result)) {
+  if ((compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) && isa<BinaryOperator>(result)) {
     auto it = result->child_begin();
     Expr *operand1 = nullptr, *operand2 = nullptr;
 
@@ -1921,9 +1939,9 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
       case BO_Assign:
         if (operand1 != nullptr && isa<DeclRefExpr>(operand1)) {
           DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(operand1);
-          if (DRE->getNameInfo().getAsString() == "VivadoDummyOutputVal") {
+          if (DRE == retValRef) {
             if (operand2 != nullptr) {
-              if (isa<CallExpr>(operand2)) {
+              if (compilerOptions.emitVivado() && isa<CallExpr>(operand2)) {
                 CallExpr *CE = dyn_cast<CallExpr>(operand2);
 
                 // create function call convert_<type>(..., true), which converts
@@ -2055,10 +2073,10 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
   // MemberExpr is converted to DeclRefExpr when cloning
   DeclRefExpr *LHS = dyn_cast<DeclRefExpr>(Clone(E->getArg(0)));
 
-  if (compilerOptions.emitVivado()) {
-    // Store mask as Vivado window. If the kernel uses a mask/domain then all
+  if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
+    // Store mask as local window. If the kernel uses a mask/domain then all
     // Accessors are accessed using window buffers.
-    vivadoWindow = Kernel->getVivadoWindow();
+    localWindow = Kernel->getLocalWindow();
   }
 
   // look for Mask user class member variable
@@ -2149,7 +2167,6 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
               break;
             case Language::OpenCLACC:
             case Language::OpenCLCPU:
-            case Language::OpenCLFPGA:
             case Language::OpenCLGPU:
               // array subscript: Mask[(conv_y)*width + conv_x]
               result = accessMemArrAt(LHS, createIntegerLiteral(Ctx,
@@ -2160,6 +2177,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
               // allocation access: rsGetElementAt(Mask, conv_x, conv_y)
               result = accessMemAllocAt(LHS, mem_acc, midx_x, midx_y);
               break;
+            case Language::OpenCLFPGA:
             case Language::Vivado:
               assert(false && "Only constant masks are allowed for Vivado");
               break;
@@ -2187,7 +2205,6 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             break;
           case Language::OpenCLACC:
           case Language::OpenCLCPU:
-          case Language::OpenCLFPGA:
           case Language::OpenCLGPU:
             if (mask->isConstant()) {
               // array subscript: Mask[y+size_y/2][x+size_x/2]
@@ -2233,6 +2250,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
                     Ctx.IntTy));
             }
             break;
+          case Language::OpenCLFPGA:
           case Language::Vivado:
             assert(false && "Only constant masks are allowed for Vivado");
             break;
@@ -2461,7 +2479,6 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
         case Language::CUDA:
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
-        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           result = accessMem(LHS, acc, mem_acc);
           break;
@@ -2470,6 +2487,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
           postCStmt.push_back(curCStmt);
           result = retValRef;
           break;
+        case Language::OpenCLFPGA:
         case Language::Vivado:
           result = retValRef;
           break;

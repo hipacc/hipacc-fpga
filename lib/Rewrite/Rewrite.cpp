@@ -155,7 +155,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
         HipaccKernel *K, std::string file, bool emitHints);
     void createVivadoEntry();
 
-    enum VivadoParam {
+    enum PrintParam {
       None = 0,
       Member = 1,
       CTorHead = 2,
@@ -174,7 +174,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
 
     void printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         HipaccKernel *K, PrintingPolicy &Policy, llvm::raw_ostream *OS,
-        VivadoParam=None);
+        PrintParam=None);
     std::map<std::string,std::vector<std::pair<std::string, std::string>>> entryArguments;
     std::string vivadoSizeX;
     std::string vivadoSizeY;
@@ -1322,7 +1322,7 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           }
         }
 
-        if (compilerOptions.emitVivado()) {
+        if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
           if (maxWindowSizeX < Buf->getSizeX()) {
             maxWindowSizeX = Buf->getSizeX();
           }
@@ -2361,7 +2361,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     case Language::CUDA:         filename += ".cu"; ifdef += "CU_"; break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
-    case Language::OpenCLFPGA:   filename += ".cl"; ifdef += "CL_"; break;
+    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:    filename += ".cl"; ifdef += "CL_"; break;
     case Language::Renderscript: filename += ".rs"; ifdef += "RS_"; break;
     case Language::Filterscript: filename += ".fs"; ifdef += "FS_"; break;
@@ -2386,6 +2386,9 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
   // preprocessor defines
   switch (compilerOptions.getTargetLang()) {
     default: break;
+    case Language::OpenCLFPGA:
+      *OS << "#include \"hipacc_cl_altera.clh\"\n\n";
+      break;
     case Language::CUDA:
       *OS << "#include \"hipacc_types.hpp\"\n"
           << "#include \"hipacc_math_functions.hpp\"\n\n";
@@ -2661,7 +2664,6 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       break;
     case Language::OpenCLACC:
     case Language::OpenCLCPU:
-    case Language::OpenCLFPGA:
     case Language::OpenCLGPU:
       if (compilerOptions.useTextureMemory() &&
           compilerOptions.getTextureType()==Texture::Array2D) {
@@ -2677,6 +2679,15 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         *OS << "__attribute__((reqd_work_group_size(" << K->getNumThreadsX()
             << ", " << K->getNumThreadsY() << ", 1))) ";
       }
+      break;
+    case Language::OpenCLFPGA:
+      *OS << "__global struct {\n";
+      printKernelArguments(D, KC, K, Policy, OS, Rewrite::Member);
+      *OS << "} " << K->getKernelName() << "Var;\n\n";
+      *OS << createVivadoTypeStr(K->getIterationSpace()->getImage(), 1);
+      *OS << " " << K->getKernelName() << "Kernel(";
+      printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelDecl);
+      *OS << ") ";
       break;
     case Language::Vivado:
       *OS << "struct " << K->getKernelName() << "Kernel {\n";
@@ -2699,11 +2710,12 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       break;
   }
   if (!compilerOptions.emitFilterscript() &&
-      !compilerOptions.emitVivado()) {
+      !compilerOptions.emitVivado() &&
+      !compilerOptions.emitOpenCLFPGA()) {
     *OS << "void ";
   }
 
-  if (!compilerOptions.emitVivado()) {
+  if (!compilerOptions.emitVivado() && !compilerOptions.emitOpenCLFPGA()) {
     *OS << K->getKernelName();
     *OS << "(";
     printKernelArguments(D, KC, K, Policy, OS);
@@ -2772,6 +2784,48 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     }
     *OS << ");\n}\n";
   }
+
+  // print Altera OpenCL kernel
+  if (compilerOptions.emitOpenCLFPGA()) {
+    *OS << "\n\n";
+    *OS << "__kernel ";
+    *OS << "__attribute__((reqd_work_group_size(" << K->getNumThreadsX()
+        << ", " << K->getNumThreadsY() << ", 1))) ";
+    *OS << "void " << K->getKernelName() << "(";
+    printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
+    *OS << ") {\n";
+    printKernelArguments(D, KC, K, Policy, OS, Rewrite::CTorBody);
+    *OS << "    process(";
+    *OS << compilerOptions.getPixelsPerThread();
+    *OS << ", " << K->getVivadoAccessor()->getImage()->getTypeStr();
+    *OS << ", " << K->getIterationSpace()->getImage()->getTypeStr();
+    *OS << ", ";
+    printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
+    *OS << ", " << K->getIterationSpace()->getName();
+    *OS << ", " << K->getKernelName() << "Kernel";
+    *OS << ", ARRY, ARRY";
+    if (KC->getMaskFields().size() > 0) {
+      switch (vivadoBM) {
+        case clang::hipacc::Boundary::CLAMP:
+          *OS << ", CLAMP";
+          break;
+        case clang::hipacc::Boundary::MIRROR:
+          *OS << ", MIRROR";
+          break;
+        case clang::hipacc::Boundary::UNDEFINED:
+          *OS << ", UNDEFINED";
+          break;
+        case clang::hipacc::Boundary::CONSTANT:
+          *OS << ", CONSTANT";
+          break;
+        default:
+          assert(false && "Chosen BoundaryCondition not supported for Altera OpenCL");
+          break;
+      }
+    }
+    *OS << ");\n}\n";
+  }
+
   *OS << "\n";
 
   if (KC->getReduceFunction()) {
@@ -2794,7 +2848,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
 void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
     HipaccKernel *K, PrintingPolicy &Policy, llvm::raw_ostream *OS,
-    enum Rewrite::VivadoParam vivadoParam) {
+    enum Rewrite::PrintParam printParam) {
   // write kernel parameters
   bool hasMask = false;
   std::string maskSizeX;
@@ -2810,7 +2864,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
 
   // print output stream once for Vivado only
   if (compilerOptions.emitVivado() &&
-      vivadoParam == Rewrite::VivadoParam::Entry) {
+      printParam == Rewrite::PrintParam::Entry) {
     std::string typeStr =
       createVivadoTypeStr(K->getIterationSpace()->getImage(),
           compilerOptions.getPixelsPerThread());
@@ -2839,7 +2893,8 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
 
     std::string Name(param->getNameAsString());
     if (!K->getUsed(Name) &&
-        !compilerOptions.emitVivado()) {
+        !compilerOptions.emitVivado() &&
+        !compilerOptions.emitOpenCLFPGA()) {
       continue;
     }
 
@@ -2847,8 +2902,8 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
     HipaccMask *Mask = K->getMaskFromMapping(FD);
     if (Mask) {
       if (Mask->isConstant()) {
-        if (compilerOptions.emitVivado()) {
-          if (vivadoParam == Rewrite::VivadoParam::KernelDecl) {
+        if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
+          if (printParam == Rewrite::PrintParam::KernelDecl) {
             // Union of all mask/domain regions
             maskSizeX = max(maskSizeX, Mask->getSizeXStr());
             maskSizeY = max(maskSizeY, Mask->getSizeYStr());
@@ -2868,7 +2923,6 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           break;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
-        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           if (comma++) *OS << ", ";
           *OS << "__constant ";
@@ -2882,6 +2936,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         case Language::Filterscript:
           // mask/domain is declared as static memory
           break;
+        case Language::OpenCLFPGA:
         case Language::Vivado:
           assert(Mask->isConstant() && "Only constant mask are allowed for Vivado");
           break;
@@ -2920,7 +2975,6 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           break;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
-        case Language::OpenCLFPGA:
         case Language::OpenCLGPU:
           // __global keyword to specify memory location is only needed for OpenCL
           if (comma++) *OS << ", ";
@@ -2941,10 +2995,32 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         case Language::Renderscript:
         case Language::Filterscript:
           break;
+        case Language::OpenCLFPGA: {
+          switch (printParam) {
+            case Rewrite::PrintParam::KernelDecl:
+              if (!Acc->isIterationSpace()) {
+                accs.push_back( { Name, Acc->getImage()->getTypeStr() } );
+              }
+            break;
+            case Rewrite::PrintParam::Entry:
+              if (comma++) *OS << ", ";
+              *OS << "__global " << Acc->getImage()->getTypeStr() << "* " << Name;
+            break;
+            case Rewrite::PrintParam::KernelCall:
+              if (!Acc->isIterationSpace()) {
+                if (comma++) *OS << ", ";
+                *OS << Name;
+              }
+            default:
+              /* nothing to do */
+            break;
+          }
+        }
+        break;
         case Language::Vivado: {
           if (!Acc->isIterationSpace()) {
-            switch (vivadoParam) {
-              case Rewrite::VivadoParam::KernelDecl:
+            switch (printParam) {
+              case Rewrite::PrintParam::KernelDecl:
                 accs.push_back( {
                     Name,
                     (compilerOptions.getPixelsPerThread() > 1 || true /*vector type*/ ?
@@ -2952,13 +3028,13 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
                       createVivadoTypeStr(Acc->getImage(), 1))
                 } );
               break;
-              case Rewrite::VivadoParam::Entry:
+              case Rewrite::PrintParam::Entry:
                 if (comma++) *OS << ", ";
                 *OS << "hls::stream<" << createVivadoTypeStr(Acc->getImage(),
                     compilerOptions.getPixelsPerThread()) << " > &"
                     << Name;
               break;
-              case Rewrite::VivadoParam::KernelCall:
+              case Rewrite::PrintParam::KernelCall:
                 if (comma++) *OS << ", ";
                 *OS << Name;
                 assert((vivadoBM == Boundary::UNDEFINED || vivadoBM == Acc->getBoundaryMode()) &&
@@ -2976,7 +3052,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
       continue;
     }
 
-    if (compilerOptions.emitVivado()) {
+    if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
       bool dimParam = false;
 
       if (Name.compare("IS_width") == 0 ||
@@ -2989,21 +3065,25 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
       }
 
       // normal arguments
-      switch (vivadoParam) {
-        case Rewrite::VivadoParam::KernelCall:
-        case Rewrite::VivadoParam::KernelDecl:
+      switch (printParam) {
+        case Rewrite::PrintParam::KernelCall:
+        case Rewrite::PrintParam::KernelDecl:
           break;
-        case Rewrite::VivadoParam::Member:
+        case Rewrite::PrintParam::Member:
           if (dimParam) continue;
           T.getAsStringInternal(Name, Policy);
           *OS << "  " << Name << ";\n";
           break;
-        case Rewrite::VivadoParam::CTorBody:
+        case Rewrite::PrintParam::CTorBody:
           if (!dimParam) {
-            *OS << "    this->" << Name << " = " << Name << ";\n";
+            if (compilerOptions.emitVivado()) {
+              *OS << "    this->" << Name << " = " << Name << ";\n";
+            } else if (compilerOptions.emitOpenCLFPGA()) {
+              *OS << "    " << K->getKernelName() << "Var." << Name << " = " << Name << ";\n";
+            }
           }
           break;
-        case Rewrite::VivadoParam::KernelInit:
+        case Rewrite::PrintParam::KernelInit:
           if (dimParam) {
             continue;
           }
@@ -3011,11 +3091,11 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           else *OS << "(";
           *OS << Name;
           break;
-        case Rewrite::VivadoParam::CTorHead:
+        case Rewrite::PrintParam::CTorHead:
           if (dimParam) continue;
         default:
           if (!dimParam) {
-            if (vivadoParam == Rewrite::VivadoParam::Entry) {
+            if (printParam == Rewrite::PrintParam::Entry) {
               entryArguments[K->getKernelName()].push_back(
                 std::pair<std::string,std::string>(T.getAsString(), Name));
             }
@@ -3042,12 +3122,12 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
     }
   }
 
-  if (compilerOptions.emitVivado()) {
-    switch (vivadoParam) {
-      case Rewrite::VivadoParam::KernelInit:
+  if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
+    switch (printParam) {
+      case Rewrite::PrintParam::KernelInit:
         if (comma) *OS << ")";
         break;
-      case Rewrite::VivadoParam::KernelDecl:
+      case Rewrite::PrintParam::KernelDecl:
         for (auto it = accs.begin(); it != accs.end(); ++it) {
             if (comma++) *OS << ", ";
             if (hasMask) {

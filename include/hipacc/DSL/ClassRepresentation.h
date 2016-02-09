@@ -632,6 +632,10 @@ class HipaccKernel : public HipaccKernelFeatures {
     {
       switch (options.getTargetLang()) {
         default: break;
+        case Language::OpenCLFPGA:
+          // Put all Kernels in one and the same file
+          fileName = options.getTargetPrefix() + "FilterKernels";
+          break;
         case Language::Renderscript:
         case Language::Filterscript:
           // Renderscript and Filterscript compiler expects lowercase file names
@@ -783,7 +787,7 @@ class HipaccKernel : public HipaccKernelFeatures {
       return pixels_per_thread[GlobalOperator];
     }
 
-    HipaccMask *getVivadoWindow() {
+    HipaccMask *getLocalWindow() {
       if (maskMap.size() > 0) {
         // All masks must have same size, therefore it doesn't matter which one
         // we return.

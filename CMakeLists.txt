@@ -170,7 +170,7 @@ CONFIGURE_FILE(
 
 # install dsl and runtime header files
 FILE(GLOB dsl_headers "${CMAKE_CURRENT_SOURCE_DIR}/dsl/*.hpp")
-FILE(GLOB runtime_headers "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.hpp" "${HIPACC_BINARY_DIR}/runtime/*.hpp")
+FILE(GLOB runtime_headers "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.hpp" "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.clh" "${HIPACC_BINARY_DIR}/runtime/*.hpp")
 INSTALL(FILES ${runtime_headers} DESTINATION include)
 INSTALL(FILES ${dsl_headers} DESTINATION include/dsl)
 # install tests

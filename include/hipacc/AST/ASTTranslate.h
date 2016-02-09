@@ -93,7 +93,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     SmallVector<CompoundStmt *, 16> preCStmt, postCStmt;
     CompoundStmt *curCStmt;
     HipaccMask *convMask;
-    HipaccMask *vivadoWindow;
+    HipaccMask *localWindow;
     DeclRefExpr *convTmp;
     Reduce convMode;
     int convIdxX, convIdxY;
@@ -163,7 +163,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     void setCastPath(CastExpr *orig, CXXCastPath &castPath);
     void initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S);
     void initCUDA(SmallVector<Stmt *, 16> &kernelBody);
-    void initOpenCL(SmallVector<Stmt *, 16> &kernelBody);
+    void initOpenCL(SmallVector<Stmt *, 16> &kernelBody, Stmt *S);
     void initRenderscript(SmallVector<Stmt *, 16> &kernelBody);
     void updateTileVars();
     Expr *addCastToInt(Expr *E);
@@ -326,7 +326,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       literalCount(0),
       curCStmt(nullptr),
       convMask(nullptr),
-      vivadoWindow(nullptr),
+      localWindow(nullptr),
       convTmp(nullptr),
       convIdxX(0),
       convIdxY(0),

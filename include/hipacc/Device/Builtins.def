@@ -450,6 +450,7 @@ OPENCLBUILTIN(read_imageui,         "E4Uiv*UiE2i",  read_imageui)
 OPENCLBUILTIN(write_imagef,         "vv*E2iE4f",    write_imagef)
 OPENCLBUILTIN(write_imagei,         "vv*E2iE4i",    write_imagei)
 OPENCLBUILTIN(write_imageui,        "vv*E2iE4Ui",   write_imageui)
+OPENCLBUILTIN(getWindowAt,          "UiC*CUiUi",    getWindowAt)
 
 
 

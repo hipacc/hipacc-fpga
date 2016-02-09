@@ -106,6 +106,7 @@ void writeCLCompilation(std::string fileName, std::string kernel_name,
   resultStr += "true, false, false, \"-I " + includes + "\");\n";
 }
 
+
 void writeCLCompilationAltera(std::string fileName, std::string kernel_name,
     std::string includes, std::string &resultStr, std::string suffix="") {
   resultStr += "cl_kernel " + kernel_name + suffix;
@@ -505,7 +506,7 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
     resultStr += indent;
   }
 
-  if (!options.emitC99() && !options.emitVivado()) {
+  if (!options.emitC99() && !options.emitVivado() && !options.emitOpenCLFPGA()) {
     // hipacc_launch_info
     resultStr += "hipacc_launch_info " + infoStr + "(";
     resultStr += std::to_string(K->getMaxSizeX()) + ", ";

@@ -109,7 +109,7 @@ altera-emulate: opencl-fpga
 	@echo 'Compiling Host Code for Altera Emulation'
 	g++ -DALTERACL $(MYFLAGS) -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) -Wl,--no-as-needed $(shell aocl link-config) -lstdc++ -static-libstdc++ -o main_altera_em main.cc
 	echo 'Generate aocx for Altera Emulation'
-	aoc $(MYFLAGS) -v -march=emulator *.cl
+	aoc $(MYFLAGS) -I$(HIPACC_DIR)/include -v -march=emulator *.cl
 	@echo 'Emulate Generated Binaries'
 	CL_CONTEXT_EMULATOR_DEVICE_ALTERA=s5_ref $(ALTERA_RUN) ./main_altera_em
 
@@ -117,7 +117,7 @@ altera-compile: opencl-fpga
 	@echo 'Compiling Host Code for Target Architecture'
 	$(ECHO)$(ALTERA_CXX) -DALTERACL $(MYFLAGS) -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) main.cc $(shell aocl link-config) -static-libstdc++ -o ./main_altera_syn
 	@echo 'Generate aocx for Target Altera Device'
-	aoc $(MYFLAGS) -v --report *.cl
+	aoc $(MYFLAGS) -I$(HIPACC_DIR)/include -v --report *.cl
 
 filterscript renderscript:
 	rm -f *.rs *.fs
