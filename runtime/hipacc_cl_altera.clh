@@ -308,10 +308,10 @@ typedef struct{double16 s[16];}double256;
 /* ******************VECTORIZED PIPELINE FUNCTIONS********************************* */
 
 #define process(VECT_SIZE, INTYPE, OUTTYPE, SRC, DST, KERNEL, READTYPE, WRTTYPE, BORDER, ...) \
-    const uint vecWIDTH = ((WIDTH-1)/VECT_SIZE)+1; \
     const uint vecDELAY = ((DELAY-1)/VECT_SIZE)+1; \
     const uint vecSIZE  = ((SIZE-1)/VECT_SIZE)+1; \
     const uint Nvec = ((halfSIZE_X-1)/VECT_SIZE)+1;\
+    const uint vecWIDTH = ((WIDTH-1)/VECT_SIZE)+1-(1+Nvec); \
     const uint SlidingSIZE = halfSIZE_X+(1+Nvec)*VECT_SIZE+halfSIZE_X;\
     const uint SlidingCoordNewP = SlidingSIZE-halfSIZE_X-VECT_SIZE;\
     \
@@ -325,17 +325,13 @@ typedef struct{double16 s[16];}double256;
         /* Shift Row Buffers and Sliding Window */ \
         _Pragma("unroll") \
         for(uint j=0; j<SIZE_Y-1; ++j){ \
-            INTYPE ## VECT_SIZE newPixel = rows[j][vecWIDTH-1]; \
-            if(j != 0) rows[j-1][0] = newPixel;\
+            SLIDEWx_ ## BORDER(VECT_SIZE, INTYPE, wnd_sliding, rows[j][vecWIDTH-1], SlidingCoordNewP, j, x);\
             _Pragma("unroll") \
             for(uint i = vecWIDTH-1; i > 0; --i) rows[j][i] = rows[j][i - 1]; \
-            SLIDEWx_ ## BORDER(VECT_SIZE, INTYPE, wnd_sliding, newPixel, SlidingCoordNewP, j, x);\
+            rows[j][0] = *((INTYPE ## VECT_SIZE *)&wnd_sliding[j+1][halfSIZE_X]);\
         }\
         INTYPE ## VECT_SIZE newpixel; \
-        if (count < vecSIZE) { \
-            readPixelf ## READTYPE(VECT_SIZE, INTYPE, newpixel, SRC, count);\
-            rows[SIZE_Y-2][0] = newpixel; \
-        }\
+        if (count < vecSIZE)  readPixelf ## READTYPE(VECT_SIZE, INTYPE, newpixel, SRC, count);\
         SLIDEWx_ ## BORDER(VECT_SIZE, INTYPE ,wnd_sliding, newpixel, SlidingCoordNewP, SIZE_Y-1, x);\
         /* Warp pixel row coming from row buffer */ \
         WARPy_ ## BORDER(VECT_SIZE, wnd_sliding, rselect, SlidingCoordNewP, y_next, x); \
@@ -365,32 +361,3 @@ typedef struct{double16 s[16];}double256;
         } \
         ++count; \
     }
-
-
-
-
-//if( (x<=2 && x>=248) && y<1 ){ \
-//   printf("wnd_SLD = {y = %u x = %u}\n",y, x);\
-//   for (uint j = 0; j < SIZE_Y; ++j) { \
-//       for (uint i = 0; i < SlidingSIZE; ++i) { \
-//           printf("wndS[%u][%u]=%d\t",j,i, wnd_sliding[j][i]);\
-//       } \
-//       printf("\n");\
-//   } \
-//}\
-//
-//
-//
-//
-//
-//if( (x<=2 && x>=252) && y<1 ){ \
-//   printf("vi = %u\n", vi);\
-//   printf("bVECT_INDX = %u\n",bVECT_INDX);\
-//   printf("wnd_OUT = {y = %u x = %u}\n",y, x+vi);\
-//   for (uint j = 0; j < SIZE_Y; ++j) { \
-//       for (uint i = 0; i < SIZE_X; ++i) { \
-//           printf("wndO[%u][%u]=%d\t",j,i, wnd[j][i]);\
-//       } \
-//       printf("\n");\
-//   } \
-//}\
