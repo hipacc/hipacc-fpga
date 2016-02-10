@@ -4,237 +4,393 @@
 #define SIZE      (WIDTH*HEIGHT)
 #define DELAY     ((WIDTH*(SIZE_Y >> 1)) + (SIZE_X >> 1))
 
+#define halfSIZE_Y (SIZE_Y >> 1)
+#define halfSIZE_X (SIZE_X >> 1)
+
+
+/* ***************** ADDITIONAL DATA STRUCTURES **************************** */
+#define char1 char
+typedef struct{char16  s[2];}char32;
+typedef struct{char16  s[4];}char64;
+typedef struct{char16  s[8];}char128;
+typedef struct{char16 s[16];}char256;
+
+#define uchar1 uchar
+typedef struct{uchar16  s[2];}uchar32;
+typedef struct{uchar16  s[4];}uchar64;
+typedef struct{uchar16  s[8];}uchar128;
+typedef struct{uchar16 s[16];}uchar256;
+
+#define short1 short
+typedef struct{short16  s[2];}short32;
+typedef struct{short16  s[4];}short64;
+typedef struct{short16  s[8];}short128;
+typedef struct{short16 s[16];}short256;
+
+#define ushort1 ushort
+typedef struct{ushort16  s[2];}ushort32;
+typedef struct{ushort16  s[4];}ushort64;
+typedef struct{ushort16  s[8];}ushort128;
+typedef struct{ushort16 s[16];}ushort256;
+
+#define int1 int
+typedef struct{int16  s[2];}int32;
+typedef struct{int16  s[4];}int64;
+typedef struct{int16  s[8];}int128;
+typedef struct{int16 s[16];}int256;
+
+#define uint1 uint
+typedef struct{uint16  s[2];}uint32;
+typedef struct{uint16  s[4];}uint64;
+typedef struct{uint16  s[8];}uint128;
+typedef struct{uint16 s[16];}uint256;
+
+#define long1 long
+typedef struct{long16  s[2];}long32;
+typedef struct{long16  s[4];}long64;
+typedef struct{long16  s[8];}long128;
+typedef struct{long16 s[16];}long256;
+
+#define ulong1 ulong
+typedef struct{ulong16  s[2];}ulong32;
+typedef struct{ulong16  s[4];}ulong64;
+typedef struct{ulong16  s[8];}ulong128;
+typedef struct{ulong16 s[16];}ulong256;
+
+#define float1 float
+typedef struct{float16  s[2];}float32;
+typedef struct{float16  s[4];}float64;
+typedef struct{float16  s[8];}float128;
+typedef struct{float16 s[16];}float256;
+
+#define double1 double
+typedef struct{double16  s[2];}double32;
+typedef struct{double16  s[4];}double64;
+typedef struct{double16  s[8];}double128;
+typedef struct{double16 s[16];}double256;
+
+
+/* ********************** Tools for Kernel Code **************************** */
+#define createChannel(TYPE, NAME, DEPTH, VECT_SIZE) \
+            channel TYPE ## VECT_SIZE NAME __attribute__((depth(DEPTH)))
+
+
 #define getWindowAt(ARRAY, x, y) ARRAY[y][x]
 
-#define BORDER_UNDEF(wnd, x, y, i, j) \
-            wnd[j][i]
 
-#define BORDER_CLAMP(wnd, x, y, i, j) \
-            wnd[ \
-                (y + j < (SIZE_Y >> 1)) ? \
-                    (SIZE_Y >> 1) - y : \
-                    (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
-                        ((SIZE_Y >> 1) + ((HEIGHT-1)-y)) : j \
-            ][ \
-                (x + i < (SIZE_X >> 1)) ? \
-                    (SIZE_X >> 1) - x : \
-                    (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
-                        ((SIZE_X >> 1) + ((WIDTH-1)-x)) : i \
-            ]
+/* ******************** Boundary Conditions******************************** */
+/*********************************************************** Select OUTPUT */
+#define SELECT_OUT_UNDEFINED(DCbVECT_INDX, VECT_INDX, DCVECT_SIZE, wndOUT, wndIN, DCselectOUT, DCSlidingSIZE, DCy, DCx) \
+        _Pragma("unroll") for (uint j = 0; j < SIZE_Y; j++) { \
+            _Pragma("unroll") for (uint i = 0; i < SIZE_X; i++){ \
+                    wndOUT[j][i] = wndIN[j][VECT_INDX+i];\
+            }\
+        }
 
-#define BORDER_MIRROR(wnd, x, y, i, j) \
-            wnd[ \
-                (y + j < (SIZE_Y >> 1)) ? \
-                    (SIZE_Y - y - y - 2 - j) : \
-                    (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
-                        (SIZE_Y - y - y + HEIGHT + HEIGHT - 2 - j) : j \
-            ][ \
-                (x + i < (SIZE_X >> 1)) ? \
-                    (SIZE_X - x - x - 2 - i) : \
-                    (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
-                        (SIZE_X - x - x + WIDTH + WIDTH - 2 - i) : i \
-            ]
 
-#define BORDER_MIRROR_101(wnd, x, y, i, j) \
-            wnd[ \
-                (y + j < (SIZE_Y >> 1)) ? \
-                    (SIZE_Y - y - y - 1 - j) : \
-                    (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
-                        (SIZE_Y - y - y + HEIGHT + HEIGHT - 3 - j) : j \
-            ][ \
-                (x + i < (SIZE_X >> 1)) ? \
-                    (SIZE_X - x - x - 1 - i) : \
-                    (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
-                        (SIZE_X - x - x + WIDTH + WIDTH - 3 - i) : i \
-            ]
-
-#define BORDER_CONST(wnd, x, y, i, j, val) \
-            (y + j < (SIZE_Y >> 1)) ? \
-                val : \
-                (((HEIGHT-1)-y) + ((SIZE_Y-1)-j) < (SIZE_Y >> 1)) ? \
-                    val : \
-                    (x + i < (SIZE_X >> 1)) ? \
-                        val : \
-                        (((WIDTH-1)-x) + ((SIZE_X-1)-i) < (SIZE_X >> 1)) ? \
-                            val : wnd[j][i]
-
-#define processAA(INTYPE, OUTTYPE, INARRAY, OUTARRAY, KERNEL, BORDER, ...) \
-    INTYPE pixel; \
-    INTYPE rows[BUFFER]; \
-    INTYPE wnd[SIZE_Y][SIZE_X]; \
-    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
-    uint count = 0; \
-    uint x = 0; \
-    uint y = 0; \
-    while (count != SIZE+DELAY) { \
+#define SELECT_OUT_CONSTANT(bVECT_INDX, VECT_INDX, VECT_SIZE, wndOUT, wndIN, DCselectOUT, SlidingSIZE, y, x, constVar) \
+        bool selectOUT[SIZE_X][SIZE_Y];\
+        /* Initialize selection signals */ \
+        _Pragma("unroll")\
+        for(uint j=0; j< SIZE_Y; j++)\
+            _Pragma("unroll")\
+            for(uint i=0; i<SIZE_X; i++)\
+                selectOUT[j][i]=0;\
+        /* Update selection signals according to y */ \
+        _Pragma("unroll") for (uint j=0; j< halfSIZE_Y; j++){\
+            _Pragma("unroll") for(uint i=0; i<SIZE_X; i++){\
+                if(y<j+1)        selectOUT[halfSIZE_Y-1-j][i] = 1;\
+                if(y>HEIGHT-2-j) selectOUT[halfSIZE_Y+1+j][i] = 1;\
+            }\
+        }\
+        /* Update selection signals according to x */ \
+        _Pragma("unroll") for (uint i=0; i< halfSIZE_X; i++){\
+            _Pragma("unroll") for(uint j=0; j<SIZE_Y; j++){\
+                if(x+VECT_INDX<i+1) selectOUT[j][halfSIZE_X-1-i] = 1;\
+                if(x+VECT_INDX>WIDTH-2-i) selectOUT[j][halfSIZE_X+1+i] = 1;\
+            }\
+        }\
+        /* Select output data according to selection signals */ \
         _Pragma("unroll") \
-        for (uint i = BUFFER-1; i > 0; --i) { \
-            rows[i] = rows[i - 1]; \
-        } \
-        _Pragma("unroll") \
-        for (uint j = 0; j < SIZE_Y; ++j) { \
-            for (uint i = 0; i < SIZE_X-1; ++i) { \
-                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
-            } \
-            if (j < SIZE_Y-1) { \
-                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
-            } \
-        } \
-        if (count < SIZE) { \
-            pixel = INARRAY[count]; \
-            rows[0] = pixel; \
-            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
-        } \
-        if (count >= DELAY) { \
+        for (uint j = 0; j < SIZE_Y; j++) { \
             _Pragma("unroll") \
-            for (uint j = 0; j < SIZE_Y; ++j) { \
-                for (uint i = 0; i < SIZE_X; ++i) { \
-                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
-                } \
-            } \
-            OUTARRAY[count-DELAY] = KERNEL(wnd); \
-            ++x; \
-            if (x == WIDTH) { \
+            for (uint i = 0; i < SIZE_X; i++) { \
+                wndOUT[j][i] = selectOUT[j][i] ? constVar : wndIN[j][VECT_INDX+i];\
+            }\
+        }
+
+
+#define SELECT_OUT_CLAMP(bVECT_INDX, VECT_INDX, VECT_SIZE, wndOUT, wndIN, selectOUT, SlidingSIZE, DCy, DCx) \
+        _Pragma("unroll") for (uint j = 0; j < SIZE_Y; j++) { \
+            _Pragma("unroll") for (uint i = 0; i < SIZE_X; i++){ \
+                if( (halfSIZE_X > bVECT_INDX+VECT_SIZE-1-VECT_INDX) &&\
+                    (i > halfSIZE_X) &&\
+                    (i > SIZE_X-2-(halfSIZE_X-(bVECT_INDX+VECT_SIZE-VECT_INDX))) )\
+                    wndOUT[j][i] = selectOUT ? wndIN[j][SlidingSIZE-2*halfSIZE_X+i-1]\
+                                             : wndIN[j][VECT_INDX+i];\
+                else\
+                    wndOUT[j][i] = wndIN[j][VECT_INDX+i];\
+            }\
+        }
+
+
+#define SELECT_OUT_MIRROR(bVECT_INDX, VECT_INDX, VECT_SIZE, wndOUT, wndIN, selectOUT, SlidingSIZE, DCy, DCx) \
+        SELECT_OUT_CLAMP(bVECT_INDX, VECT_INDX, VECT_SIZE, wndOUT, wndIN, selectOUT, SlidingSIZE, DCy, DCx) \
+
+
+#define SELECT_OUT_MIRROR_101(bVECT_INDX, VECT_INDX, VECT_SIZE, wndOUT, wndIN, selectOUT, SlidingSIZE, DCy, DCx) \
+        SELECT_OUT_CLAMP(bVECT_INDX, VECT_INDX, VECT_SIZE, wndOUT, wndIN, selectOUT, SlidingSIZE, DCy, DCx) \
+
+
+/********************************** Warp pixel row coming from row buffer */
+#define WARPy_UNDEFINED(VECT_SIZE, wnd, rselect, SlidingCoordNewP, y, DCx)
+
+
+#define WARPy_CONSTANT(VECT_SIZE, wnd, rselect, SlidingCoordNewP, y, DCx)
+
+
+#define WARPy_CLAMP(VECT_SIZE, wnd, rselect, SlidingCoordNewP, y, DCx) \
+        _Pragma("unroll")  for (uint j=0; j< halfSIZE_Y; j++){\
+            _Pragma("unroll") for(uint i=0; i<VECT_SIZE; i++){\
+                if( y<=j )\
+                    wnd[halfSIZE_Y-1-j][SlidingCoordNewP+i] = wnd[halfSIZE_Y-j][SlidingCoordNewP+i];\
+                if( y>=HEIGHT-1-j )\
+                    wnd[halfSIZE_Y+1+j][SlidingCoordNewP+i] = wnd[halfSIZE_Y+j][SlidingCoordNewP+i];\
+            }\
+        }\
+        \
+        /* Right Boundary Condition */ \
+        if(!rselect){\
+            _Pragma("unroll") for(uint j=0; j<SIZE_Y; j++)\
+                _Pragma("unroll")\
+                for(int i=halfSIZE_X; (i>halfSIZE_X-VECT_SIZE && i>0); i--)\
+                    wnd[j][SlidingCoordNewP+VECT_SIZE+i-1] = wnd[j][SlidingCoordNewP+VECT_SIZE-1];\
+        }
+
+
+#define WARPy_MIRROR(VECT_SIZE, wnd, rselect, SlidingCoordNewP, y, DCx) \
+        _Pragma("unroll")  for (uint j=0; j< halfSIZE_Y; j++){\
+            _Pragma("unroll") for(uint jc=0; jc<halfSIZE_Y; jc++){\
+                _Pragma("unroll") for(uint i=0; i<VECT_SIZE; i++){\
+                    if(y==j && jc<halfSIZE_Y-j)\
+                        wnd[jc][SlidingCoordNewP+i] = wnd[SIZE_Y-2-2*j-jc][SlidingCoordNewP+i];\
+                    if(y==HEIGHT-1-j && jc<halfSIZE_Y-j)\
+                        wnd[SIZE_Y-1-jc][SlidingCoordNewP+i] = wnd[1+2*j+jc][SlidingCoordNewP+i];\
+                }\
+            }\
+        }\
+        \
+        /* Right Boundary Condition */ \
+        if(!rselect){\
+            _Pragma("unroll") for(uint j=0; j<SIZE_Y; j++){\
+                /* Shift right boundary pixels (Better Fanout) */ \
+                if(halfSIZE_X > VECT_SIZE){\
+                    _Pragma("unroll") for(uint i=0; i<halfSIZE_X-VECT_SIZE; i++)\
+                        wnd[j][SlidingCoordNewP+VECT_SIZE+i] = wnd[j][SlidingCoordNewP+VECT_SIZE+i+VECT_SIZE];\
+                }\
+                /* Store new pixels */ \
+                _Pragma("unroll")\
+                for(int i=halfSIZE_X; (i>halfSIZE_X-VECT_SIZE && i>0); i--)\
+                    wnd[j][SlidingCoordNewP+VECT_SIZE-1+i] = wnd[j][SlidingCoordNewP+VECT_SIZE-1-halfSIZE_X+i];\
+            }\
+        }
+
+
+#define WARPy_MIRROR_101(VECT_SIZE, wnd, rselect, SlidingCoordNewP, y, DCx) \
+        _Pragma("unroll")  for (uint j=0; j< halfSIZE_Y; j++){\
+            _Pragma("unroll") for(uint jc=0; jc<halfSIZE_Y; jc++){\
+                _Pragma("unroll") for(uint i=0; i<VECT_SIZE; i++){\
+                    if(y==j && jc<halfSIZE_Y-j)\
+                        wnd[jc][SlidingCoordNewP+i] = wnd[SIZE_Y-1-2*j-jc][SlidingCoordNewP+i];\
+                    if(y==HEIGHT-1-j && jc<halfSIZE_Y-j)\
+                        wnd[SIZE_Y-1-jc][SlidingCoordNewP+i] = wnd[2*j+jc][SlidingCoordNewP+i];\
+                }\
+            }\
+        }\
+        /* Left Boundary Condition 0th pixel */ \
+        if(x==0) for(uint j=0; j<SIZE_Y; j++)\
+            wnd[j][0] = wnd[j][SIZE_X-1];\
+        \
+        /* Right Boundary Condition */ \
+        if(!rselect){\
+            _Pragma("unroll") for(uint j=0; j<SIZE_Y; j++){\
+                /* Shift right boundary pixels (Better Fanout) */ \
+                if(halfSIZE_X > VECT_SIZE){\
+                    _Pragma("unroll") for(uint i=0; i<halfSIZE_X-VECT_SIZE; i++)\
+                        wnd[j][SlidingCoordNewP+VECT_SIZE+i] = wnd[j][SlidingCoordNewP+VECT_SIZE+i+VECT_SIZE];\
+                }\
+                /* Store new pixels */ \
+                _Pragma("unroll")\
+                for(int i=halfSIZE_X; (i>halfSIZE_X-VECT_SIZE && i>0); i--)\
+                    wnd[j][SlidingCoordNewP+VECT_SIZE-1+i] = wnd[j][SlidingCoordNewP+VECT_SIZE-2-halfSIZE_X+i];\
+            }\
+        }
+
+
+/*************************************************** Shift Sliding Window */
+#define SLIDEWx_UNDEFINED(VECT_SIZE, INTYPE, wnd, newPixel, SlidingCoordNewP, j, DCx)\
+        /* Shift old pixels */ \
+        _Pragma("unroll") for(uint i=0; i<SlidingCoordNewP; i++)\
+            wnd[j][i] = wnd[j][i+VECT_SIZE];\
+        /* Store new pixels */ \
+        _Pragma("unroll") for(uint i=0; i<VECT_SIZE; i++)\
+            wnd[j][SlidingCoordNewP+i] = ((INTYPE*)&newPixel)[i];
+
+
+#define SLIDEWx_CONSTANT(VECT_SIZE, INTYPE, wnd, newPixel, SlidingCoordNewP, j, DCx)\
+        SLIDEWx_UNDEFINED(VECT_SIZE, INTYPE, wnd, newPixel, SlidingCoordNewP, j, DCx)\
+
+#define SLIDEWx_CLAMP(VECT_SIZE, INTYPE, wnd, newPixel, SlidingCoordNewP, j, x)\
+        /* Shift old pixels */ \
+        _Pragma("unroll") for(uint i=0; i<SlidingCoordNewP; i++)\
+            wnd[j][i] = wnd[j][i+VECT_SIZE];\
+        /* Shift right boundary pixels (Better Fanout) */ \
+        if(halfSIZE_X > VECT_SIZE){\
+            _Pragma("unroll") for(uint i=0; i<halfSIZE_X-VECT_SIZE; i++)\
+                wnd[j][SlidingCoordNewP+VECT_SIZE+i] = wnd[j][SlidingCoordNewP+VECT_SIZE+i+VECT_SIZE];\
+        }\
+        /* Store new pixels */ \
+        _Pragma("unroll") for(uint i=0; i<VECT_SIZE; i++)\
+            wnd[j][SlidingCoordNewP+i] = ((INTYPE*)&newPixel)[i];\
+        /* Left Boundary Condition */ \
+        if(x==0){\
+            INTYPE bndPixel = wnd[j][halfSIZE_X];\
+            for(uint i=0; i<halfSIZE_X; i++) wnd[j][i] = bndPixel;\
+        }\
+
+
+#define SLIDEWx_MIRROR(VECT_SIZE, INTYPE, wnd, newPixel, SlidingCoordNewP, j, x)\
+        /* Shift old pixels */ \
+        _Pragma("unroll") for(uint i=0; i<SlidingCoordNewP; i++)\
+            wnd[j][i] = wnd[j][i+VECT_SIZE];\
+        /* Store new pixels */ \
+        _Pragma("unroll") for(uint i=0; i<VECT_SIZE; i++)\
+            wnd[j][SlidingCoordNewP+i] = ((INTYPE*)&newPixel)[i];\
+        /* Left Boundary Condition */ \
+        if(x==0){\
+            for(uint i=0; i<halfSIZE_X; i++) wnd[j][i] = wnd[j][SIZE_X-2-i];\
+        }\
+
+
+#define SLIDEWx_MIRROR_101(VECT_SIZE, INTYPE, wnd, newPixel, SlidingCoordNewP, j, x)\
+        /* Shift old pixels */ \
+        _Pragma("unroll") for(uint i=0; i<SlidingCoordNewP; i++)\
+            wnd[j][i] = wnd[j][i+VECT_SIZE];\
+        /* Store new pixels */ \
+        _Pragma("unroll") for(uint i=0; i<VECT_SIZE; i++)\
+            wnd[j][SlidingCoordNewP+i] = ((INTYPE*)&newPixel)[i];\
+        /* Left Boundary Condition */ \
+        if(x==0){\
+            for(uint i=0; i<halfSIZE_X; i++) wnd[j][i] = wnd[j][SIZE_X-1-i];\
+        }\
+
+
+/* ***********************PROCESS TYPES************************************* */
+#define readPixelfARRY(VECT_SIZE, INTYPE, outPIXEL, inARRAY, index) \
+            outPIXEL = ((__global INTYPE ## VECT_SIZE *)inARRAY)[index]; \
+
+
+#define readPixelfCHNNL(DCVECT_SIZE, DCINTYPE, outPIXEL, inCHANNEL, DCindex)\
+            outPIXEL = read_channel_altera(inCHANNEL); \
+            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+
+
+#define write2ARRY(VECT_SIZE, OUTTYPE, outARRAY, outPIXEL, index) \
+            ((__global OUTTYPE ## VECT_SIZE *)outARRAY)[index] = outPIXEL; \
+
+
+#define write2CHNNL(DCVECT_SIZE, DCOUTTYPE, outCHANNEL, outPIXEL, DCindex) \
+            write_channel_altera(outCHANNEL, outPIXEL); \
+            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
+
+
+
+/* ******************VECTORIZED PIPELINE FUNCTIONS********************************* */
+
+#define process(VECT_SIZE, INTYPE, OUTTYPE, SRC, DST, KERNEL, READTYPE, WRTTYPE, BORDER, ...) \
+    const uint vecWIDTH = ((WIDTH-1)/VECT_SIZE)+1; \
+    const uint vecDELAY = ((DELAY-1)/VECT_SIZE)+1; \
+    const uint vecSIZE  = ((SIZE-1)/VECT_SIZE)+1; \
+    const uint Nvec = ((halfSIZE_X-1)/VECT_SIZE)+1;\
+    const uint SlidingSIZE = halfSIZE_X+(1+Nvec)*VECT_SIZE+halfSIZE_X;\
+    const uint SlidingCoordNewP = SlidingSIZE-halfSIZE_X-VECT_SIZE;\
+    \
+    INTYPE ## VECT_SIZE rows[SIZE_Y-1][vecWIDTH];\
+    INTYPE wnd_sliding[SIZE_Y][SlidingSIZE]; \
+    uint count = 0; \
+    uint x = 0, y = 0, y_next = 0;\
+    bool rselect=0; \
+    uint bVECT_INDX = (Nvec-1)*VECT_SIZE;\
+    while (count != vecDELAY+vecSIZE) { \
+        /* Shift Row Buffers and Sliding Window */ \
+        _Pragma("unroll") \
+        for(uint j=0; j<SIZE_Y-1; ++j){ \
+            INTYPE ## VECT_SIZE newPixel = rows[j][vecWIDTH-1]; \
+            if(j != 0) rows[j-1][0] = newPixel;\
+            _Pragma("unroll") \
+            for(uint i = vecWIDTH-1; i > 0; --i) rows[j][i] = rows[j][i - 1]; \
+            SLIDEWx_ ## BORDER(VECT_SIZE, INTYPE, wnd_sliding, newPixel, SlidingCoordNewP, j, x);\
+        }\
+        INTYPE ## VECT_SIZE newpixel; \
+        if (count < vecSIZE) { \
+            readPixelf ## READTYPE(VECT_SIZE, INTYPE, newpixel, SRC, count);\
+            rows[SIZE_Y-2][0] = newpixel; \
+        }\
+        SLIDEWx_ ## BORDER(VECT_SIZE, INTYPE ,wnd_sliding, newpixel, SlidingCoordNewP, SIZE_Y-1, x);\
+        /* Warp pixel row coming from row buffer */ \
+        WARPy_ ## BORDER(VECT_SIZE, wnd_sliding, rselect, SlidingCoordNewP, y_next, x); \
+        /* Execute Kernel According to Boundary Conditions */ \
+        if (count >= vecDELAY) { \
+            OUTTYPE ## VECT_SIZE outPixel;\
+            _Pragma("unroll") for(int vi=0; vi<VECT_SIZE; vi++){\
+                INTYPE wnd[SIZE_Y][SIZE_X]; \
+                SELECT_OUT_ ## BORDER(bVECT_INDX, vi, VECT_SIZE, wnd, wnd_sliding, rselect, SlidingSIZE, y, x, ##__VA_ARGS__);\
+                ((OUTTYPE*)&outPixel)[vi] = KERNEL(wnd);\
+            }\
+            write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, outPixel, count-vecDELAY);\
+           \
+            x+=VECT_SIZE; \
+            const uint rflagCoord = halfSIZE_X>VECT_SIZE ? WIDTH-Nvec*VECT_SIZE : WIDTH-VECT_SIZE;\
+            if(x == rflagCoord){\
+                rselect=1;\
+                y_next++;\
+            }else if (x == WIDTH) { \
                 x = 0; \
-                ++y; \
-            } \
+                y = y_next; \
+                rselect = 0;\
+                bVECT_INDX = (Nvec-1) * VECT_SIZE;\
+            }else if(x > rflagCoord){\
+                bVECT_INDX-= VECT_SIZE;\
+            }\
         } \
         ++count; \
     }
 
-#define processAC(INTYPE, OUTTYPE, INARRAY, OUTCHAN, KERNEL, BORDER, ...) \
-    INTYPE pixel; \
-    INTYPE rows[BUFFER]; \
-    INTYPE wnd[SIZE_Y][SIZE_X]; \
-    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
-    uint count = 0; \
-    uint x = 0; \
-    uint y = 0; \
-    while (count != SIZE+DELAY) { \
-        _Pragma("unroll") \
-        for (uint i = BUFFER-1; i > 0; --i) { \
-            rows[i] = rows[i - 1]; \
-        } \
-        _Pragma("unroll") \
-        for (uint j = 0; j < SIZE_Y; ++j) { \
-            for (uint i = 0; i < SIZE_X-1; ++i) { \
-                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
-            } \
-            if (j < SIZE_Y-1) { \
-                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
-            } \
-        } \
-        if (count < SIZE) { \
-            pixel = INARRAY[count]; \
-            rows[0] = pixel; \
-            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
-        } \
-        if (count >= DELAY) { \
-            _Pragma("unroll") \
-            for (uint j = 0; j < SIZE_Y; ++j) { \
-                for (uint i = 0; i < SIZE_X; ++i) { \
-                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
-                } \
-            } \
-            write_channel_altera(OUTCHAN, KERNEL(wnd)); \
-            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
-            ++x; \
-            if (x == WIDTH) { \
-                x = 0; \
-                ++y; \
-            } \
-        } \
-        ++count; \
-    }
 
-#define processCA(INTYPE, OUTTYPE, INCHAN, OUTARRAY, KERNEL, BORDER, ...) \
-    INTYPE pixel; \
-    INTYPE rows[BUFFER]; \
-    INTYPE wnd[SIZE_Y][SIZE_X]; \
-    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
-    uint count = 0; \
-    uint x = 0; \
-    uint y = 0; \
-    while (count != SIZE+DELAY) { \
-        _Pragma("unroll") \
-        for (uint i = BUFFER-1; i > 0; --i) { \
-            rows[i] = rows[i - 1]; \
-        } \
-        _Pragma("unroll") \
-        for (uint j = 0; j < SIZE_Y; ++j) { \
-            for (uint i = 0; i < SIZE_X-1; ++i) { \
-                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
-            } \
-            if (j < SIZE_Y-1) { \
-                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
-            } \
-        } \
-        if (count < SIZE) { \
-            pixel = read_channel_altera(INCHAN); \
-            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
-            rows[0] = pixel; \
-            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
-        } \
-        if (count >= DELAY) { \
-            _Pragma("unroll") \
-            for (uint j = 0; j < SIZE_Y; ++j) { \
-                for (uint i = 0; i < SIZE_X; ++i) { \
-                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
-                } \
-            } \
-            OUTARRAY[count-DELAY] = KERNEL(wnd); \
-            ++x; \
-            if (x == WIDTH) { \
-                x = 0; \
-                ++y; \
-            } \
-        } \
-        ++count; \
-    }
 
-#define processCC(INTYPE, OUTTYPE, INCHAN, OUTCHAN, KERNEL, BORDER, ...) \
-    INTYPE pixel; \
-    INTYPE rows[BUFFER]; \
-    INTYPE wnd[SIZE_Y][SIZE_X]; \
-    INTYPE wnd_tmp[SIZE_Y][SIZE_X]; \
-    uint count = 0; \
-    uint x = 0; \
-    uint y = 0; \
-    while (count != SIZE+DELAY) { \
-        _Pragma("unroll") \
-        for (uint i = BUFFER-1; i > 0; --i) { \
-            rows[i] = rows[i - 1]; \
-        } \
-        _Pragma("unroll") \
-        for (uint j = 0; j < SIZE_Y; ++j) { \
-            for (uint i = 0; i < SIZE_X-1; ++i) { \
-                wnd_tmp[j][i] = wnd_tmp[j][i+1]; \
-            } \
-            if (j < SIZE_Y-1) { \
-                wnd_tmp[j][SIZE_X-1] = rows[(SIZE_Y-1-j) * WIDTH]; \
-            } \
-        } \
-        if (count < SIZE) { \
-            pixel = read_channel_altera(INCHAN); \
-            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
-            rows[0] = pixel; \
-            wnd_tmp[SIZE_Y-1][SIZE_X-1] = pixel; \
-        } \
-        if (count >= DELAY) { \
-            _Pragma("unroll") \
-            for (uint j = 0; j < SIZE_Y; ++j) { \
-                for (uint i = 0; i < SIZE_X; ++i) { \
-                    wnd[j][i] = BORDER(wnd_tmp, x, y, i, j, ##__VA_ARGS__); \
-                } \
-            } \
-            write_channel_altera(OUTCHAN, KERNEL(wnd)); \
-            mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
-            ++x; \
-            if (x == WIDTH) { \
-                x = 0; \
-                ++y; \
-            } \
-        } \
-        ++count; \
-    }
 
+//if( (x<=2 && x>=248) && y<1 ){ \
+//   printf("wnd_SLD = {y = %u x = %u}\n",y, x);\
+//   for (uint j = 0; j < SIZE_Y; ++j) { \
+//       for (uint i = 0; i < SlidingSIZE; ++i) { \
+//           printf("wndS[%u][%u]=%d\t",j,i, wnd_sliding[j][i]);\
+//       } \
+//       printf("\n");\
+//   } \
+//}\
+//
+//
+//
+//
+//
+//if( (x<=2 && x>=252) && y<1 ){ \
+//   printf("vi = %u\n", vi);\
+//   printf("bVECT_INDX = %u\n",bVECT_INDX);\
+//   printf("wnd_OUT = {y = %u x = %u}\n",y, x+vi);\
+//   for (uint j = 0; j < SIZE_Y; ++j) { \
+//       for (uint i = 0; i < SIZE_X; ++i) { \
+//           printf("wndO[%u][%u]=%d\t",j,i, wnd[j][i]);\
+//       } \
+//       printf("\n");\
+//   } \
+//}\
