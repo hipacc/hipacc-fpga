@@ -128,6 +128,21 @@ class CompilerKnownClasses {
 
       return TST->getArg(0).getAsType();
     }
+
+    bool isKnown(QualType QT) {
+      return isTypeOfTemplateClass(QT, Coordinate)
+        || isTypeOfTemplateClass(QT, Image)
+        || isTypeOfTemplateClass(QT, BoundaryCondition)
+        || isTypeOfTemplateClass(QT, AccessorBase)
+        || isTypeOfTemplateClass(QT, Accessor)
+        || isTypeOfTemplateClass(QT, IterationSpaceBase)
+        || isTypeOfTemplateClass(QT, IterationSpace)
+        || isTypeOfTemplateClass(QT, ElementIterator)
+        || isTypeOfTemplateClass(QT, Kernel)
+        || isTypeOfTemplateClass(QT, Mask)
+        || isTypeOfTemplateClass(QT, Domain)
+        || isTypeOfTemplateClass(QT, Pyramid);
+    }
 };
 } // namespace hipacc
 } // namespace clang

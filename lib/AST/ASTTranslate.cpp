@@ -1782,6 +1782,15 @@ Expr *ASTTranslate::VisitMemberExprTranslate(MemberExpr *E) {
       // mark parameter as being used within the kernel unless for Masks and
       // Domains
       Kernel->setUsed(VD->getName());
+
+      if (compilerOptions.emitOpenCLFPGA() && !compilerClasses.isKnown(VD->getType())) {
+        DeclContext *DC =
+          TranslationUnitDecl::castToDeclContext(Ctx.getTranslationUnitDecl());
+        IdentifierInfo &info = Ctx.Idents.get(Kernel->getKernelName() + "_" +
+          paramDecl->getNameAsString());
+        paramDecl = ParmVarDecl::Create(Ctx, DC, SourceLocation(),
+          SourceLocation(), &info, paramDecl->getType(), NULL, SC_None, NULL);
+      }
   }
 
   Expr *result = createDeclRefExpr(Ctx, paramDecl);

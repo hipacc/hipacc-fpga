@@ -45,6 +45,7 @@
 #include "hipacc/Analysis/KernelStatistics.h"
 #include "hipacc/AST/ASTNode.h"
 #include "hipacc/Config/CompilerOptions.h"
+#include "hipacc/DSL/CompilerKnownClasses.h"
 #include "hipacc/Device/Builtins.h"
 #include "hipacc/DSL/ClassRepresentation.h"
 #include "hipacc/Vectorization/SIMDTypes.h"
@@ -81,6 +82,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     HipaccKernelClass *KernelClass;
     hipacc::Builtin::Context &builtins;
     CompilerOptions &compilerOptions;
+    CompilerKnownClasses compilerClasses;
     TranslationMode astMode;
     SIMDTypes simdTypes;
     border_variant bh_variant;
@@ -311,7 +313,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
   public:
     ASTTranslate(ASTContext& Ctx, FunctionDecl *kernelDecl, HipaccKernel
         *kernel, HipaccKernelClass *kernelClass, hipacc::Builtin::Context
-        &builtins, CompilerOptions &options, bool emitEstimation=false) :
+        &builtins, CompilerOptions &options, CompilerKnownClasses &classes, bool emitEstimation=false) :
       Ctx(Ctx),
       Diags(Ctx.getDiagnostics()),
       kernelDecl(kernelDecl),
@@ -319,6 +321,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       KernelClass(kernelClass),
       builtins(builtins),
       compilerOptions(options),
+      compilerClasses(classes),
       astMode(TranslateAST),
       simdTypes(SIMDTypes(Ctx, builtins, options)),
       bh_variant(),
