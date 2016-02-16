@@ -1412,7 +1412,7 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           // write CUDA/OpenCL kernel function to file clone old body,
           // replacing member variables
           ASTTranslate *Hipacc = new ASTTranslate(Context, kernelDecl, K, KC,
-              builtins, compilerOptions);
+              builtins, compilerOptions, compilerClasses);
           Stmt *kernelStmts =
             Hipacc->Hipacc(KC->getKernelFunction()->getBody());
           kernelDecl->setBody(kernelStmts);
@@ -2022,7 +2022,7 @@ void Rewrite::setKernelConfiguration(HipaccKernelClass *KC, HipaccKernel *K) {
 
   // create kernel body
   ASTTranslate *HipaccEst = new ASTTranslate(Context, kernelDeclEst, K, KC,
-      builtins, compilerOptions, true);
+      builtins, compilerOptions, compilerClasses, true);
   Stmt *kernelStmtsEst = HipaccEst->Hipacc(KC->getKernelFunction()->getBody());
   kernelDeclEst->setBody(kernelStmtsEst);
 
@@ -2681,9 +2681,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       }
       break;
     case Language::OpenCLFPGA:
-      *OS << "__global struct {\n";
       printKernelArguments(D, KC, K, Policy, OS, Rewrite::Member);
-      *OS << "} " << K->getKernelName() << "Var;\n\n";
       *OS << createVivadoTypeStr(K->getIterationSpace()->getImage(), 1);
       *OS << " " << K->getKernelName() << "Kernel(";
       printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelDecl);
@@ -3071,15 +3069,20 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
           break;
         case Rewrite::PrintParam::Member:
           if (dimParam) continue;
-          T.getAsStringInternal(Name, Policy);
-          *OS << "  " << Name << ";\n";
+          if (compilerOptions.emitVivado()) {
+            T.getAsStringInternal(Name, Policy);
+            *OS << "  " << Name << ";\n";
+          } else if (compilerOptions.emitOpenCLFPGA()) {
+            *OS << "__global " + T.getAsString() + " ";
+            *OS << K->getKernelName() + "_" << Name << ";\n";
+          }
           break;
         case Rewrite::PrintParam::CTorBody:
           if (!dimParam) {
             if (compilerOptions.emitVivado()) {
               *OS << "    this->" << Name << " = " << Name << ";\n";
             } else if (compilerOptions.emitOpenCLFPGA()) {
-              *OS << "    " << K->getKernelName() << "Var." << Name << " = " << Name << ";\n";
+              *OS << "    " << K->getKernelName() << "_" << Name << " = " << Name << ";\n";
             }
           }
           break;
