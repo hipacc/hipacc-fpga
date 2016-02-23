@@ -3004,7 +3004,11 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
             break;
             case Rewrite::PrintParam::Entry:
               if (comma++) *OS << ", ";
-              *OS << "__global " << Acc->getImage()->getTypeStr() << "* " << Name;
+              *OS << "__global ";
+              if (mem_acc==READ_ONLY) *OS << "const ";
+              *OS << Acc->getImage()->getTypeStr();
+              *OS << " * restrict ";
+              *OS << Name;
             break;
             case Rewrite::PrintParam::KernelCall:
               if (!Acc->isIterationSpace()) {
