@@ -153,7 +153,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
         PrintingPolicy Policy, llvm::raw_ostream *OS);
     void printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         HipaccKernel *K, std::string file, bool emitHints);
-    void createVivadoEntry();
+    void createFPGAEntry();
 
     enum PrintParam {
       None = 0,
@@ -1442,11 +1442,19 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
 }
 
 
-void Rewrite::createVivadoEntry() {
+void Rewrite::createFPGAEntry() {
   llvm::raw_ostream *OS = &llvm::errs();
   std::ostringstream file;
-  file << "hipacc_run.cc";
+  std::string extension;
   int fd;
+
+  if (compilerOptions.emitOpenCLFPGA()) {
+    extension = ".cl";
+  } else {
+    extension = ".cc";
+  }
+
+  file << "hipacc_run" << extension;
 
   while ((fd = open(file.str().c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0664)) < 0) {
     if (errno != EINTR) {
@@ -1471,14 +1479,21 @@ void Rewrite::createVivadoEntry() {
   *OS << "#define HIPACC_II_TARGET     " << compilerOptions.getTargetII() << "\n";
   *OS << "#define HIPACC_PPT           " << compilerOptions.getPixelsPerThread() << "\n";
   *OS << "\n";
-  *OS << "#include \"hipacc_vivado_types.hpp\"\n";
-  *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
-
-  for (auto it=KernelDeclMap.begin(), ei=KernelDeclMap.end(); it!=ei; ++it) {
-    *OS << "#include \"" << it->second->getFileName() << ".cc\"\n";
+  if (compilerOptions.emitVivado()) {
+    *OS << "#include \"hipacc_vivado_types.hpp\"\n";
+    *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
+  } else if (compilerOptions.emitOpenCLFPGA()) {
+    *OS << "#include \"hipacc_cl_altera.clh\"\n\n";
+    *OS << "\n" << dataDeps->printFifoDecls("") << "\n\n";
   }
 
-  *OS << "\n" << dataDeps->printEntryDef(entryArguments) << "\n";
+  for (auto it=KernelDeclMap.begin(), ei=KernelDeclMap.end(); it!=ei; ++it) {
+    *OS << "#include \"" << it->second->getFileName() << extension << "\"\n";
+  }
+
+  if (compilerOptions.emitVivado()) {
+    *OS << "\n" << dataDeps->printEntryDef(entryArguments) << "\n";
+  }
 
   OS->flush();
   fsync(fd);
@@ -1492,7 +1507,7 @@ bool Rewrite::VisitFunctionDecl(FunctionDecl *D) {
     assert(isa<CompoundStmt>(D->getBody()) && "CompoundStmt for main body expected.");
     mainFD = D;
 
-    if (compilerOptions.emitVivado()) {
+    if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
       AnalysisDeclContext AC(0, mainFD);
       dataDeps = HostDataDeps::parse(Context, AC, compilerClasses,
           compilerOptions);
@@ -2386,9 +2401,6 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
   // preprocessor defines
   switch (compilerOptions.getTargetLang()) {
     default: break;
-    case Language::OpenCLFPGA:
-      *OS << "#include \"hipacc_cl_altera.clh\"\n\n";
-      break;
     case Language::CUDA:
       *OS << "#include \"hipacc_types.hpp\"\n"
           << "#include \"hipacc_math_functions.hpp\"\n\n";
@@ -2838,8 +2850,8 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     close(fd);
   }
 
-  if (compilerOptions.emitVivado()) {
-    createVivadoEntry();
+  if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
+    createFPGAEntry();
   }
 }
 

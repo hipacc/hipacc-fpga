@@ -632,10 +632,6 @@ class HipaccKernel : public HipaccKernelFeatures {
     {
       switch (options.getTargetLang()) {
         default: break;
-        case Language::OpenCLFPGA:
-          // Put all Kernels in one and the same file
-          fileName = options.getTargetPrefix() + "FilterKernels";
-          break;
         case Language::Renderscript:
         case Language::Filterscript:
           // Renderscript and Filterscript compiler expects lowercase file names

@@ -149,16 +149,18 @@ void CreateHostStrings::writeKernelCompilation(HipaccKernel *K,
             device.getCLIncludes(), resultStr, "1D");
       }
       break;
-    case Language::OpenCLFPGA:
-      writeCLCompilationAltera(K->getFileName(), K->getKernelName(),
-          device.getCLIncludes(), resultStr);
-      if (K->getKernelClass()->getReduceFunction()) {
-        resultStr += indent;
-        writeCLCompilationAltera(K->getFileName(), K->getReduceName(),
-            device.getCLIncludes(), resultStr, "2D");
-        resultStr += indent;
-        writeCLCompilationAltera(K->getFileName(), K->getReduceName(),
-            device.getCLIncludes(), resultStr, "1D");
+    case Language::OpenCLFPGA: {
+        std::string fileName("hipacc_run.cl");
+        writeCLCompilationAltera(fileName, K->getKernelName(),
+            device.getCLIncludes(), resultStr);
+        if (K->getKernelClass()->getReduceFunction()) {
+          resultStr += indent;
+          writeCLCompilationAltera(fileName, K->getReduceName(),
+              device.getCLIncludes(), resultStr, "2D");
+          resultStr += indent;
+          writeCLCompilationAltera(fileName, K->getReduceName(),
+              device.getCLIncludes(), resultStr, "1D");
+        }
       }
       break;
   }

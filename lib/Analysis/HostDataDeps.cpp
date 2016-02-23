@@ -626,6 +626,47 @@ std::string HostDataDeps::getEntrySignature(
   return retVal.str();
 }
 
+std::string HostDataDeps::declareFifo(std::string type, std::string name) {
+  std::ostringstream retVal;
+
+  switch (compilerOptions.getTargetLang()) {
+    case Language::Vivado:
+      retVal << "hls::stream<" << type << " > " << name << std::endl;
+      break;
+    case Language::OpenCLFPGA:
+      retVal << "createChannel(" << type << ", " << name << ")" << std::endl;
+      break;
+    default:
+      assert(false && "Language type not supported");
+      break;
+  }
+
+  return retVal.str();
+}
+
+std::string HostDataDeps::printFifoDecls(std::string indent) {
+  std::ostringstream retVal;
+
+  for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
+    if ((*it)->isSpace()) {
+      Space *s = (Space*)*it;
+      if (s->cpyStreams.size() > 0) {
+        for (auto it2 = s->cpyStreams.begin();
+                  it2 != s->cpyStreams.end(); ++it2) {
+          retVal << indent << declareFifo(getTypeStr(s), *it2);
+        }
+      }
+    } else {
+      Process *t = (Process*)*it;
+      if (!t->getOutSpace()->getDstProcesses().empty()) {
+        // do not print out stream (because it is function argument)
+        retVal << indent << declareFifo(getTypeStr(t->getOutSpace()), t->outStream);
+      }
+    }
+  }
+
+  return retVal.str();
+}
 
 std::string HostDataDeps::prettyPrint(
     std::map<std::string,std::vector<std::pair<std::string,std::string>>> args,
@@ -645,8 +686,7 @@ std::string HostDataDeps::prettyPrint(
       if (s->cpyStreams.size() > 0) {
         for (auto it2 = s->cpyStreams.begin();
                   it2 != s->cpyStreams.end(); ++it2) {
-          retVal << indent << "hls::stream<" << getTypeStr(s) << " > " << *it2 << ";"
-                 << std::endl;
+          retVal << indent << declareFifo(getTypeStr(s), *it2);
         }
 #define NICO_LIB
 #ifdef NICO_LIB
@@ -698,9 +738,7 @@ std::string HostDataDeps::prettyPrint(
       Process *t = (Process*)*it;
       if (!t->getOutSpace()->getDstProcesses().empty()) {
         // do not print out stream (because it is function argument)
-        retVal << indent << "hls::stream<"
-               << getTypeStr(t->getOutSpace()) << " > " << t->outStream << ";"
-               << std::endl;
+        retVal << indent << declareFifo(getTypeStr(t->getOutSpace()), t->outStream);
       }
       retVal << indent << "cc" << t->getKernel()->getName() << "Kernel(";
       retVal << t->outStream;

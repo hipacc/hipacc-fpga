@@ -391,6 +391,7 @@ class HostDataDeps : public ManagedAnalysis {
     void markProcess(Process *t);
     void markSpace(Space *s);
     void createSchedule();
+    std::string declareFifo(std::string type, std::string name);
     std::string getEntrySignature(
         std::map<std::string,std::vector<std::pair<std::string,std::string>>> args,
         bool withTypes=false);
@@ -402,6 +403,7 @@ class HostDataDeps : public ManagedAnalysis {
     }
 
   public:
+    std::string printFifoDecls(std::string indent);
     std::string printEntryDecl(
         std::map<std::string,std::vector<std::pair<std::string,std::string>>> args);
     std::string printEntryCall(
