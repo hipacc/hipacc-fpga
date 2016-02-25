@@ -36,6 +36,7 @@
 
 #include <clang/Frontend/FrontendAction.h>
 
+
 namespace clang {
 namespace hipacc {
 class CompilerOptions;

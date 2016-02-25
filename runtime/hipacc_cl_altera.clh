@@ -302,7 +302,7 @@ typedef struct{double16 s[16];}double256;
 
 /* ******************VECTORIZED PIPELINE FUNCTIONS********************************* */
 
-#define process(VECT_SIZE, INTYPE, OUTTYPE, SRC, DST, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, READTYPE, WRTTYPE, BORDER, ...) \
+#define process(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, BORDER, ...) \
     const int __SIZE_X = KRNL_SIZE_X;\
     const int __SIZE_Y = KRNL_SIZE_Y;\
     const int __WIDTH  = IM_WIDTH;\
@@ -375,7 +375,7 @@ typedef struct{double16 s[16];}double256;
 
 /* **********VECTORIZED PIPELINE FUNCTION with SMALL ROW BUFFER************** */
 
-#define processB(VECT_SIZE, INTYPE, OUTTYPE, SRC, DST, IM_WIDTH, IM_HEIGHT, KERNEL, FILT_SIZE_X, FILT_SIZE_Y, READTYPE, WRTTYPE, BORDER, ...) \
+#define processB(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, IM_WIDTH, IM_HEIGHT, KERNEL, FILT_SIZE_X, FILT_SIZE_Y, BORDER, ...) \
     const int __SIZE_X = FILT_SIZE_X;\
     const int __SIZE_Y = FILT_SIZE_Y;\
     const int __WIDTH  = IM_WIDTH;\

@@ -514,14 +514,17 @@ std::vector<HostDataDeps::Space*> HostDataDeps::getOutputSpaces() {
 
 std::string HostDataDeps::createStream(Space *s) {
   std::string stream;
-
   if (s->getSrcProcess() == nullptr && s->stream.empty()) {
-    stream = "_strm" + s->getImage()->getName();
+    if (compilerOptions.emitVivado()) {
+      stream = "_strm" + s->getImage()->getName();
+    }
   } else if (s->getDstProcesses().empty()) {
-    std::ostringstream var;
-    var << "_strmOut" << outId;
-    ++outId;
-    stream = var.str();
+    if (compilerOptions.emitVivado()) {
+      std::ostringstream var;
+      var << "_strmOut" << outId;
+      ++outId;
+      stream = var.str();
+    }
   } else {
     std::ostringstream var;
     var << "_strmTmp" << tmpId;
@@ -666,6 +669,44 @@ std::string HostDataDeps::printFifoDecls(std::string indent) {
   }
 
   return retVal.str();
+}
+
+std::string HostDataDeps::getIOstreamsForKernel(std::string &IOType, std::string kernelName,
+                                                std::string imageName) {
+  std::ostringstream retVal;
+  for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
+    if ((*it)->isSpace()) {
+    } else {
+      Process *t = (Process*)*it;
+      if ( kernelName.compare(2, kernelName.size()-2, t->getKernel()->getName()) ==0 ) {
+        if( imageName.compare(t->getKernel()->getIterationSpace()->getImage()->getName()) == 0 ){
+          if( t->outStream.empty() ){
+            IOType = ", ARRY";
+            return imageName;
+          }else{
+            IOType = ", CHNNL";
+            return t->outStream;
+          }
+        }
+        std::vector<Space*> spaces = t->getInSpaces();
+        for (auto it2 = spaces.begin(); it2 != spaces.end(); ++it2) {
+          Space *s = *it2;
+          if( imageName.compare(s->getImage()->getName()) == 0 ){
+            if( t->inStreams.begin()->empty() ){
+              IOType = ", ARRY";
+              return imageName;
+            }else{
+              if ( it2 == std::prev(spaces.end()) ) IOType = ", CHNNL";
+              else IOType = "";
+              return s->stream;
+            }
+          }
+        }
+      }
+    }
+  }
+  std::cerr<< "Problem with Streaming!" <<std::endl;
+  exit(EXIT_FAILURE);
 }
 
 std::string HostDataDeps::prettyPrint(

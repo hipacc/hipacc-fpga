@@ -1473,16 +1473,17 @@ void Rewrite::createFPGAEntry() {
   OS = new llvm::raw_fd_ostream(fd, false);
   *OS << "#define HIPACC_MAX_WIDTH     " << maxImageWidth << "\n";
   *OS << "#define HIPACC_MAX_HEIGHT    " << maxImageHeight << "\n";
-  *OS << "#define HIPACC_WINDOW_SIZE_X " << maxWindowSizeX << "\n";
-  *OS << "#define HIPACC_WINDOW_SIZE_Y " << maxWindowSizeY << "\n";
-  *OS << "#define BORDER_FILL_VALUE    0\n";
-  *OS << "#define HIPACC_II_TARGET     " << compilerOptions.getTargetII() << "\n";
-  *OS << "#define HIPACC_PPT           " << compilerOptions.getPixelsPerThread() << "\n";
-  *OS << "\n";
   if (compilerOptions.emitVivado()) {
+    *OS << "#define HIPACC_WINDOW_SIZE_X " << maxWindowSizeX << "\n";
+    *OS << "#define HIPACC_WINDOW_SIZE_Y " << maxWindowSizeY << "\n";
+    *OS << "#define BORDER_FILL_VALUE    0\n";
+    *OS << "#define HIPACC_II_TARGET     " << compilerOptions.getTargetII() << "\n";
+    *OS << "#define HIPACC_PPT           " << compilerOptions.getPixelsPerThread() << "\n";
+    *OS << "\n";
     *OS << "#include \"hipacc_vivado_types.hpp\"\n";
     *OS << "#include \"hipacc_vivado_filter.hpp\"\n\n";
   } else if (compilerOptions.emitOpenCLFPGA()) {
+    *OS << "\n";
     *OS << "#include \"hipacc_cl_altera.clh\"\n\n";
     *OS << "\n" << dataDeps->printFifoDecls("") << "\n\n";
   }
@@ -2800,20 +2801,19 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     *OS << "\n\n";
     *OS << "__kernel ";
     *OS << "__attribute__((reqd_work_group_size(" << K->getNumThreadsX()
-        << ", " << K->getNumThreadsY() << ", 1))) ";
+        << ", " << K->getNumThreadsY() << ", 1)))\n ";
     *OS << "void " << K->getKernelName() << "(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
     *OS << ") {\n";
-    printKernelArguments(D, KC, K, Policy, OS, Rewrite::CTorBody);
     *OS << "    process(";
     *OS << compilerOptions.getPixelsPerThread();
     *OS << ", " << K->getVivadoAccessor()->getImage()->getTypeStr();
     *OS << ", " << K->getIterationSpace()->getImage()->getTypeStr();
-    *OS << ", ";
+    *OS << ", HIPACC_MAX_WIDTH, HIPACC_MAX_HEIGHT, ";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
-    *OS << ", " << K->getIterationSpace()->getName();
     *OS << ", " << K->getKernelName() << "Kernel";
-    *OS << ", ARRY, ARRY";
+    *OS << ", " << K->getLocalWindow()->getSizeX();
+    *OS << ", " << K->getLocalWindow()->getSizeY();
     if (KC->getMaskFields().size() > 0) {
       switch (vivadoBM) {
         case clang::hipacc::Boundary::CLAMP:
@@ -2826,7 +2826,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
           *OS << ", UNDEFINED";
           break;
         case clang::hipacc::Boundary::CONSTANT:
-          *OS << ", CONSTANT";
+          *OS << ", CONSTANT, 0";
           break;
         default:
           assert(false && "Chosen BoundaryCondition not supported for Altera OpenCL");
@@ -3006,6 +3006,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         case Language::Filterscript:
           break;
         case Language::OpenCLFPGA: {
+          std::string IOType;
           switch (printParam) {
             case Rewrite::PrintParam::KernelDecl:
               if (!Acc->isIterationSpace()) {
@@ -3018,13 +3019,14 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
               if (mem_acc==READ_ONLY) *OS << "const ";
               *OS << Acc->getImage()->getTypeStr();
               *OS << " * restrict ";
-              *OS << Name;
+              *OS << dataDeps->getIOstreamsForKernel(IOType ,K->getFileName(),
+                                                    Acc->getImage()->getName());
             break;
             case Rewrite::PrintParam::KernelCall:
-              if (!Acc->isIterationSpace()) {
-                if (comma++) *OS << ", ";
-                *OS << Name;
-              }
+              if (comma++) *OS << ", ";
+              *OS << dataDeps->getIOstreamsForKernel(IOType ,K->getFileName(),
+                                                  Acc->getImage()->getName());
+              *OS << IOType;
             default:
               /* nothing to do */
             break;
