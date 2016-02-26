@@ -710,7 +710,8 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
         std::string width_str  = convertToString(CCE->getArg(0));
         std::string height_str = convertToString(CCE->getArg(1));
 
-        if (compilerOptions.emitC99() || compilerOptions.emitVivado()) {
+        if (compilerOptions.emitC99() || compilerOptions.emitVivado() 
+                                      || compilerOptions.emitOpenCLFPGA()) {
           // check if the parameter can be resolved to a constant
           unsigned IDConstant = Diags.getCustomDiagID(DiagnosticsEngine::Error,
                 "Constant expression for %0 argument of Image %1 required (C/C++ only).");
