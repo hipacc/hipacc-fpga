@@ -370,7 +370,7 @@ int main(int argc, const char **argv) {
 #endif
 
     //free(host_in);
-    free(host_out);
+    //free(host_out);
 
     return EXIT_SUCCESS;
 }
