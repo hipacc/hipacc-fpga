@@ -637,7 +637,7 @@ std::string HostDataDeps::declareFifo(std::string type, std::string name) {
       retVal << "hls::stream<" << type << " > " << name << std::endl;
       break;
     case Language::OpenCLFPGA:
-      retVal << "createChannel(" << type << ", " << name << ")" << std::endl;
+      retVal << "createChannel(" << type << ", " << name << ", 1, 1);" << std::endl;
       break;
     default:
       assert(false && "Language type not supported");
@@ -671,7 +671,8 @@ std::string HostDataDeps::printFifoDecls(std::string indent) {
   return retVal.str();
 }
 
-std::string HostDataDeps::getIOstreamsForKernel(std::string &IOType, std::string kernelName,
+// Returns 0 if IO is stream 
+bool HostDataDeps::getIOstreamsForKernel(std::string &IOName, std::string kernelName,
                                                 std::string imageName) {
   std::ostringstream retVal;
   for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
@@ -681,11 +682,11 @@ std::string HostDataDeps::getIOstreamsForKernel(std::string &IOType, std::string
       if ( kernelName.compare(2, kernelName.size()-2, t->getKernel()->getName()) ==0 ) {
         if( imageName.compare(t->getKernel()->getIterationSpace()->getImage()->getName()) == 0 ){
           if( t->outStream.empty() ){
-            IOType = ", ARRY";
-            return imageName;
+            IOName = imageName;
+            return true;
           }else{
-            IOType = ", CHNNL";
-            return t->outStream;
+            IOName = t->outStream;
+            return false;
           }
         }
         std::vector<Space*> spaces = t->getInSpaces();
@@ -693,12 +694,11 @@ std::string HostDataDeps::getIOstreamsForKernel(std::string &IOType, std::string
           Space *s = *it2;
           if( imageName.compare(s->getImage()->getName()) == 0 ){
             if( t->inStreams.begin()->empty() ){
-              IOType = ", ARRY";
-              return imageName;
+              IOName = imageName;
+              return true;
             }else{
-              if ( it2 == std::prev(spaces.end()) ) IOType = ", CHNNL";
-              else IOType = "";
-              return s->stream;
+              IOName = s->stream;
+              return false;
             }
           }
         }

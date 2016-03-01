@@ -2806,12 +2806,23 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     *OS << "void " << K->getKernelName() << "(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
     *OS << ") {\n";
-    *OS << "    process(";
+    unsigned numberOfIn = K->getNumberofAccessors();
+      std::cerr<< "numberofIn =" << numberOfIn <<std::endl;
+    if( numberOfIn<2  ){
+      *OS << "    process(";
+    }else if( numberOfIn==2 ){
+      *OS << "    process2to1(";
+    }else{
+      std::cerr<< "Kernels more than 2 input images are not supported yet!" <<std::endl;
+      //exit(EXIT_FAILURE);
+      *OS << "    process2to1(";
+    }
     *OS << compilerOptions.getPixelsPerThread();
-    *OS << ", " << K->getVivadoAccessor()->getImage()->getTypeStr();
     *OS << ", " << K->getIterationSpace()->getImage()->getTypeStr();
-    *OS << ", HIPACC_MAX_WIDTH, HIPACC_MAX_HEIGHT, ";
+    *OS << ", " << K->getVivadoAccessor()->getImage()->getTypeStr();
+    *OS << ", ";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
+    *OS << ", HIPACC_MAX_WIDTH, HIPACC_MAX_HEIGHT";
     *OS << ", " << K->getKernelName() << "Kernel";
     *OS << ", " << K->getLocalWindow()->getSizeX();
     *OS << ", " << K->getLocalWindow()->getSizeY();
@@ -3007,7 +3018,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         case Language::Filterscript:
           break;
         case Language::OpenCLFPGA: {
-          std::string IOType;
+          std::string IOName;
           switch (printParam) {
             case Rewrite::PrintParam::KernelDecl:
               if (!Acc->isIterationSpace()) {
@@ -3015,19 +3026,28 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
               }
             break;
             case Rewrite::PrintParam::Entry:
-              if (comma++) *OS << ", ";
-              *OS << "__global ";
-              if (mem_acc==READ_ONLY) *OS << "const ";
-              *OS << Acc->getImage()->getTypeStr();
-              *OS << " * restrict ";
-              *OS << dataDeps->getIOstreamsForKernel(IOType ,K->getFileName(),
-                                                    Acc->getImage()->getName());
+              if ( dataDeps->getIOstreamsForKernel(IOName ,K->getFileName(),
+                                        Acc->getImage()->getName()) == true ){
+                if (comma++) *OS << ", ";
+                *OS << "__global ";
+                if (mem_acc==READ_ONLY) *OS << "const ";
+                *OS << Acc->getImage()->getTypeStr();
+                *OS << " * restrict ";
+                *OS << IOName; 
+              }
             break;
             case Rewrite::PrintParam::KernelCall:
               if (comma++) *OS << ", ";
-              *OS << dataDeps->getIOstreamsForKernel(IOType ,K->getFileName(),
-                                                  Acc->getImage()->getName());
-              *OS << IOType;
+              bool isStream;
+              isStream = dataDeps->getIOstreamsForKernel(IOName ,K->getFileName(),
+                                                Acc->getImage()->getName());
+              *OS << IOName; 
+              if(isStream == true){ 
+                *OS << ", ARRY";
+              }else{ 
+                *OS << ", CHNNL";
+              }
+              break;
             default:
               /* nothing to do */
             break;

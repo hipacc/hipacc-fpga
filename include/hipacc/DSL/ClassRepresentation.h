@@ -802,6 +802,11 @@ class HipaccKernel : public HipaccKernelFeatures {
         return nullptr;
       }
     }
+
+    unsigned getNumberofAccessors(){
+      // There is always 1 output image
+      return imgMap.size()-1;
+    }
 };
 } // namespace hipacc
 } // namespace clang

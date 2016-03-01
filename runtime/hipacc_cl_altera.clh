@@ -301,7 +301,7 @@ typedef struct{double16 s[16];}double256;
 
 /* ******************SPLIT CHANNEL FUNCTIONS********************************* */
 
-#define process2to1(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, SRC1, READTYPE, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, BORDER, ...) \
+#define process2to1(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, SRC1, READTYPE1, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, BORDER, ...) \
     const int __SIZE_X = KRNL_SIZE_X;\
     const int __SIZE_Y = KRNL_SIZE_Y;\
     const int __WIDTH  = IM_WIDTH;\
@@ -352,7 +352,7 @@ typedef struct{double16 s[16];}double256;
         if (__count < __vecSIZE) { \
             readPixelf ## READTYPE(VECT_SIZE, INTYPE, __newpixel, SRC, __count);\
             __rows[__SIZE_Y-2][0] = __newpixel; \
-            readPixelf ## READTYPE(VECT_SIZE, INTYPE, __newpixel1, SRC1, __count);\
+            readPixelf ## READTYPE1(VECT_SIZE, INTYPE, __newpixel1, SRC1, __count);\
             __rows1[__SIZE_Y-2][0] = __newpixel1; \
         }\
         SLIDEWx_ ## BORDER(VECT_SIZE, INTYPE , __wnd_sliding,  __newpixel, __SlidingCoordNewP, __SIZE_Y-1, __x);\
@@ -368,7 +368,7 @@ typedef struct{double16 s[16];}double256;
                 INTYPE __wnd1[__SIZE_Y][__SIZE_X]; \
                 SELECT_OUT_ ## BORDER(__bVECT_INDX, __vi, VECT_SIZE,  __wnd,  __wnd_sliding, __rselect, __SlidingSIZE, __y, __x, ##__VA_ARGS__);\
                 SELECT_OUT_ ## BORDER(__bVECT_INDX, __vi, VECT_SIZE, __wnd1, __wnd_sliding1, __rselect, __SlidingSIZE, __y, __x, ##__VA_ARGS__);\
-                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd, __wnd1, __SIZE_X, __SIZE_Y);\
+                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd, __wnd1);\
             }\
             write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count-__vecDELAY);\
            \
@@ -389,7 +389,7 @@ typedef struct{double16 s[16];}double256;
         ++__count; \
     }
 
-#define process1to2(VECT_SIZE, OUTTYPE, INTYPE, DST, DST1, WRTTYPE, SRC, READTYPE, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, BORDER, ...) \
+#define process1to2(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, DST1, WRTTYPE1, SRC, READTYPE, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, BORDER, ...) \
     const int __SIZE_X = KRNL_SIZE_X;\
     const int __SIZE_Y = KRNL_SIZE_Y;\
     const int __WIDTH  = IM_WIDTH;\
@@ -437,10 +437,10 @@ typedef struct{double16 s[16];}double256;
             _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
                 INTYPE __wnd[__SIZE_Y][__SIZE_X]; \
                 SELECT_OUT_ ## BORDER(__bVECT_INDX, __vi, VECT_SIZE, __wnd, __wnd_sliding, __rselect, __SlidingSIZE, __y, __x, ##__VA_ARGS__);\
-                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd, __SIZE_X, __SIZE_Y);\
+                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd);\
             }\
             write2 ## WRTTYPE(VECT_SIZE, OUTTYPE,  DST, __outPixel, __count-__vecDELAY);\
-            write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST1, __outPixel, __count-__vecDELAY);\
+            write2 ## WRTTYPE1(VECT_SIZE, OUTTYPE, DST1, __outPixel, __count-__vecDELAY);\
            \
             __x+=VECT_SIZE; \
             const uint rflagCoord = __halfSIZE_X>VECT_SIZE ? __WIDTH-__Nvec*VECT_SIZE : __WIDTH-VECT_SIZE;\
@@ -509,7 +509,7 @@ typedef struct{double16 s[16];}double256;
             _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
                 INTYPE __wnd[__SIZE_Y][__SIZE_X]; \
                 SELECT_OUT_ ## BORDER(__bVECT_INDX, __vi, VECT_SIZE, __wnd, __wnd_sliding, __rselect, __SlidingSIZE, __y, __x, ##__VA_ARGS__);\
-                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd, __SIZE_X, __SIZE_Y);\
+                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd);\
             }\
             write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count-__vecDELAY);\
            \
@@ -580,7 +580,7 @@ typedef struct{double16 s[16];}double256;
             _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
                 INTYPE __wnd[__SIZE_Y][__SIZE_X]; \
                 SELECT_OUT_ ## BORDER(__bVECT_INDX, __vi, VECT_SIZE, __wnd, __wnd_sliding, __rselect, __SlidingSIZE, __y, __x, ##__VA_ARGS__);\
-                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd, __SIZE_X, __SIZE_Y);\
+                ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__wnd);\
             }\
             write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count-__vecDELAY);\
            \
