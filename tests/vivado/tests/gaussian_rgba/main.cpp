@@ -36,16 +36,16 @@
 
 #include "hipacc.hpp"
 
-#define TEST
+//#define TEST
 
 // variables set by Makefile
-//#define SIZE_X 1
-//#define SIZE_Y 1
+#define SIZE_X 3
+#define SIZE_Y 3
 #ifdef TEST
 #define WIDTH  (24/4)
 #define HEIGHT 24
 #else
-#define WIDTH  (4096/4)
+#define WIDTH  1024
 #define HEIGHT 1024
 #endif
 
@@ -53,29 +53,31 @@ using namespace hipacc;
 using namespace hipacc::math;
 
 
-// Laplace filter in HIPAcc
-class LaplaceFilter : public Kernel<uchar4> {
+// Gaussian filter in HIPAcc
+class GaussianFilter : public Kernel<uchar4> {
     private:
         Accessor<uchar4> &Input;
-        Domain &cDom;
-        Mask<int> &cMask;
+        Mask<uchar> &cMask;
 
     public:
-        LaplaceFilter(IterationSpace<uchar4> &IS, Accessor<uchar4>
-                &Input, Domain &cDom, Mask<int> &cMask) :
+        GaussianFilter(IterationSpace<uchar4> &IS, Accessor<uchar4>
+                &Input, Mask<uchar> &cMask) :
             Kernel(IS),
             Input(Input),
-            cDom(cDom),
             cMask(cMask)
         { add_accessor(&Input); }
 
         void kernel() {
-            int4 sum = reduce(cDom, Reduce::SUM, [&] () -> int4 {
-                    return cMask(cDom) * convert_int4(Input(cDom));
+            ushort4 sum = convolve(cMask, Reduce::SUM, [&] () -> ushort4 {
+                    return cMask() * convert_ushort4(Input(cMask));
                     });
-            sum = min(sum, 255);
-            sum = max(sum, 0);
-            output() = convert_uchar4(sum);
+            output() = convert_uchar4(sum
+#if SIZE_X==3
+              / 16);
+#elif SIZE_X == 5
+              /256);
+#else
+#endif
         }
 };
 
@@ -92,35 +94,29 @@ int main(int argc, const char **argv) {
 
     // convolution filter mask
     const
-    #if SIZE_X == 1
-    #define SIZE 3
-    #elif SIZE_X == 3
-    #define SIZE 3
-    #else
-    #define SIZE 5
-    #endif
-    int mask[SIZE][SIZE] = {
-        #if SIZE_X==1
-        { 0,  1,  0 },
-        { 1, -4,  1 },
-        { 0,  1,  0 }
-        #endif
+#if SIZE_X == 3
+#define SIZE 3
+#elif SIZE_X == 5
+#define SIZE 5
+#else
+#define SIZE 7
+#endif
+    uchar mask[SIZE][SIZE] = {
         #if SIZE_X==3
-        { 1,  1,  1 },
-        { 1, -8,  1 },
-        { 1,  1,  1 }
-        #endif
-        #if SIZE_X==5
-        { 1,   1,   1,   1,   1 },
-        { 1,   1,   1,   1,   1 },
-        { 1,   1, -24,   1,   1 },
-        { 1,   1,   1,   1,   1 },
-        { 1,   1,   1,   1,   1 }
+        { 1,  2,  1 },
+        { 2,  4,  2 },
+        { 1,  2,  1 }
+        #elif SIZE_X==5
+        { 1,  4,  6,  4,  1 },
+        { 4, 16, 24, 16,  4 },
+        { 6, 24, 36, 24,  6 },
+        { 4, 16, 24, 16,  4 },
+        { 1,  4,  6,  4,  1 }
         #endif
     };
 
     // host memory for image of width x height pixels
-    uchar tmp[WIDTH*HEIGHT*4] = {
+    uchar tmp[WIDTH*sizeof(uchar4)*HEIGHT] = {
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
@@ -146,30 +142,26 @@ int main(int argc, const char **argv) {
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 };
     uchar4 *host_in = (uchar4*)tmp;
-    uchar4 *host_out = (uchar4 *)malloc(sizeof(uchar4)*width*height);
+    uchar4 *host_out = (uchar4*)malloc(width*sizeof(uchar4)*height);
 
     // input and output image of width x height pixels
     Image<uchar4> IN(width, height);
     Image<uchar4> OUT(width, height);
 
     // filter mask
-    Mask<int> M(mask);
-
-    // filter domain
-    Domain D(M);
+    Mask<uchar> M(mask);
 
     IterationSpace<uchar4> IsOut(OUT);
 
     IN = host_in;
     OUT = host_out;
 
-
-    // BOUNDARY_CLAMP
+    // Bounday::CLAMP
     BoundaryCondition<uchar4> BcInClamp(IN, M, Boundary::CLAMP);
     Accessor<uchar4> AccInClamp(BcInClamp);
-    LaplaceFilter LFC(IsOut, AccInClamp, D, M);
+    GaussianFilter G(IsOut, AccInClamp, M);
 
-    LFC.execute();
+    G.execute();
 
     // get results
     host_out = OUT.data();
@@ -178,11 +170,11 @@ int main(int argc, const char **argv) {
     int i,j;
     for(i = 0; i < HEIGHT; i++) {
         for(j = 0; j < WIDTH; j++) {
-            fprintf(stdout,"%s %s %s %s ",
-              host_out[i*WIDTH+j].x == 255 ? "X" : "-",
-              host_out[i*WIDTH+j].y == 255 ? "X" : "-",
-              host_out[i*WIDTH+j].z == 255 ? "X" : "-",
-              host_out[i*WIDTH+j].w == 255 ? "X" : "-");
+            fprintf(stdout,"%d %d %d %d",
+                host_out[i*WIDTH+j].x,
+                host_out[i*WIDTH+j].y,
+                host_out[i*WIDTH+j].z,
+                host_out[i*WIDTH+j].w);
         }
         fprintf(stdout,"\n");
     }

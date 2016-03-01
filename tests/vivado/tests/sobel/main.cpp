@@ -36,16 +36,14 @@
 
 #include "hipacc.hpp"
 
-#define TEST
+//#define TEST
 
 // variables set by Makefile
-//#define SIZE_X 1
-//#define SIZE_Y 1
 #ifdef TEST
-#define WIDTH  (24/4)
+#define WIDTH  24
 #define HEIGHT 24
 #else
-#define WIDTH  (4096/4)
+#define WIDTH  1024
 #define HEIGHT 1024
 #endif
 
@@ -53,30 +51,53 @@ using namespace hipacc;
 using namespace hipacc::math;
 
 
-// Laplace filter in HIPAcc
-class LaplaceFilter : public Kernel<uchar4> {
-    private:
-        Accessor<uchar4> &Input;
-        Domain &cDom;
-        Mask<int> &cMask;
+// Sobel filter in HIPAcc
+class SobelFilter : public Kernel<short> {
+  private:
+    Accessor<uchar> &Input;
+    Mask<char> &cMask;
+    Domain &Dom; 
 
-    public:
-        LaplaceFilter(IterationSpace<uchar4> &IS, Accessor<uchar4>
-                &Input, Domain &cDom, Mask<int> &cMask) :
-            Kernel(IS),
-            Input(Input),
-            cDom(cDom),
-            cMask(cMask)
-        { add_accessor(&Input); }
+  public:
+    SobelFilter(IterationSpace<short> &IS, Accessor<uchar> &Input,
+                Mask<char> &cMask, Domain &Dom)
+      : Kernel(IS),
+        Input(Input),
+        cMask(cMask),
+        Dom(Dom) {
+      add_accessor(&Input);
+    }
 
-        void kernel() {
-            int4 sum = reduce(cDom, Reduce::SUM, [&] () -> int4 {
-                    return cMask(cDom) * convert_int4(Input(cDom));
-                    });
-            sum = min(sum, 255);
-            sum = max(sum, 0);
-            output() = convert_uchar4(sum);
-        }
+    void kernel() {
+      short sum = reduce(Dom, Reduce::SUM, [&] () -> short {
+                    return cMask(Dom) * Input(Dom);
+                  });
+      output() = sum;
+    }
+};
+
+class Combine : public Kernel<uchar> {
+  private:
+    Accessor<short> &Dx;
+    Accessor<short> &Dy;
+
+  public:
+    Combine(IterationSpace<uchar> &IS,
+            Accessor<short> &Dx,
+            Accessor<short> &Dy)
+      : Kernel(IS),
+        Dx(Dx),
+        Dy(Dy) {
+      add_accessor(&Dx);
+      add_accessor(&Dy);
+    }
+
+    void kernel() {
+      float dx = Dx();
+      float dy = Dy();
+      uchar res = sqrt(((dx * dx) + (dy * dy)));
+      output() = res;
+    }
 };
 
 
@@ -91,36 +112,19 @@ int main(int argc, const char **argv) {
     float timing = 0.0f;
 
     // convolution filter mask
-    const
-    #if SIZE_X == 1
-    #define SIZE 3
-    #elif SIZE_X == 3
-    #define SIZE 3
-    #else
-    #define SIZE 5
-    #endif
-    int mask[SIZE][SIZE] = {
-        #if SIZE_X==1
-        { 0,  1,  0 },
-        { 1, -4,  1 },
-        { 0,  1,  0 }
-        #endif
-        #if SIZE_X==3
-        { 1,  1,  1 },
-        { 1, -8,  1 },
-        { 1,  1,  1 }
-        #endif
-        #if SIZE_X==5
-        { 1,   1,   1,   1,   1 },
-        { 1,   1,   1,   1,   1 },
-        { 1,   1, -24,   1,   1 },
-        { 1,   1,   1,   1,   1 },
-        { 1,   1,   1,   1,   1 }
-        #endif
+    const char mask_x[3][3] = {
+        {   -1,   0,   1 },
+        {   -2,   0,   2 },
+        {   -1,   0,   1 }
+    };
+    const char mask_y[3][3] = {
+        {   -1,  -2,  -1 },
+        {    0,   0,   0 },
+        {    1,   2,   1 }
     };
 
     // host memory for image of width x height pixels
-    uchar tmp[WIDTH*HEIGHT*4] = {
+    uchar tmp[WIDTH*HEIGHT] = {
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
@@ -145,44 +149,55 @@ int main(int argc, const char **argv) {
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,
              0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 ,255,255,255,255,255,255,255,255, 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 };
-    uchar4 *host_in = (uchar4*)tmp;
-    uchar4 *host_out = (uchar4 *)malloc(sizeof(uchar4)*width*height);
+    uchar *host_in = (uchar*)tmp;
+    uchar *host_out = (uchar*)malloc(width*height);
 
     // input and output image of width x height pixels
-    Image<uchar4> IN(width, height);
-    Image<uchar4> OUT(width, height);
+    Image<uchar> IN(width, height);
+    Image<uchar> OUT(width, height);
+    Image<short> Dx(width, height);
+    Image<short> Dy(width, height);
 
     // filter mask
-    Mask<int> M(mask);
+    Mask<char> MX(mask_x);
+    Mask<char> MY(mask_y);
+    Domain DX(MX);
+    Domain DY(MY);
 
-    // filter domain
-    Domain D(M);
-
-    IterationSpace<uchar4> IsOut(OUT);
+    IterationSpace<short> IsDx(Dx);
+    IterationSpace<short> IsDy(Dy);
+    IterationSpace<uchar> IsOut(OUT);
 
     IN = host_in;
     OUT = host_out;
 
+    BoundaryCondition<uchar> BcInClamp(IN, MX, Boundary::CLAMP);
+    Accessor<uchar> AccInClamp(BcInClamp);
 
-    // BOUNDARY_CLAMP
-    BoundaryCondition<uchar4> BcInClamp(IN, M, Boundary::CLAMP);
-    Accessor<uchar4> AccInClamp(BcInClamp);
-    LaplaceFilter LFC(IsOut, AccInClamp, D, M);
+    SobelFilter Sx(IsDx, AccInClamp, MX, DX);
+    Sx.execute();
+    timing += hipacc_last_kernel_timing();
 
-    LFC.execute();
+    SobelFilter Sy(IsDy, AccInClamp, MY, DY);
+    Sy.execute();
+    timing += hipacc_last_kernel_timing();
+
+    Accessor<short> AccDx(Dx);
+    Accessor<short> AccDy(Dy);
+    Combine C(IsOut, AccDx, AccDy);
+    C.execute();
+    timing += hipacc_last_kernel_timing();
 
     // get results
     host_out = OUT.data();
+
+    fprintf(stdout, "Execution time: %f ms\n", timing);
 
 #ifdef TEST
     int i,j;
     for(i = 0; i < HEIGHT; i++) {
         for(j = 0; j < WIDTH; j++) {
-            fprintf(stdout,"%s %s %s %s ",
-              host_out[i*WIDTH+j].x == 255 ? "X" : "-",
-              host_out[i*WIDTH+j].y == 255 ? "X" : "-",
-              host_out[i*WIDTH+j].z == 255 ? "X" : "-",
-              host_out[i*WIDTH+j].w == 255 ? "X" : "-");
+            fprintf(stdout,"%d ", host_out[i*WIDTH+j]);
         }
         fprintf(stdout,"\n");
     }

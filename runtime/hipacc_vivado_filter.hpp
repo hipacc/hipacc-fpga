@@ -63,6 +63,7 @@ struct BorderPadding
 {
 public:
     enum values {
+    	BORDER_UNDEF,
     	BORDER_CONST,
     	BORDER_CLAMP,
     	BORDER_MIRROR,
@@ -77,7 +78,7 @@ int getNewCoords(int i, int kernel, int offset, int col, int width, const enum B
 #pragma HLS INLINE
   if(col >= offset && col < kernel-1){
     int border = kernel-1 - col;
-    if(i >= border)
+    if(i >= border || borderPadding == BorderPadding::BORDER_UNDEF)
       return i;
     else{
       // where is the border of the image in the window?
@@ -102,7 +103,7 @@ int getNewCoords(int i, int kernel, int offset, int col, int width, const enum B
     int overlap = col - (width-1);
     // where is the image border?
     int border = kernel - overlap -1;
-    if(i <= border)
+    if(i <= border || borderPadding == BorderPadding::BORDER_UNDEF)
       return i;
     else
     {

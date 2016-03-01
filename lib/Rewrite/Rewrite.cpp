@@ -2805,6 +2805,9 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         << ", kernel";
     if (KC->getMaskFields().size() > 0) {
       switch (vivadoBM) {
+        case clang::hipacc::Boundary::UNDEFINED:
+          *OS << ", BorderPadding::BORDER_UNDEF";
+          break;
         case clang::hipacc::Boundary::CLAMP:
           *OS << ", BorderPadding::BORDER_CLAMP";
           break;
@@ -3101,8 +3104,6 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
               case Rewrite::PrintParam::KernelCall:
                 if (comma++) *OS << ", ";
                 *OS << Name;
-                assert((vivadoBM == Boundary::UNDEFINED || vivadoBM == Acc->getBoundaryMode()) &&
-                  "All Accessors must use same BoundaryMode for Vivado");
                 vivadoBM = Acc->getBoundaryMode();
               break;
               default:
