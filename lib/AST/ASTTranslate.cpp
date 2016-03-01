@@ -455,7 +455,6 @@ void ASTTranslate::initOpenCL(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
     VarDecl *output = createVarDecl(Ctx, kernelDecl, "DummyOutputVal",
         Kernel->getIterationSpace()->getImage()->getType());
     retValRef = createDeclRefExpr(Ctx, output);
-    Kernel->setUsed(Kernel->getIterationSpace()->getName());
   }
   // convert the function body to kernel syntax
   Stmt *clonedStmt = Clone(S);

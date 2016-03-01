@@ -1896,6 +1896,28 @@ bool Rewrite::VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
         K->setHostArgNames(llvm::makeArrayRef(CCE->getArgs(),
               CCE->getNumArgs()), newStr, literalCount);
 
+        if (compilerOptions.emitOpenCLFPGA()) {
+          // remove stream parameters from kernel argument list and ensure that
+          // non-stream parameters are added
+          auto deviceArgNames = K->getDeviceArgNames();
+          size_t i = 0;
+          for (auto arg : K->getDeviceArgFields()) {
+            HipaccAccessor *Acc = K->getImgFromMapping(arg);
+            if (Acc) {
+              std::string kernelName = K->getKernelName();
+              // strip "clFooKernel" to "Foo"
+              kernelName = kernelName.substr(2, kernelName.length()-8);
+              if (dataDeps->isStreamForKernel(kernelName,
+                    Acc->getImage()->getName())) {
+                K->setUnused(deviceArgNames[i]);
+              } else {
+                K->setUsed(deviceArgNames[i]);
+              }
+            }
+            ++i;
+          }
+        }
+
         //
         // TODO: handle the case when only reduce function is specified
         //
@@ -2807,15 +2829,12 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
     *OS << ") {\n";
     unsigned numberOfIn = K->getNumberofAccessors();
-      std::cerr<< "numberofIn =" << numberOfIn <<std::endl;
-    if( numberOfIn<2  ){
+    if (numberOfIn < 2) {
       *OS << "    process(";
-    }else if( numberOfIn==2 ){
+    } else if (numberOfIn == 2) {
       *OS << "    process2to1(";
-    }else{
-      std::cerr<< "Kernels more than 2 input images are not supported yet!" <<std::endl;
-      //exit(EXIT_FAILURE);
-      *OS << "    process2to1(";
+    } else {
+      assert(false && "Kernels more than 2 input images are not supported yet!");
     }
     *OS << compilerOptions.getPixelsPerThread();
     *OS << ", " << K->getIterationSpace()->getImage()->getTypeStr();
@@ -3018,7 +3037,9 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
         case Language::Filterscript:
           break;
         case Language::OpenCLFPGA: {
-          std::string IOName;
+          std::string kernelName = K->getKernelName();
+          // strip "clFooKernel" to "Foo"
+          kernelName = kernelName.substr(2, kernelName.length()-8);
           switch (printParam) {
             case Rewrite::PrintParam::KernelDecl:
               if (!Acc->isIterationSpace()) {
@@ -3026,26 +3047,26 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
               }
             break;
             case Rewrite::PrintParam::Entry:
-              if ( dataDeps->getIOstreamsForKernel(IOName ,K->getFileName(),
-                                        Acc->getImage()->getName()) == true ){
+              if (!dataDeps->isStreamForKernel(kernelName,
+                    Acc->getImage()->getName())) {
                 if (comma++) *OS << ", ";
                 *OS << "__global ";
                 if (mem_acc==READ_ONLY) *OS << "const ";
                 *OS << Acc->getImage()->getTypeStr();
                 *OS << " * restrict ";
-                *OS << IOName; 
+                *OS << Acc->getImage()->getName();
               }
             break;
             case Rewrite::PrintParam::KernelCall:
               if (comma++) *OS << ", ";
-              bool isStream;
-              isStream = dataDeps->getIOstreamsForKernel(IOName ,K->getFileName(),
-                                                Acc->getImage()->getName());
-              *OS << IOName; 
-              if(isStream == true){ 
-                *OS << ", ARRY";
-              }else{ 
+              if (dataDeps->isStreamForKernel(kernelName,
+                    Acc->getImage()->getName())) {
+                *OS << dataDeps->getStreamForKernel(kernelName,
+                    Acc->getImage()->getName());
                 *OS << ", CHNNL";
+              } else {
+                *OS << Acc->getImage()->getName();
+                *OS << ", ARRY";
               }
               break;
             default:

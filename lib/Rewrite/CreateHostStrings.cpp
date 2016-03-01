@@ -150,7 +150,7 @@ void CreateHostStrings::writeKernelCompilation(HipaccKernel *K,
       }
       break;
     case Language::OpenCLFPGA: {
-        std::string fileName("hipacc_run.cl");
+        std::string fileName("hipacc_run");
         writeCLCompilationAltera(fileName, K->getKernelName(),
             device.getCLIncludes(), resultStr);
         if (K->getKernelClass()->getReduceFunction()) {

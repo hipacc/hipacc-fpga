@@ -652,6 +652,7 @@ class HipaccKernel : public HipaccKernelFeatures {
 
     // keep track of variables used within kernel
     void setUsed(std::string name) { usedVars.insert(name); }
+    void setUnused(std::string name) { usedVars.erase(name); }
     void resetUsed() {
       usedVars.clear();
       deviceFuncs.clear();

@@ -637,7 +637,7 @@ std::string HostDataDeps::declareFifo(std::string type, std::string name) {
       retVal << "hls::stream<" << type << " > " << name << std::endl;
       break;
     case Language::OpenCLFPGA:
-      retVal << "createChannel(" << type << ", " << name << ", 1, 1);" << std::endl;
+      retVal << "createChannel(" << type << ", " << name << ", " << compilerOptions.getPixelsPerThread() << ");" << std::endl;
       break;
     default:
       assert(false && "Language type not supported");
@@ -671,42 +671,68 @@ std::string HostDataDeps::printFifoDecls(std::string indent) {
   return retVal.str();
 }
 
-// Returns 0 if IO is stream 
-bool HostDataDeps::getIOstreamsForKernel(std::string &IOName, std::string kernelName,
-                                                std::string imageName) {
-  std::ostringstream retVal;
+bool HostDataDeps::isStreamForKernel(std::string kernelName,
+                                     std::string imageName) {
+  bool retVal = false;
+
   for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
     if ((*it)->isSpace()) {
     } else {
       Process *t = (Process*)*it;
-      if ( kernelName.compare(2, kernelName.size()-2, t->getKernel()->getName()) ==0 ) {
+      if ( kernelName.compare(t->getKernel()->getName()) ==0 ) {
         if( imageName.compare(t->getKernel()->getIterationSpace()->getImage()->getName()) == 0 ){
-          if( t->outStream.empty() ){
-            IOName = imageName;
-            return true;
-          }else{
-            IOName = t->outStream;
-            return false;
+          if( !t->outStream.empty() ){
+            retVal = true;
+          }
+          break;
+        }
+        std::vector<Space*> spaces = t->getInSpaces();
+        for (auto it2 = spaces.begin(); it2 != spaces.end(); ++it2) {
+          Space *s = *it2;
+          if( imageName.compare(s->getImage()->getName()) == 0 ){
+            if( !t->inStreams.begin()->empty() ){
+              retVal = true;
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return retVal;
+}
+
+std::string HostDataDeps::getStreamForKernel(std::string kernelName,
+                                             std::string imageName) {
+  std::string retVal;
+
+  for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
+    if ((*it)->isSpace()) {
+    } else {
+      Process *t = (Process*)*it;
+      if ( kernelName.compare(t->getKernel()->getName()) ==0 ) {
+        if( imageName.compare(t->getKernel()->getIterationSpace()->getImage()->getName()) == 0 ){
+          if( !t->outStream.empty() ){
+            retVal = t->outStream;
+            break;
           }
         }
         std::vector<Space*> spaces = t->getInSpaces();
         for (auto it2 = spaces.begin(); it2 != spaces.end(); ++it2) {
           Space *s = *it2;
           if( imageName.compare(s->getImage()->getName()) == 0 ){
-            if( t->inStreams.begin()->empty() ){
-              IOName = imageName;
-              return true;
-            }else{
-              IOName = s->stream;
-              return false;
+            if( !t->inStreams.begin()->empty() ){
+              retVal = s->stream;
+              break;
             }
           }
         }
       }
     }
   }
-  std::cerr<< "Problem with Streaming!" <<std::endl;
-  exit(EXIT_FAILURE);
+
+  return retVal;
 }
 
 std::string HostDataDeps::prettyPrint(

@@ -1,5 +1,7 @@
 #pragma OPENCL EXTENSION cl_altera_channels : enable
 
+#define ARRY  0
+#define CHNNL 1
 
 
 
@@ -66,8 +68,8 @@ typedef struct{double16 s[16];}double256;
 
 
 /* ********************** Tools for Kernel Code **************************** */
-#define createChannel(TYPE, NAME, DEPTH, VECT_SIZE) \
-            channel TYPE ## VECT_SIZE NAME __attribute__((depth(DEPTH)))
+#define createChannel(TYPE, NAME, VECT_SIZE) \
+            channel TYPE ## VECT_SIZE NAME __attribute__((depth(1)))
 
 
 #define getWindowAt(ARRAY, __x, __y) ARRAY[__y][__x]
