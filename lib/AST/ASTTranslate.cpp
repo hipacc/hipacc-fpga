@@ -455,12 +455,11 @@ void ASTTranslate::initOpenCL(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
     VarDecl *output = createVarDecl(Ctx, kernelDecl, "DummyOutputVal",
         Kernel->getIterationSpace()->getImage()->getType());
     retValRef = createDeclRefExpr(Ctx, output);
-  }
-  // convert the function body to kernel syntax
-  Stmt *clonedStmt = Clone(S);
-  assert(isa<CompoundStmt>(clonedStmt) && "CompoundStmt for kernel function body expected!");
 
-  if (compilerOptions.emitOpenCLFPGA()) {
+    // convert the function body to kernel syntax
+    Stmt *clonedStmt = Clone(S);
+    assert(isa<CompoundStmt>(clonedStmt) && "CompoundStmt for kernel function body expected!");
+
     kernelBody.push_back(clonedStmt);
   } else {
     // add gid_x and gid_y statements
