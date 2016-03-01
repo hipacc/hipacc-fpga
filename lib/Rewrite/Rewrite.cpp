@@ -2828,24 +2828,30 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     *OS << "void " << K->getKernelName() << "(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
     *OS << ") {\n";
-    unsigned numberOfIn = K->getNumberofAccessors();
-    if (numberOfIn < 2) {
-      *OS << "    process(";
-    } else if (numberOfIn == 2) {
-      *OS << "    process2to1(";
+    printKernelArguments(D, KC, K, Policy, OS, Rewrite::CTorBody);
+    if (KC->getMaskFields().size() > 0) {
+      // local operator
+      *OS << "    process";
     } else {
-      assert(false && "Kernels more than 2 input images are not supported yet!");
+      // point operator
+      *OS << "    processPixels";
     }
-    *OS << compilerOptions.getPixelsPerThread();
+    unsigned numberOfIn = K->getNumberofAccessors();
+    if (numberOfIn > 2) {
+      assert(false && "Kernels more than 2 input images are not supported yet!");
+    } else if (numberOfIn > 1) {
+      *OS << numberOfIn << "to1(";
+    }
+    *OS << "(" << compilerOptions.getPixelsPerThread();
     *OS << ", " << K->getIterationSpace()->getImage()->getTypeStr();
     *OS << ", " << K->getVivadoAccessor()->getImage()->getTypeStr();
     *OS << ", ";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
     *OS << ", HIPACC_MAX_WIDTH, HIPACC_MAX_HEIGHT";
     *OS << ", " << K->getKernelName() << "Kernel";
+    if (KC->getMaskFields().size() > 0) {
     *OS << ", " << K->getLocalWindow()->getSizeX();
     *OS << ", " << K->getLocalWindow()->getSizeY();
-    if (KC->getMaskFields().size() > 0) {
       switch (vivadoBM) {
         case clang::hipacc::Boundary::CLAMP:
           *OS << ", CLAMP";
