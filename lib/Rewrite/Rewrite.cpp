@@ -2840,7 +2840,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       *OS << "    processPixels";
     }
     unsigned numberOfIn = K->getNumberofAccessors();
-    if (numberOfIn > 2) {
+    if (numberOfIn > 3) {
       assert(false && "Kernels more than 2 input images are not supported yet!");
     } else if (numberOfIn > 1) {
       *OS << numberOfIn << "to1(";
