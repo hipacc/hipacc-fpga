@@ -2843,7 +2843,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     if (numberOfIn > 3) {
       assert(false && "Kernels more than 2 input images are not supported yet!");
     } else if (numberOfIn > 1) {
-      *OS << numberOfIn << "to1(";
+      *OS << numberOfIn << "to1";
     }
     *OS << "(" << compilerOptions.getPixelsPerThread();
     *OS << ", " << K->getIterationSpace()->getImage()->getTypeStr();
