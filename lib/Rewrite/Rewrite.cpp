@@ -2839,17 +2839,46 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
       // point operator
       *OS << "    processPixels";
     }
+
+    std::string kernelName = K->getKernelName();
+    // strip "clFooKernel" to "Foo"
+    kernelName = kernelName.substr(2, kernelName.length()-8);
+    std::vector<std::string> outChan = dataDeps->getOutputStreamsForKernel(kernelName);
     unsigned numberOfIn = K->getNumberofAccessors();
-    if (numberOfIn > 3) {
-      assert(false && "Kernels more than 2 input images are not supported yet!");
-    } else if (numberOfIn > 1) {
-      *OS << numberOfIn << "to1";
+    unsigned numberOfOut = outChan.size();
+    if (numberOfOut < 1) numberOfOut = 1;
+
+    if (numberOfIn > 1 || numberOfOut > 1) {
+      if (numberOfIn > 3) {
+        assert(false && "Kernels more than 3 input images are not supported yet!");
+      } else {
+        *OS << numberOfIn;
+      }
+      *OS << "to";
+      if (numberOfOut > 3) {
+        assert(false && "Kernels more than 3 output images are not supported yet!");
+      } else {
+        *OS << numberOfOut;
+      }
     }
     *OS << "(" << compilerOptions.getPixelsPerThread();
     *OS << ", " << K->getIterationSpace()->getImage()->getTypeStr();
     *OS << ", " << K->getVivadoAccessor()->getImage()->getTypeStr();
+
+    // handle output channels/array
+    if (outChan.size() == 0) {
+      // no channels, so output must be an array
+      *OS << ", " << K->getIterationSpace()->getImage()->getName() << ", ARRY";
+    } else {
+      for (auto it : outChan) {
+        *OS << ", " << (it) << ", CHNNL";
+      }
+    }
     *OS << ", ";
+
+    // handle input channels/arrays
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
+
     *OS << ", HIPACC_MAX_WIDTH, HIPACC_MAX_HEIGHT";
     *OS << ", " << K->getKernelName() << "Kernel";
     if (KC->getMaskFields().size() > 0) {
@@ -3067,15 +3096,17 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
               }
             break;
             case Rewrite::PrintParam::KernelCall:
-              if (comma++) *OS << ", ";
-              if (dataDeps->isStreamForKernel(kernelName,
-                    Acc->getImage()->getName())) {
-                *OS << dataDeps->getStreamForKernel(kernelName,
-                    Acc->getImage()->getName());
-                *OS << ", CHNNL";
-              } else {
-                *OS << Acc->getImage()->getName();
-                *OS << ", ARRY";
+              if (!Acc->isIterationSpace()) {
+                if (comma++) *OS << ", ";
+                if (dataDeps->isStreamForKernel(kernelName,
+                      Acc->getImage()->getName())) {
+                  *OS << dataDeps->getStreamForKernel(kernelName,
+                      Acc->getImage()->getName());
+                  *OS << ", CHNNL";
+                } else {
+                  *OS << Acc->getImage()->getName();
+                  *OS << ", ARRY";
+                }
               }
               break;
             default:

@@ -302,7 +302,7 @@ typedef struct{double16 s[16];}double256;
 
 
 /* ******************VECTORIZED PIPELINE FUNCTIONS********************************* */
-#define processPixel(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, IM_WIDTH, IM_HEIGHT, KERNEL) \
+#define processPixels(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, IM_WIDTH, IM_HEIGHT, KERNEL) \
     const int __WIDTH  = IM_WIDTH;\
     const int __HEIGHT = IM_HEIGHT;\
     \
@@ -403,6 +403,41 @@ typedef struct{double16 s[16];}double256;
     }
 
 /* ******************SPLIT CHANNEL FUNCTIONS********************************* */
+
+#define processPixels3to1(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, SRC1, READTYPE1, SRC2, READTYPE2, IM_WIDTH, IM_HEIGHT, KERNEL) \
+    const int __WIDTH  = IM_WIDTH;\
+    const int __HEIGHT = IM_HEIGHT;\
+    \
+    const uint __SIZE      = (__WIDTH * __HEIGHT);\
+    \
+    const uint __vecSIZE  = ((__SIZE-1)/VECT_SIZE)+1; \
+    \
+    uint __count = 0; \
+    uint __x = 0, __y = 0;\
+    while (__count != __vecSIZE) { \
+        INTYPE ## VECT_SIZE __newpixel; \
+        INTYPE ## VECT_SIZE __newpixel1; \
+        INTYPE ## VECT_SIZE __newpixel2; \
+        if (__count < __vecSIZE) { \
+            readPixelf ## READTYPE(VECT_SIZE, INTYPE, __newpixel, SRC, __count);\
+            readPixelf ## READTYPE1(VECT_SIZE, INTYPE, __newpixel1, SRC1, __count);\
+            readPixelf ## READTYPE2(VECT_SIZE, INTYPE, __newpixel2, SRC2, __count);\
+        }\
+        /* Execute Kernel According to Boundary Conditions */ \
+        OUTTYPE ## VECT_SIZE __outPixel;\
+        _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
+            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__newpixel, __newpixel1, __newpixel2);\
+        }\
+        write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
+       \
+        __x+=VECT_SIZE; \
+        if(__x == __WIDTH-VECT_SIZE){\
+            __x = 0; \
+            __y++;\
+        }\
+        __count++; \
+    }
+
 
 #define process3to1(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, SRC1, READTYPE1, SRC2, READTYPE2, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, BORDER, ...) \
     const int __SIZE_X = KRNL_SIZE_X;\
@@ -505,6 +540,39 @@ typedef struct{double16 s[16];}double256;
         } \
         ++__count; \
     }
+
+#define processPixels2to1(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, SRC1, READTYPE1, IM_WIDTH, IM_HEIGHT, KERNEL) \
+    const int __WIDTH  = IM_WIDTH;\
+    const int __HEIGHT = IM_HEIGHT;\
+    \
+    const uint __SIZE      = (__WIDTH * __HEIGHT);\
+    \
+    const uint __vecSIZE  = ((__SIZE-1)/VECT_SIZE)+1; \
+    \
+    uint __count = 0; \
+    uint __x = 0, __y = 0;\
+    while (__count != __vecSIZE) { \
+        INTYPE ## VECT_SIZE __newpixel; \
+        INTYPE ## VECT_SIZE __newpixel1; \
+        if (__count < __vecSIZE) { \
+            readPixelf ## READTYPE(VECT_SIZE, INTYPE, __newpixel, SRC, __count);\
+            readPixelf ## READTYPE1(VECT_SIZE, INTYPE, __newpixel1, SRC1, __count);\
+        }\
+        /* Execute Kernel According to Boundary Conditions */ \
+        OUTTYPE ## VECT_SIZE __outPixel;\
+        _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
+            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__newpixel, __newpixel1);\
+        }\
+        write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
+       \
+        __x+=VECT_SIZE; \
+        if(__x == __WIDTH-VECT_SIZE){\
+            __x = 0; \
+            __y++;\
+        }\
+        __count++; \
+    }
+
 
 #define process2to1(VECT_SIZE, OUTTYPE, INTYPE, DST, WRTTYPE, SRC, READTYPE, SRC1, READTYPE1, IM_WIDTH, IM_HEIGHT, KERNEL, KRNL_SIZE_X, KRNL_SIZE_Y, BORDER, ...) \
     const int __SIZE_X = KRNL_SIZE_X;\

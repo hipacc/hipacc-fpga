@@ -632,16 +632,18 @@ std::string HostDataDeps::getEntrySignature(
 std::string HostDataDeps::declareFifo(std::string type, std::string name) {
   std::ostringstream retVal;
 
-  switch (compilerOptions.getTargetLang()) {
-    case Language::Vivado:
-      retVal << "hls::stream<" << type << " > " << name << std::endl;
-      break;
-    case Language::OpenCLFPGA:
-      retVal << "createChannel(" << type << ", " << name << ", " << compilerOptions.getPixelsPerThread() << ");" << std::endl;
-      break;
-    default:
-      assert(false && "Language type not supported");
-      break;
+  if (!name.empty() && !type.empty()) {
+    switch (compilerOptions.getTargetLang()) {
+      case Language::Vivado:
+        retVal << "hls::stream<" << type << " > " << name << std::endl;
+        break;
+      case Language::OpenCLFPGA:
+        retVal << "createChannel(" << type << ", " << name << ", " << compilerOptions.getPixelsPerThread() << ");" << std::endl;
+        break;
+      default:
+        assert(false && "Language type not supported");
+        break;
+    }
   }
 
   return retVal.str();
@@ -676,11 +678,10 @@ bool HostDataDeps::isStreamForKernel(std::string kernelName,
   bool retVal = false;
 
   for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
-    if ((*it)->isSpace()) {
-    } else {
+    if (!(*it)->isSpace()) {
       Process *t = (Process*)*it;
       if ( kernelName.compare(t->getKernel()->getName()) ==0 ) {
-        if( imageName.compare(t->getKernel()->getIterationSpace()->getImage()->getName()) == 0 ){
+        if( imageName.compare(t->getOutSpace()->getImage()->getName()) == 0 ){
           if( !t->outStream.empty() ){
             retVal = true;
           }
@@ -708,11 +709,10 @@ std::string HostDataDeps::getStreamForKernel(std::string kernelName,
   std::string retVal;
 
   for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
-    if ((*it)->isSpace()) {
-    } else {
+    if (!(*it)->isSpace()) {
       Process *t = (Process*)*it;
       if ( kernelName.compare(t->getKernel()->getName()) ==0 ) {
-        if( imageName.compare(t->getKernel()->getIterationSpace()->getImage()->getName()) == 0 ){
+        if( imageName.compare(t->getOutSpace()->getImage()->getName()) == 0 ){
           if( !t->outStream.empty() ){
             retVal = t->outStream;
             break;
@@ -722,16 +722,55 @@ std::string HostDataDeps::getStreamForKernel(std::string kernelName,
         for (auto it2 = spaces.begin(); it2 != spaces.end(); ++it2) {
           Space *s = *it2;
           if( imageName.compare(s->getImage()->getName()) == 0 ){
-            if( !t->inStreams.begin()->empty() ){
+            if (s->cpyStreams.size() == 0) {
+              // there is only one output stream, take that
               retVal = s->stream;
               break;
+            } else {
+              // there are multiple output streams, take the one that is
+              // connected to us
+              size_t i = 0;
+              for (auto it3 : s->getDstProcesses()) {
+                if (kernelName.compare(it3->getKernel()->getName()) == 0) {
+                  retVal = s->cpyStreams[i];
+                  break;
+                }
+                ++i;
+              }
             }
+            break;
           }
         }
       }
     }
   }
 
+  return retVal;
+}
+
+std::vector<std::string> HostDataDeps::getOutputStreamsForKernel(
+    std::string kernelName) {
+  std::vector<std::string> retVal;
+
+  for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
+    if (!(*it)->isSpace()) {
+      Process *t = (Process*)*it;
+      if (t != nullptr && kernelName.compare(t->getKernel()->getName()) == 0) {
+        Space *s = t->getOutSpace();
+        if (s->getDstProcesses().size() != 0) {
+          // This is not an output image
+          if (s->cpyStreams.size() == 0) {
+            // Get single output stream
+            retVal.push_back(s->stream);
+          } else {
+            // Get multiple copy streams
+            retVal = s->cpyStreams;
+          }
+        }
+        break;
+      }
+    }
+  }
   return retVal;
 }
 

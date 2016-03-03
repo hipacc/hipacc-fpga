@@ -406,6 +406,7 @@ class HostDataDeps : public ManagedAnalysis {
     std::string printFifoDecls(std::string indent);
     bool isStreamForKernel(std::string kernelName, std::string imageName);
     std::string getStreamForKernel(std::string kernelName, std::string imageName);
+    std::vector<std::string> getOutputStreamsForKernel(std::string kernelName);
     std::string printEntryDecl(
         std::map<std::string,std::vector<std::pair<std::string,std::string>>> args);
     std::string printEntryCall(
