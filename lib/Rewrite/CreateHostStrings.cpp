@@ -930,6 +930,9 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
         !options.emitC99()) {
       resultStr += ", " + gridStr;
       resultStr += ", " + blockStr;
+      if (options.emitOpenCLFPGA()){
+        resultStr += ", " + lit;
+      }
       resultStr += ");";
     }
   }

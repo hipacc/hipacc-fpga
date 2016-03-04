@@ -2259,7 +2259,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
             break;
           case Language::OpenCLFPGA:
           case Language::Vivado:
-            assert(false && "Only constant masks are allowed for Vivado");
+            assert(false && "Only constant propagation is allowed for FPGA");
             break;
         }
         break;
