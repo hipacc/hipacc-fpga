@@ -2849,7 +2849,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     if (numberOfOut < 1) numberOfOut = 1;
 
     if (numberOfIn > 1 || numberOfOut > 1) {
-      if (numberOfIn > 3) {
+      if (numberOfIn > 3 && numberOfIn != 5) {
         assert(false && "Kernels more than 3 input images are not supported yet!");
       } else {
         *OS << numberOfIn;
