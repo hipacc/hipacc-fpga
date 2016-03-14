@@ -166,7 +166,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
       Entry = 7
     };
 
-    Boundary vivadoBM = Boundary::UNDEFINED;
+    Boundary fpgaBM = Boundary::UNDEFINED;
     size_t maxWindowSizeX = 1;
     size_t maxWindowSizeY = 1;
     size_t maxImageWidth = 1;
@@ -2804,7 +2804,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
         << ", IS_height"
         << ", kernel";
     if (KC->getMaskFields().size() > 0) {
-      switch (vivadoBM) {
+      switch (fpgaBM) {
         case clang::hipacc::Boundary::UNDEFINED:
           *OS << ", BorderPadding::BORDER_UNDEF";
           break;
@@ -2884,7 +2884,7 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     if (KC->getMaskFields().size() > 0) {
     *OS << ", " << K->getLocalWindow()->getSizeX();
     *OS << ", " << K->getLocalWindow()->getSizeY();
-      switch (vivadoBM) {
+      switch (fpgaBM) {
         case clang::hipacc::Boundary::CLAMP:
           *OS << ", CLAMP";
           break;
@@ -3108,7 +3108,8 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
                   *OS << ", ARRY";
                 }
               }
-              break;
+              fpgaBM = Acc->getBoundaryMode();
+            break;
             default:
               /* nothing to do */
             break;
@@ -3135,7 +3136,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
               case Rewrite::PrintParam::KernelCall:
                 if (comma++) *OS << ", ";
                 *OS << Name;
-                vivadoBM = Acc->getBoundaryMode();
+                fpgaBM = Acc->getBoundaryMode();
               break;
               default:
                 /* nothing to do */
