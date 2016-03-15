@@ -137,6 +137,105 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
       mainFileID = SM.getMainFileID();
       TextRewriter.setSourceMgr(SM, Context.getLangOpts());
       TextRewriteOptions.RemoveLineIfEmpty = true;
+
+      StringRef MainBuf = SM.getBufferData(mainFileID);
+      const char *mainFileStart = MainBuf.begin();
+      const char *mainFileEnd = MainBuf.end();
+      SourceLocation locStart = SM.getLocForStartOfFile(mainFileID);
+
+      size_t pragmaLen = strlen("pragma");
+      size_t bwLen = strlen("bw");
+      size_t hipaccLen = strlen("hipacc");
+
+      // loop over the whole file, looking for pragmas
+      for (const char *bufPtr = mainFileStart; bufPtr < mainFileEnd; ++bufPtr) {
+        if (*bufPtr == '#') {
+          if (++bufPtr == mainFileEnd)
+            break;
+          while (*bufPtr == ' ' || *bufPtr == '\t')
+            if (++bufPtr == mainFileEnd)
+              break;
+          const char *startPtr = bufPtr;
+          if (compilerOptions.emitOpenCLFPGA()
+                   && !strncmp(bufPtr, "pragma", pragmaLen)) {
+            const char *endPtr = bufPtr + pragmaLen;
+            while (*endPtr == ' ' || *endPtr == '\t')
+              if (++endPtr == mainFileEnd)
+                break;
+
+            if (!strncmp(endPtr, "hipacc", hipaccLen)) {
+              endPtr += hipaccLen;
+
+              while (*endPtr == ' ' || *endPtr == '\t')
+                if (++endPtr == mainFileEnd)
+                  break;
+
+              if (!strncmp(endPtr, "bw", bwLen)) {
+                endPtr += bwLen;
+
+                while (*endPtr == ' ' || *endPtr == '\t')
+                  if (++endPtr == mainFileEnd)
+                    break;
+
+                assert(*endPtr == '(' && "Missing '(' in '#pragma hipacc bw(<id>,<num>)'");
+                ++endPtr;
+
+                while (*endPtr == ' ' || *endPtr == '\t')
+                  if (++endPtr == mainFileEnd)
+                    break;
+
+                bufPtr = endPtr;
+
+                while (*endPtr != ' ' && *endPtr != '\t' && *endPtr != ',')
+                  if (++endPtr == mainFileEnd)
+                    break;
+
+                std::string name(bufPtr, endPtr-bufPtr);
+
+                while (*endPtr == ' ' || *endPtr == '\t')
+                  if (++endPtr == mainFileEnd)
+                    break;
+
+                assert(*endPtr == ',' && "Missing ',' in '#pragma hipacc bw(<id>,<num>)'");
+                ++endPtr;
+
+                while (*endPtr == ' ' || *endPtr == '\t')
+                  if (++endPtr == mainFileEnd)
+                    break;
+
+                bufPtr = endPtr;
+
+                while (*endPtr >= '0' && *endPtr <= '9')
+                  if (++endPtr == mainFileEnd)
+                    break;
+
+                assert(bufPtr != endPtr && "Missing <num> in '#pragma hipacc bw(<id>,<num>)'");
+                std::string bw(bufPtr, endPtr-bufPtr);
+
+                while (*endPtr != ')')
+                  if (++endPtr == mainFileEnd)
+                    break;
+
+                assert(*endPtr == ')' && "Missing ')' in '#pragma hipacc bw(<id>,<num>)'");
+
+                SourceLocation pragmaLoc =
+                  locStart.getLocWithOffset(startPtr-mainFileStart);
+
+                FullSourceLoc fsl(pragmaLoc, SM);
+
+                // store annotation: bwMap[linenumber] = (name, bw)
+                bwMap[fsl.getExpansionLineNumber()+1] =
+                  std::make_pair(name, std::stoi(bw));
+
+                // remove hipacc pragma
+                TextRewriter.RemoveText(pragmaLoc, endPtr-startPtr+1,
+                    TextRewriteOptions);
+                bufPtr += endPtr-startPtr;
+              }
+            }
+          }
+        }
+      }
     }
 
     // Rewrite
@@ -178,6 +277,8 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
     std::map<std::string,std::vector<std::pair<std::string, std::string>>> entryArguments;
     std::string vivadoSizeX;
     std::string vivadoSizeY;
+
+    std::map<size_t, std::pair< std::string, size_t > > bwMap;
 };
 }
 
@@ -1414,6 +1515,9 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           // replacing member variables
           ASTTranslate *Hipacc = new ASTTranslate(Context, kernelDecl, K, KC,
               builtins, compilerOptions, compilerClasses);
+          if (compilerOptions.emitOpenCLFPGA()) {
+            Hipacc->setBWMap(bwMap);
+          }
           Stmt *kernelStmts =
             Hipacc->Hipacc(KC->getKernelFunction()->getBody());
           kernelDecl->setBody(kernelStmts);

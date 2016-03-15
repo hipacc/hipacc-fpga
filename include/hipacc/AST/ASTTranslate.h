@@ -310,6 +310,10 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       assert(0 && "Hipacc: Stumbled upon statement base class, implementation of any derived class missing? Base class was: " #STMT); \
     }
 
+    std::map<size_t, std::pair< std::string, size_t > > bwMap;
+    bool bwEnable;
+    size_t bwSize;
+
   public:
     ASTTranslate(ASTContext& Ctx, FunctionDecl *kernelDecl, HipaccKernel
         *kernel, HipaccKernelClass *kernelClass, hipacc::Builtin::Context
@@ -380,6 +384,10 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       }
 
     Stmt *Hipacc(Stmt *S);
+
+    void setBWMap(std::map<size_t, std::pair< std::string, size_t > > map) {
+      bwMap = map;
+    }
 
   public:
     // dump all available statement visitors

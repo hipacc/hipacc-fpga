@@ -68,7 +68,10 @@ class GaussianFilter : public Kernel<uchar> {
         { add_accessor(&Input); }
 
         void kernel() {
-            ushort sum = convolve(cMask, Reduce::SUM, [&] () -> ushort {
+#pragma hipacc bw(sum,14)
+            ushort sum = 0;
+#pragma hipacc bw(convolve,14)
+            sum = convolve(cMask, Reduce::SUM, [&] () -> ushort {
                     return cMask() * Input(cMask);
                     });
             output() = sum

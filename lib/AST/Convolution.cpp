@@ -49,8 +49,32 @@ Stmt *ASTTranslate::getConvolutionStmt(Reduce mode, DeclRefExpr *tmp_var,
   switch (mode) {
     case Reduce::SUM:
       // red += val;
-      result = createCompoundAssignOperator(Ctx, tmp_var, ret_val, BO_AddAssign,
-          tmp_var->getType());
+      if (compilerOptions.emitOpenCLFPGA()) {
+        if (bwEnable) {
+          int mask = 0;
+          for (size_t i = 0; i < bwSize; ++i) {
+            mask <<= 1;
+            mask |= 1;
+          }
+          result = createBinaryOperator(Ctx,
+              tmp_var,
+              createBinaryOperator(Ctx,
+                createBinaryOperator(Ctx,
+                  createBinaryOperator(Ctx,
+                    tmp_var,
+                    createIntegerLiteral(Ctx, mask), BO_And, tmp_var->getType()),
+                  ret_val, BO_Add, tmp_var->getType()),
+                createIntegerLiteral(Ctx, mask), BO_And, tmp_var->getType()),
+              BO_Assign, tmp_var->getType());
+        } else {
+          result = createBinaryOperator(Ctx, tmp_var,
+              createBinaryOperator(Ctx, tmp_var, ret_val, BO_Add, tmp_var->getType()),
+              BO_Assign, tmp_var->getType());
+        }
+      } else {
+        result = createCompoundAssignOperator(Ctx, tmp_var, ret_val, BO_AddAssign,
+            tmp_var->getType());
+      }
       break;
     case Reduce::MIN:
       // red = min(red, val);
@@ -76,8 +100,12 @@ Stmt *ASTTranslate::getConvolutionStmt(Reduce mode, DeclRefExpr *tmp_var,
       break;
     case Reduce::PROD:
       // red *= val;
-      result = createCompoundAssignOperator(Ctx, tmp_var, ret_val, BO_MulAssign,
-          tmp_var->getType());
+      if (compilerOptions.emitOpenCLFPGA()) {
+        // TODO
+      } else {
+        result = createCompoundAssignOperator(Ctx, tmp_var, ret_val, BO_MulAssign,
+            tmp_var->getType());
+      }
       break;
     case Reduce::MEDIAN:
       assert(0 && "Unsupported convolution mode.");
@@ -286,6 +314,17 @@ Expr *ASTTranslate::convertConvolution(CXXMemberCallExpr *E) {
     method = Method::Iterate;
   } else {
     assert(false && "unsupported convolution method.");
+  }
+
+  bwEnable = false;
+  size_t lineNumber = Ctx.getFullLoc(E->getLocStart()).getExpansionLineNumber();
+  auto it = bwMap.find(lineNumber);
+  if (it != bwMap.end()) {
+    auto entry = it->second;
+    if (E->getDirectCallee()->getName().equals(entry.first)) {
+      bwEnable = true;
+      bwSize = entry.second;
+    }
   }
 
   switch (method) {
