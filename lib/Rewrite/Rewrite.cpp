@@ -231,7 +231,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
                 bwMap[Context.getFullLoc(pragmaLoc).getExpansionLineNumber()+1]
                   = std::make_pair(name, mask);
 
-                bufPtr += endPtr-startPtr;
+                bufPtr = endPtr;
               }
             }
           }
