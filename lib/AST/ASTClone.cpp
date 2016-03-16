@@ -425,7 +425,7 @@ Expr *ASTTranslate::VisitBinaryOperatorClone(BinaryOperator *E) {
   return result;
 }
 
-Expr *ASTTranslate::VisitCompoundAssignOperator(CompoundAssignOperator *E) {
+Expr *ASTTranslate::VisitCompoundAssignOperatorClone(CompoundAssignOperator *E) {
   Expr *result = new (Ctx) CompoundAssignOperator(Clone(E->getLHS()),
       Clone(E->getRHS()), E->getOpcode(), E->getType(), E->getValueKind(),
       E->getObjectKind(), E->getComputationLHSType(),

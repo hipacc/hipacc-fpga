@@ -1840,6 +1840,97 @@ Expr* ASTTranslate::stripLiteralOperand(Expr *operand1, Expr *operand2, double v
 }
 
 
+Expr *ASTTranslate::VisitCompoundAssignOperatorTranslate(CompoundAssignOperator *E) {
+  Expr *result = new (Ctx) CompoundAssignOperator(Clone(E->getLHS()),
+      Clone(E->getRHS()), E->getOpcode(), E->getType(), E->getValueKind(),
+      E->getObjectKind(), E->getComputationLHSType(),
+      E->getComputationResultType(), E->getOperatorLoc(),
+      E->isFPContractable());
+
+  setExprPropsClone(E, result);
+
+  // convert: 'var += x' to 'var = var + x' if 'var' has reduced bit width
+  if (compilerOptions.emitOpenCLFPGA() &&
+      result != nullptr && isa<CompoundAssignOperator>(result)) {
+    CompoundAssignOperator *CAOE = dyn_cast<CompoundAssignOperator>(result);
+    enum BinaryOperatorKind op = CAOE->getOpcode();
+    Expr* LHS = CAOE->getLHS();
+    Expr* RHS = CAOE->getRHS();
+
+    bool changed = false;
+
+    if (isa<DeclRefExpr>(LHS->IgnoreParenCasts())) {
+      size_t lineNum;
+      int mask = 0;
+
+      DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(LHS->IgnoreParenCasts());
+      SourceLocation SL = DRE->getDecl()->getLocation();
+      if (SL.isValid()) {
+        lineNum = Ctx.getFullLoc(SL).getExpansionLineNumber();
+      }
+      mask = getBitwidthMask(lineNum, DRE->getDecl()->getNameAsString());
+
+      if (mask != 0) {
+        // bit width for 'var' reduction has been specified, apply conversion
+        enum BinaryOperatorKind newOp = BO_Add;
+        bool supported = true;
+
+        // convert binary operator kind
+        switch (op) {
+          case BO_MulAssign:
+            newOp = BO_Mul;
+            break;
+          case BO_DivAssign:
+            newOp = BO_Div;
+            break;
+          case BO_RemAssign:
+            newOp = BO_Rem;
+            break;
+          case BO_AddAssign:
+            newOp = BO_Add;
+            break;
+          case BO_SubAssign:
+            newOp = BO_Sub;
+            break;
+          case BO_ShlAssign:
+            newOp = BO_Shl;
+            break;
+          case BO_ShrAssign:
+            newOp = BO_Shr;
+            break;
+          case BO_AndAssign:
+            newOp = BO_And;
+            break;
+          case BO_XorAssign:
+            newOp = BO_Xor;
+            break;
+          case BO_OrAssign:
+            newOp = BO_Or;
+            break;
+          default:
+            supported = false;
+            // not supported
+            break;
+        }
+
+        if (supported) {
+          // replace RHS by binary operator of converted kind
+          RHS = createBinaryOperator(Ctx, LHS, RHS, newOp, LHS->getType());
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      // create assignment expression and call Clone() to apply bit width
+      // reduction
+      result = Clone(createBinaryOperator(Ctx, LHS, RHS, BO_Assign, CAOE->getType()));
+    }
+  }
+  return result;
+}
+
+
 Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
   Expr *result;
 
@@ -1980,8 +2071,96 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
     }
   }
 
+  // apply bit width reduction
+  if (compilerOptions.emitOpenCLFPGA() &&
+      result != nullptr && isa<BinaryOperator>(result)) {
+    BinaryOperator *BOE = dyn_cast<BinaryOperator>(result);
+    enum BinaryOperatorKind op = BOE->getOpcode();
+    Expr* LHS = BOE->getLHS();
+    Expr* RHS = BOE->getRHS();
+
+    bool changed = false;
+
+    switch (op) {
+     case BO_Assign:
+      // if LHS of assignment has reduced bit width, apply mask to complete RHS
+      if (isa<DeclRefExpr>(LHS->IgnoreParenCasts())) {
+        size_t lineNum;
+        int mask = 0;
+
+        DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(LHS->IgnoreParenCasts());
+        SourceLocation SL = DRE->getDecl()->getLocation();
+        if (SL.isValid()) {
+          lineNum = Ctx.getFullLoc(SL).getExpansionLineNumber();
+        }
+        mask = getBitwidthMask(lineNum, DRE->getDecl()->getNameAsString());
+
+        if (mask != 0) {
+          RHS = maskBitwidth(RHS, mask);
+          changed = true;
+        }
+      }
+     break;
+
+     case BO_MulAssign:
+     case BO_DivAssign:
+     case BO_RemAssign:
+     case BO_AddAssign:
+     case BO_SubAssign:
+     case BO_ShlAssign:
+     case BO_ShrAssign:
+     case BO_AndAssign:
+     case BO_XorAssign:
+     case BO_OrAssign:
+      // not supported
+     break;
+
+     default:
+      // reduce bit width of LHS
+      if (isa<DeclRefExpr>(LHS->IgnoreParenCasts())) {
+        size_t lineNum;
+        int mask = 0;
+
+        DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(LHS->IgnoreParenCasts());
+        SourceLocation SL = DRE->getDecl()->getLocation();
+        if (SL.isValid()) {
+          lineNum = Ctx.getFullLoc(SL).getExpansionLineNumber();
+        }
+        mask = getBitwidthMask(lineNum, DRE->getDecl()->getNameAsString());
+        if (mask != 0) {
+          LHS = maskBitwidth(LHS, mask);
+          changed = true;
+        }
+      }
+      // reduce bit width of RHS
+      if (isa<DeclRefExpr>(RHS->IgnoreParenCasts())) {
+        size_t lineNum;
+        int mask = 0;
+
+        DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(RHS->IgnoreParenCasts());
+        SourceLocation SL = DRE->getDecl()->getLocation();
+        if (SL.isValid()) {
+          lineNum = Ctx.getFullLoc(SL).getExpansionLineNumber();
+        }
+        mask = getBitwidthMask(lineNum, DRE->getDecl()->getNameAsString());
+        if (mask != 0) {
+          RHS = maskBitwidth(RHS, mask);
+          changed = true;
+        }
+      }
+     break;
+    }
+
+    if (changed) {
+      result = createBinaryOperator(Ctx, LHS, RHS, op, BOE->getType());
+    }
+  }
+
   return result;
 }
+
+
+
 
 
 Expr *ASTTranslate::VisitImplicitCastExprTranslate(ImplicitCastExpr *E) {
@@ -2607,6 +2786,34 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
   assert(0 && "Hipacc: Stumbled upon unsupported expression: CXXMemberCallExpr");
   return nullptr;
 }
+
+
+int ASTTranslate::getBitwidthMask(size_t lineNum, std::string varName) {
+  int mask = 0;
+
+  auto it = bwMap.find(lineNum);
+  auto it2 = bwMapTmp.find(varName);
+  if (it != bwMap.end()) {
+    auto entry = it->second;
+    if (varName.compare(entry.first) == 0) {
+      mask = entry.second;
+    }
+  } else if (it2 != bwMapTmp.end()) {
+    mask = it2->second;
+  }
+
+  return mask;
+}
+
+
+Expr *ASTTranslate::maskBitwidth(Expr* E, int mask) {
+  if (mask == 0) return E;
+
+  return createParenExpr(Ctx,
+      createBinaryOperator(Ctx, createParenExpr(Ctx, E),
+          createIntegerLiteral(Ctx, mask), BO_And, E->getType()));
+}
+
 
 // vim: set ts=2 sw=2 sts=2 et ai:
 

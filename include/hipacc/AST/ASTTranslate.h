@@ -310,9 +310,12 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       assert(0 && "Hipacc: Stumbled upon statement base class, implementation of any derived class missing? Base class was: " #STMT); \
     }
 
-    std::map<size_t, std::pair< std::string, size_t > > bwMap;
-    bool bwEnable;
-    size_t bwSize;
+    // OpenCLFPGA bit width reduction
+    std::map<size_t, std::pair< std::string, int> > bwMap;
+    std::map< std::string, int > bwMapTmp;
+
+    Expr *maskBitwidth(Expr* E, int mask);
+    int getBitwidthMask(size_t lineNum, std::string varName);
 
   public:
     ASTTranslate(ASTContext& Ctx, FunctionDecl *kernelDecl, HipaccKernel
@@ -385,7 +388,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
 
     Stmt *Hipacc(Stmt *S);
 
-    void setBWMap(std::map<size_t, std::pair< std::string, size_t > > map) {
+    void setBWMap(std::map<size_t, std::pair< std::string, int > > map) {
       bwMap = map;
     }
 
@@ -477,7 +480,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     VISIT_MODE(Expr, MemberExpr)
     HIPACC_UNSUPPORTED_EXPR_BASE_CLASS( CastExpr )
     VISIT_MODE(Expr, BinaryOperator)
-    Expr *VisitCompoundAssignOperator(CompoundAssignOperator *E);
+    VISIT_MODE(Expr, CompoundAssignOperator)
     HIPACC_UNSUPPORTED_EXPR( AbstractConditionalOperator )
     Expr *VisitConditionalOperator(ConditionalOperator *E);
     Expr *VisitBinaryConditionalOperator(BinaryConditionalOperator *E);

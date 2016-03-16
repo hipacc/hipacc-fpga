@@ -218,18 +218,19 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
 
                 assert(*endPtr == ')' && "Missing ')' in '#pragma hipacc bw(<id>,<num>)'");
 
+                // compute mask from bw
+                int mask = 0;
+                for (int i = 0; i < std::stoi(bw); ++i) {
+                  mask <<= 1;
+                  mask |= 1;
+                }
+
+                // store annotation: bwMap[line_number] = (name, mask)
                 SourceLocation pragmaLoc =
                   locStart.getLocWithOffset(startPtr-mainFileStart);
+                bwMap[Context.getFullLoc(pragmaLoc).getExpansionLineNumber()+1]
+                  = std::make_pair(name, mask);
 
-                FullSourceLoc fsl(pragmaLoc, SM);
-
-                // store annotation: bwMap[linenumber] = (name, bw)
-                bwMap[fsl.getExpansionLineNumber()+1] =
-                  std::make_pair(name, std::stoi(bw));
-
-                // remove hipacc pragma
-                TextRewriter.RemoveText(pragmaLoc, endPtr-startPtr+1,
-                    TextRewriteOptions);
                 bufPtr += endPtr-startPtr;
               }
             }
@@ -278,7 +279,7 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
     std::string vivadoSizeX;
     std::string vivadoSizeY;
 
-    std::map<size_t, std::pair< std::string, size_t > > bwMap;
+    std::map<size_t, std::pair< std::string, int > > bwMap;
 };
 }
 
