@@ -314,9 +314,7 @@ typedef struct{double16 s[16];}double256;
     uint __x = 0, __y = 0;\
     while (__count != __vecSIZE) { \
         INTYPE ## VECT_SIZE __newpixel; \
-        if (__count < __vecSIZE) { \
-            readPixelf ## READTYPE(VECT_SIZE, INTYPE, __newpixel, SRC, __count);\
-        }\
+        readPixelf ## READTYPE(VECT_SIZE, INTYPE, __newpixel, SRC, __count);\
         /* Execute Kernel According to Boundary Conditions */ \
         OUTTYPE ## VECT_SIZE __outPixel;\
         _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
@@ -325,7 +323,7 @@ typedef struct{double16 s[16];}double256;
         write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
        \
         __x+=VECT_SIZE; \
-        if(__x == __WIDTH-VECT_SIZE){\
+        if(__x == __WIDTH){\
             __x = 0; \
             __y++;\
         }\
