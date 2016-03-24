@@ -119,65 +119,71 @@ Expr *ASTTranslate::getInitExpr(Reduce mode, QualType QT) {
   if (isVecType) {
     EQT = QT->getAs<VectorType>()->getElementType();
   }
-  const BuiltinType *BT = EQT->getAs<BuiltinType>();
+  enum BuiltinType::Kind BT = EQT->getAs<BuiltinType>()->getKind();
 
-  switch (BT->getKind()) {
-    case BuiltinType::WChar_U:
-    case BuiltinType::WChar_S:
-    case BuiltinType::ULongLong:
-    case BuiltinType::UInt128:
-    case BuiltinType::LongLong:
-    case BuiltinType::Int128:
-    case BuiltinType::LongDouble:
-    case BuiltinType::Void:
-    case BuiltinType::Bool:
-    default:
-      assert(0 && "BuiltinType for reduce function not supported.");
+  if ((compilerOptions.emitOpenCLFPGA() || compilerOptions.emitVivado())
+      && (BT != BuiltinType::Float && BT != BuiltinType::Double)) {
+    // Altera OpenCL and Vivado do not know about special post fixes
+    initExpr = createIntegerLiteral(Ctx, get_init<int>(mode));
+  } else {
+    switch (BT) {
+      case BuiltinType::WChar_U:
+      case BuiltinType::WChar_S:
+      case BuiltinType::ULongLong:
+      case BuiltinType::UInt128:
+      case BuiltinType::LongLong:
+      case BuiltinType::Int128:
+      case BuiltinType::LongDouble:
+      case BuiltinType::Void:
+      case BuiltinType::Bool:
+      default:
+        assert(0 && "BuiltinType for reduce function not supported.");
 
-    case BuiltinType::Char_S:
-    case BuiltinType::SChar:
-      initExpr = new (Ctx) CharacterLiteral(get_init<signed char>(mode),
-          CharacterLiteral::Ascii, QT, SourceLocation());
-      break;
-    case BuiltinType::Char_U:
-    case BuiltinType::UChar:
-      initExpr = new (Ctx) CharacterLiteral(get_init<unsigned char>(mode),
-          CharacterLiteral::Ascii, QT, SourceLocation());
-      break;
-    case BuiltinType::Short: {
-      llvm::APInt init(16, get_init<short>(mode));
-      initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
-      break; }
-    case BuiltinType::Char16:
-    case BuiltinType::UShort: {
-      llvm::APInt init(16, get_init<unsigned short>(mode));
-      initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
-      break; }
-    case BuiltinType::Int: {
-      llvm::APInt init(32, get_init<int>(mode));
-      initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
-      break; }
-    case BuiltinType::Char32:
-    case BuiltinType::UInt: {
-      llvm::APInt init(32, get_init<unsigned>(mode));
-      initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
-      break; }
-    case BuiltinType::Long: {
-      llvm::APInt init(64, get_init<long long>(mode));
-      initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
-      break; }
-    case BuiltinType::ULong: {
-      llvm::APInt init(64, get_init<unsigned long long>(mode));
-      initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
-      break; }
-    case BuiltinType::Float: {
-      llvm::APFloat init(get_init<float>(mode));
-      initExpr = FloatingLiteral::Create(Ctx, init, false, EQT, SourceLocation());
-      break; }
-    case BuiltinType::Double: {
-      llvm::APFloat init(get_init<double>(mode));
-      initExpr = FloatingLiteral::Create(Ctx, init, false, EQT, SourceLocation());
-      break; }
+      case BuiltinType::Char_S:
+      case BuiltinType::SChar:
+        initExpr = new (Ctx) CharacterLiteral(get_init<signed char>(mode),
+            CharacterLiteral::Ascii, QT, SourceLocation());
+        break;
+      case BuiltinType::Char_U:
+      case BuiltinType::UChar:
+        initExpr = new (Ctx) CharacterLiteral(get_init<unsigned char>(mode),
+            CharacterLiteral::Ascii, QT, SourceLocation());
+        break;
+      case BuiltinType::Short: {
+        llvm::APInt init(16, get_init<short>(mode));
+        initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
+        break; }
+      case BuiltinType::Char16:
+      case BuiltinType::UShort: {
+        llvm::APInt init(16, get_init<unsigned short>(mode));
+        initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
+        break; }
+      case BuiltinType::Int: {
+        llvm::APInt init(32, get_init<int>(mode));
+        initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
+        break; }
+      case BuiltinType::Char32:
+      case BuiltinType::UInt: {
+        llvm::APInt init(32, get_init<unsigned>(mode));
+        initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
+        break; }
+      case BuiltinType::Long: {
+        llvm::APInt init(64, get_init<long long>(mode));
+        initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
+        break; }
+      case BuiltinType::ULong: {
+        llvm::APInt init(64, get_init<unsigned long long>(mode));
+        initExpr = new (Ctx) IntegerLiteral(Ctx, init, EQT, SourceLocation());
+        break; }
+      case BuiltinType::Float: {
+        llvm::APFloat init(get_init<float>(mode));
+        initExpr = FloatingLiteral::Create(Ctx, init, false, EQT, SourceLocation());
+        break; }
+      case BuiltinType::Double: {
+        llvm::APFloat init(get_init<double>(mode));
+        initExpr = FloatingLiteral::Create(Ctx, init, false, EQT, SourceLocation());
+        break; }
+    }
   }
 
   if (isVecType) {
