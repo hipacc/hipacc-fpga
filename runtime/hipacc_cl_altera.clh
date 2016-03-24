@@ -320,7 +320,7 @@ typedef struct{double16 s[16];}double256;
         /* Execute Kernel According to Boundary Conditions */ \
         OUTTYPE ## VECT_SIZE __outPixel;\
         _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
-            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__newpixel);\
+            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(((INTYPE*)&__newpixel)[__vi]);\
         }\
         write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
        \
@@ -557,7 +557,7 @@ typedef struct{double16 s[16];}double256;
         /* Execute Kernel According to Boundary Conditions */ \
         OUTTYPE ## VECT_SIZE __outPixel;\
         _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
-            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__newpixel, __newpixel1, __newpixel2);\
+            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(((INTYPE*)&__newpixel)[__vi], ((INTYPE*)&__newpixel1)[__vi], ((INTYPE*)&__newpixel2)[__vi]);\
         }\
         write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
        \
@@ -692,7 +692,7 @@ typedef struct{double16 s[16];}double256;
         /* Execute Kernel According to Boundary Conditions */ \
         OUTTYPE ## VECT_SIZE __outPixel;\
         _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
-            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__newpixel, __newpixel1);\
+            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(((INTYPE*)&__newpixel)[__vi], ((INTYPE*)&__newpixel1)[__vi]);\
         }\
         write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
        \
@@ -815,7 +815,7 @@ typedef struct{double16 s[16];}double256;
         /* Execute Kernel According to Boundary Conditions */ \
         OUTTYPE ## VECT_SIZE __outPixel;\
         _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
-            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__newpixel, __newpixel1);\
+            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(((INTYPE*)&__newpixel)[__vi], ((INTYPE*)&__newpixel1)[__vi]);\
         }\
         write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
         write2 ## WRTTYPE1(VECT_SIZE, OUTTYPE, DST1, __outPixel, __count);\
@@ -847,7 +847,7 @@ typedef struct{double16 s[16];}double256;
         /* Execute Kernel According to Boundary Conditions */ \
         OUTTYPE ## VECT_SIZE __outPixel;\
         _Pragma("unroll") for(int __vi=0; __vi<VECT_SIZE; __vi++){\
-            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(__newpixel);\
+            ((OUTTYPE*)&__outPixel)[__vi] = KERNEL(((INTYPE*)&__newpixel)[__vi]);\
         }\
         write2 ## WRTTYPE(VECT_SIZE, OUTTYPE, DST, __outPixel, __count);\
         write2 ## WRTTYPE1(VECT_SIZE, OUTTYPE, DST1, __outPixel, __count);\
