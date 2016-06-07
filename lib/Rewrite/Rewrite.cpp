@@ -1111,7 +1111,7 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
               BC = new HipaccBoundaryCondition(VD, Img);
               BC->setSizeX(1);
               BC->setSizeY(1);
-              BC->setBoundaryMode(Boundary::CLAMP);
+              BC->setBoundaryMode(Boundary::UNDEFINED);
               BCDeclMap[VD] = BC; // Fixme: store BoundaryCondition???
 
               Parms = BC->getImage()->getName();
@@ -1124,7 +1124,7 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
               BC = new HipaccBoundaryCondition(VD, Pyr);
               BC->setSizeX(1);
               BC->setSizeY(1);
-              BC->setBoundaryMode(Boundary::CLAMP);
+              BC->setBoundaryMode(Boundary::UNDEFINED);
               BCDeclMap[VD] = BC; // Fixme: store BoundaryCondition???
 
               // add call expression to pyramid argument
