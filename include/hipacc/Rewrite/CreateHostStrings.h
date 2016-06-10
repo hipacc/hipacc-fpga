@@ -90,7 +90,7 @@ class CreateHostStrings {
         HipaccMask *Mask, std::string &resultStr);
     void writeMemoryRelease(HipaccMemory *Mem, std::string &resultStr,
         bool isPyramid=false);
-    void writeKernelCall(HipaccKernel *K, std::string &resultStr);
+    void writeKernelCall(HipaccKernel *K, bool isOutputProcess, std::string &resultStr);
     void writeReduceCall(HipaccKernel *K, std::string &resultStr);
     void writeInterpolationDefinition(HipaccKernel *K, HipaccAccessor *Acc,
         std::string function_name, std::string type_suffix, Interpolate ip_mode,

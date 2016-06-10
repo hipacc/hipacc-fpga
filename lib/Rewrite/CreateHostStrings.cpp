@@ -444,7 +444,7 @@ void CreateHostStrings::writeMemoryRelease(HipaccMemory *Mem,
 }
 
 
-void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr) {
+void CreateHostStrings::writeKernelCall(HipaccKernel *K, bool isOutputProcess, std::string &resultStr) {
   auto argTypeNames = K->getArgTypeNames();
   auto deviceArgNames = K->getDeviceArgNames();
   auto hostArgNames = K->getHostArgNames();
@@ -934,6 +934,12 @@ void CreateHostStrings::writeKernelCall(HipaccKernel *K, std::string &resultStr)
         resultStr += ", " + lit;
       }
       resultStr += ");";
+      if (options.emitOpenCLFPGA()){
+        if (isOutputProcess == true){
+          resultStr += "\n";
+          resultStr += indent + "hipaccFinish(" + lit + ");";
+        }
+      }
     }
   }
 }

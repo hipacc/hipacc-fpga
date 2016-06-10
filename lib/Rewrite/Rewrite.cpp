@@ -2001,7 +2001,13 @@ bool Rewrite::VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
         K->setHostArgNames(llvm::makeArrayRef(CCE->getArgs(),
               CCE->getNumArgs()), newStr, literalCount);
 
+        bool isOutputProcess = false;
         if (compilerOptions.emitOpenCLFPGA()) {
+          //Get Kernel Name
+          std::string kernelName = K->getKernelName();
+          // strip "clFooKernel" to "Foo"
+          kernelName = kernelName.substr(2, kernelName.length()-8);
+
           // remove stream parameters from kernel argument list and ensure that
           // non-stream parameters are added
           auto deviceArgNames = K->getDeviceArgNames();
@@ -2009,9 +2015,6 @@ bool Rewrite::VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
           for (auto arg : K->getDeviceArgFields()) {
             HipaccAccessor *Acc = K->getImgFromMapping(arg);
             if (Acc) {
-              std::string kernelName = K->getKernelName();
-              // strip "clFooKernel" to "Foo"
-              kernelName = kernelName.substr(2, kernelName.length()-8);
               if (dataDeps->isStreamForKernel(kernelName,
                     Acc->getImage()->getName())) {
                 K->setUnused(deviceArgNames[i]);
@@ -2021,13 +2024,20 @@ bool Rewrite::VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
             }
             ++i;
           }
+
+          // Check if this kernel has no output streams (for writeKernell Call)
+          std::vector<std::string> outChan = dataDeps->getOutputStreamsForKernel(kernelName);
+          if (outChan.size() == 0) {
+            // no channels, so output must be an array
+            isOutputProcess = true;
+          }
         }
 
         //
         // TODO: handle the case when only reduce function is specified
         //
         // create kernel call string
-        stringCreator.writeKernelCall(K, newStr);
+        stringCreator.writeKernelCall(K, isOutputProcess, newStr);
 
         // create reduce call string
         if (K->getKernelClass()->getReduceFunction()) {
