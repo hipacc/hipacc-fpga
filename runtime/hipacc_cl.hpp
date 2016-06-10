@@ -52,7 +52,9 @@
 
 #include "hipacc_base.hpp"
 
-#define EVENT_TIMING
+#ifndef ALTERACL
+  #define EVENT_TIMING
+#endif
 
 enum cl_platform_name {
     AMD     = 0x1,
@@ -981,8 +983,10 @@ void hipaccEnqueueKernel(cl_kernel kernel, size_t *global_work_size, size_t *loc
     err |= clFinish(Ctx.get_command_queues(num_kernel)[0]);
     end = getMicroTime();
     checkErr(err, "clFinish()");
+#endif
     #endif
 
+#ifndef ALTERACL
     last_gpu_timing = (end-start)*1.0e-3f;
     if (print_timing) {
         std::cerr << "<HIPACC:> Kernel timing (" << local_work_size[0]*local_work_size[1] << ": " << local_work_size[0] << "x" << local_work_size[1] << "): " << last_gpu_timing << "(ms)" << std::endl;
