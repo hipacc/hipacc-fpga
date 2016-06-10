@@ -399,7 +399,12 @@ class HostDataDeps : public ManagedAnalysis {
         std::map<std::string,std::vector<std::pair<std::string,std::string>>> args,
         bool print=false);
     std::string getTypeStr(Space *s) {
-      return s->getTypeStr(compilerOptions.getPixelsPerThread());
+      // ppt is always 1 if it is OpenCL, because of the CreateChannel macro 
+      size_t ppt=1;
+      if(!compilerOptions.emitOpenCL()){
+        ppt = compilerOptions.getPixelsPerThread();
+      }
+      return s->getTypeStr(ppt);
     }
 
   public:
