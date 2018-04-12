@@ -635,7 +635,7 @@ std::string HostDataDeps::declareFifo(std::string type, std::string name) {
   if (!name.empty() && !type.empty()) {
     switch (compilerOptions.getTargetLang()) {
       case Language::Vivado:
-        retVal << "hls::stream<" << type << " > " << name << std::endl;
+        retVal << "hls::stream<" << type << " > " << name << ";" << std::endl;
         break;
       case Language::OpenCLFPGA:
         retVal << "createChannel(" << type << ", " << name << ", " << compilerOptions.getPixelsPerThread() << ");" << std::endl;
@@ -789,7 +789,8 @@ std::string HostDataDeps::prettyPrint(
   for (auto it = schedule.rbegin(); it != schedule.rend(); ++it) {
     if ((*it)->isSpace()) {
       Space *s = (Space*)*it;
-      if (s->cpyStreams.size() > 0) {
+      size_t nCpyStreams = s->cpyStreams.size();
+      if (nCpyStreams > 0) {
         for (auto it2 = s->cpyStreams.begin();
                   it2 != s->cpyStreams.end(); ++it2) {
           retVal << indent << declareFifo(getTypeStr(s), *it2);
@@ -797,6 +798,9 @@ std::string HostDataDeps::prettyPrint(
 #define NICO_LIB
 #ifdef NICO_LIB
         retVal << indent << "splitStream";
+        if (nCpyStreams > 2) {
+          retVal << nCpyStreams;
+        }
         if (compilerOptions.getPixelsPerThread() > 1) {
           retVal << "VECT";
         }
