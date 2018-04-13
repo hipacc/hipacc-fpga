@@ -337,8 +337,8 @@ RecordDecl *createRecordDecl(ASTContext &Ctx, DeclContext *DC, StringRef Name,
 
 MemberExpr *createMemberExpr(ASTContext &Ctx, Expr *base, bool isArrow,
     ValueDecl *memberdecl, QualType T) {
-  return new (Ctx) MemberExpr(base, isArrow, memberdecl, SourceLocation(), T,
-      VK_LValue, OK_Ordinary);
+  return new (Ctx) MemberExpr(base, isArrow, SourceLocation(), memberdecl,
+      SourceLocation(), T, VK_LValue, OK_Ordinary);
 }
 
 
@@ -362,6 +362,7 @@ IfStmt *createIfStmt(ASTContext &Ctx, Expr *cond, Stmt *then, Stmt *elsev, Decl
     *decl) {
   IfStmt *S = new (Ctx) IfStmt(Stmt::EmptyShell());
 
+  S->setInit(nullptr);
   S->setConditionVariable(Ctx, cast_or_null<VarDecl>(decl));
   S->setCond(cond);
   S->setThen(then);
@@ -422,7 +423,7 @@ BinaryOperator *createBinaryOperator(ASTContext &Ctx, Expr *lhs, Expr *rhs,
   E->setRHS(rhs);
   E->setOpcode(opc);
   E->setOperatorLoc(SourceLocation());
-  E->setFPContractable(false);
+  E->setFPFeatures(FPOptions());
   E->setType(ResTy);
 
   return E;
@@ -437,7 +438,7 @@ CompoundAssignOperator *createCompoundAssignOperator(ASTContext &Ctx, Expr *lhs,
   E->setRHS(rhs);
   E->setOpcode(opc);
   E->setOperatorLoc(SourceLocation());
-  E->setFPContractable(false);
+  E->setFPFeatures(FPOptions());
   E->setType(ResTy);
   E->setComputationLHSType(ResTy);
   E->setComputationResultType(ResTy);

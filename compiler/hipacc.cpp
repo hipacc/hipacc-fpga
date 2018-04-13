@@ -39,7 +39,6 @@
 
 #include <clang/Driver/Compilation.h>
 #include <clang/Driver/Driver.h>
-#include <clang/Driver/Tool.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/CompilerInvocation.h>
 #include <clang/Frontend/TextDiagnosticPrinter.h>
@@ -77,7 +76,6 @@ void printUsage() {
     << "  -emit-padding <n>       Emit CUDA/OpenCL/Renderscript image padding, using alignment of <n> bytes for GPU devices\n"
     << "  -target <n>             Generate code for GPUs with code name <n>.\n"
     << "                          Code names for CUDA/OpenCL on NVIDIA devices are:\n"
-    << "                            'Tesla-10', 'Tesla-11', 'Tesla-12', and 'Tesla-13' for Tesla architecture.\n"
     << "                            'Fermi-20' and 'Fermi-21' for Fermi architecture.\n"
     << "                            'Kepler-30', 'Kepler-32', 'Kepler-35', and 'Kepler-37' for Kepler architecture.\n"
     << "                            'Maxwell-50', 'Maxwell-52', and 'Maxwell-53' for Maxwell architecture.\n"
@@ -127,6 +125,7 @@ int main(int argc, char *argv[]) {
   for (int i=0; i<argc; ++i) {
     if (StringRef(argv[i]) == "-emit-cpu") {
       compilerOptions.setTargetLang(Language::C99);
+      compilerOptions.setTargetDevice(Device::CPU);
       continue;
     }
     if (StringRef(argv[i]) == "-emit-cuda") {
@@ -178,15 +177,13 @@ int main(int argc, char *argv[]) {
     }
     if (StringRef(argv[i]) == "-target") {
       assert(i<(argc-1) && "Mandatory code name parameter for -target switch missing.");
-      if (StringRef(argv[i+1]) == "Tesla-10") {
-        compilerOptions.setTargetDevice(Device::Tesla_10);
-      } else if (StringRef(argv[i+1]) == "Tesla-11") {
-        compilerOptions.setTargetDevice(Device::Tesla_11);
-      } else if (StringRef(argv[i+1]) == "Tesla-12") {
-        compilerOptions.setTargetDevice(Device::Tesla_12);
-      } else if (StringRef(argv[i+1]) == "Tesla-13") {
-        compilerOptions.setTargetDevice(Device::Tesla_13);
-      } else if (StringRef(argv[i+1]) == "Fermi-20") {
+
+      if (!compilerOptions.emitCUDA() && !compilerOptions.emitOpenCLGPU()) {
+        llvm::errs() << "WARNING: Setting target is only supported for CUDA/OpenCL-GPU.\n\n";
+        continue;
+      }
+
+      if (StringRef(argv[i+1]) == "Fermi-20") {
         compilerOptions.setTargetDevice(Device::Fermi_20);
       } else if (StringRef(argv[i+1]) == "Fermi-21") {
         compilerOptions.setTargetDevice(Device::Fermi_21);
@@ -372,15 +369,6 @@ int main(int argc, char *argv[]) {
     printUsage();
     return EXIT_FAILURE;
   }
-  // Textures in CUDA - writing to Array2D textures introduced with Fermi
-  if (compilerOptions.emitCUDA() && compilerOptions.useTextureMemory(USER_ON)) {
-    if (compilerOptions.getTextureType()==Texture::Array2D &&
-        compilerOptions.getTargetDevice() < Device::Fermi_20) {
-      llvm::errs() << "Warning: 'Array2D' texture memory only supported for Fermi and later on (CC >= 2.0)!"
-                   << "  Using 'Linear2D' instead!\n";
-      compilerOptions.setTextureMemory(Texture::Linear2D);
-    }
-  }
   // Textures in CUDA - Ldg (load via texture cache) was introduced with Kepler
   if (compilerOptions.emitCUDA() && compilerOptions.useTextureMemory(USER_ON)) {
     if (compilerOptions.getTextureType()==Texture::Ldg &&
@@ -409,7 +397,7 @@ int main(int argc, char *argv[]) {
     }
   }
   // Invalid specification for kernel configuration
-  if (compilerOptions.useKernelConfig(USER_ON)) {
+  if (compilerOptions.useKernelConfig(USER_ON) && !compilerOptions.emitC99()) {
     if (compilerOptions.getKernelConfigX()*compilerOptions.getKernelConfigY() >
         (int)targetDevice.max_threads_per_block) {
       llvm::errs() << "ERROR: Invalid kernel configuration: maximum threads for target device are "
@@ -451,7 +439,7 @@ int main(int argc, char *argv[]) {
   compilerOptions.printSummary(targetDevice.getTargetDeviceName());
 
 
-  // use the Driver
+  // use the Driver (from Tooling.cpp)
   IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts = new DiagnosticOptions();
   TextDiagnosticPrinter DiagnosticPrinter(llvm::errs(), &*DiagOpts);
   DiagnosticsEngine Diagnostics(
@@ -463,7 +451,7 @@ int main(int argc, char *argv[]) {
   Driver.setCheckInputsExist(false);
   Driver.setTitle("hipacc");
 
-  std::unique_ptr<driver::Compilation> Compilation(
+  const std::unique_ptr<driver::Compilation> Compilation(
       Driver.BuildCompilation(args));
 
   // use the flags from the first job
@@ -480,7 +468,7 @@ int main(int argc, char *argv[]) {
 
   // create a compiler instance to handle the actual work
   CompilerInstance Compiler;
-  Compiler.setInvocation(Invocation.release());
+  Compiler.setInvocation(std::move(Invocation));
 
   // create the action for Hipacc
   std::unique_ptr<ASTFrontendAction> HipaccAction(

@@ -179,15 +179,14 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
     case WRITE_ONLY:
       switch (compilerOptions.getTargetLang()) {
         default: break;
-        case Language::Renderscript: {
-            if (Kernel->getKernelClass()->getMembers()[0].name.compare(
-                  LHS->getNameInfo().getAsString()) != 0) {
-              // access allocation by using local pointer type kernel argument
-              return accessMemAllocPtr(LHS);
-            }
-            // fall through to READ_ONLY for global allocation
-          }
-          break;
+        case Language::CUDA:
+          if (Kernel->useTextureMemory(Acc) == Texture::Array2D)
+            return accessMemTexAt(LHS, Acc, mem_acc, idx_x, idx_y);
+          return accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
+        case Language::Renderscript:
+          if (KernelClass->getMembers()[0].name.compare(LHS->getNameInfo().getAsString()) != 0)
+            return accessMemAllocPtr(LHS); // access allocation by using local pointer type kernel argument
+          return accessMemAllocAt(LHS, mem_acc, idx_x, idx_y);
         case Language::Filterscript:
           assert(0 && "Filterscript does not support write access for allocations.");
       }
@@ -196,17 +195,15 @@ Expr *ASTTranslate::accessMem(DeclRefExpr *LHS, HipaccAccessor *Acc,
         case Language::C99:
           return accessMem2DAt(LHS, idx_x, idx_y);
         case Language::CUDA:
-          if (Kernel->useTextureMemory(Acc)!=Texture::None) {
-            return accessMemTexAt(LHS, Acc, mem_acc, idx_x, idx_y);
-          }
-          // fall through
+          if (Kernel->useTextureMemory(Acc) == Texture::None)
+            return accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
+          return accessMemTexAt(LHS, Acc, mem_acc, idx_x, idx_y);
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
         case Language::OpenCLGPU:
-          if (Kernel->useTextureMemory(Acc)!=Texture::None) {
-            return accessMemImgAt(LHS, Acc, mem_acc, idx_x, idx_y);
-          }
-          return accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
+          if (Kernel->useTextureMemory(Acc) == Texture::None)
+            return accessMemArrAt(LHS, getStrideDecl(Acc), idx_x, idx_y);
+          return accessMemImgAt(LHS, Acc, mem_acc, idx_x, idx_y);
         case Language::Renderscript:
         case Language::Filterscript:
           return accessMemAllocAt(LHS, mem_acc, idx_x, idx_y);
@@ -406,8 +403,15 @@ FunctionDecl *ASTTranslate::getImageFunction(HipaccAccessor *Acc, MemoryAccess
 
 
 // get rsGetElementAt_<type>/rsSetElementAt_<type> functions for given Accessor
-FunctionDecl *ASTTranslate::getAllocationFunction(const BuiltinType *BT, bool
-    isVecType, MemoryAccess mem_acc) {
+FunctionDecl *ASTTranslate::getAllocationFunction(QualType QT, MemoryAccess
+    mem_acc) {
+  bool isVecType = QT->isVectorType();
+
+  if (isVecType) {
+    QT = QT->getAs<VectorType>()->getElementType();
+  }
+  const BuiltinType *BT = QT->getAs<BuiltinType>();
+
   switch (BT->getKind()) {
     case BuiltinType::WChar_U:
     case BuiltinType::WChar_S:
@@ -458,11 +462,10 @@ FunctionDecl *ASTTranslate::getAllocationFunction(const BuiltinType *BT, bool
 
 
 // get convert_<type> function for given type
-FunctionDecl *ASTTranslate::getConvertFunction(QualType QT, bool isVecType) {
+FunctionDecl *ASTTranslate::getConvertFunction(QualType VQT) {
+  bool isVecType = VQT->isVectorType();
   assert(isVecType && "Only vector types are supported yet.");
-  if (isVecType) {
-    QT = QT->getAs<VectorType>()->getElementType();
-  }
+  QualType QT = VQT->getAs<VectorType>()->getElementType();
   std::string name = "convert_";
 
   switch (QT->getAs<BuiltinType>()->getKind()) {
@@ -523,8 +526,8 @@ FunctionDecl *ASTTranslate::getConvertFunction(QualType QT, bool isVecType) {
       break;
   }
 
-  FunctionDecl *result = lookup<FunctionDecl>(name, simdTypes.getSIMDType(QT,
-        QT.getAsString(), SIMD4), hipaccNS);
+  auto simd_type = simdTypes.getSIMDType(QT, QT.getAsString(), SIMD4);
+  FunctionDecl *result = lookup<FunctionDecl>(name, simd_type, hipacc_ns);
   assert(result && "could not lookup convert function");
 
   return result;
@@ -583,16 +586,15 @@ Expr *ASTTranslate::accessMemTexAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
   // clone Decl
   TemplateArgumentListInfo templateArgs(LHS->getLAngleLoc(),
       LHS->getRAngleLoc());
-  for (size_t i=0, e=LHS->getNumTemplateArgs(); i!=e; ++i) {
-    templateArgs.addArgument(LHS->getTemplateArgs()[i]);
-  }
+  for (auto template_arg : LHS->template_arguments())
+    templateArgs.addArgument(template_arg);
 
   assert(isa<ParmVarDecl>(LHS->getDecl()) && "texture variable must be a ParmVarDecl!");
   ParmVarDecl *PVD = dyn_cast<ParmVarDecl>(LHS->getDecl());
   DeclRefExpr *LHStex = DeclRefExpr::Create(Ctx,
       LHS->getQualifierLoc(),
       LHS->getTemplateKeywordLoc(),
-      CloneDeclTex(PVD, (mem_acc==READ_ONLY)?"_tex":"_surf"),
+      CloneDeclTex(PVD, "_tex"),
       LHS->refersToEnclosingVariableOrCapture(),
       LHS->getLocation(),
       LHS->getType(), LHS->getValueKind(),
@@ -688,7 +690,7 @@ Expr *ASTTranslate::accessMemImgAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
     if (QT->isVectorType()) {
       SmallVector<Expr *, 16> args;
       args.push_back(result);
-      result = createFunctionCall(Ctx, getConvertFunction(QT, true), args);
+      result = createFunctionCall(Ctx, getConvertFunction(QT), args);
     } else {
       result = createExtVectorElementExpr(Ctx, QT, result, "x");
     }
@@ -723,8 +725,7 @@ Expr *ASTTranslate::accessMemImgAt(DeclRefExpr *LHS, HipaccAccessor *Acc,
       // convert to proper vector type
       SmallVector<Expr *, 16> args;
       args.push_back(writeImageRHS);
-      writeImageRHS = createFunctionCall(Ctx, getConvertFunction(QT, true),
-          args);
+      writeImageRHS = createFunctionCall(Ctx, getConvertFunction(QT), args);
     }
 
     // parameters for write_image
@@ -745,18 +746,7 @@ Expr *ASTTranslate::accessMemAllocAt(DeclRefExpr *LHS, MemoryAccess mem_acc,
                                      Expr *idx_x, Expr *idx_y) {
   // mark image as being used within the kernel
   Kernel->setUsed(LHS->getNameInfo().getAsString());
-
   QualType QT = LHS->getType()->getPointeeType();
-  bool isVec = QT->isVectorType();
-
-  if (isVec) {
-    QT = QT->getAs<VectorType>()->getElementType();
-  }
-  const BuiltinType *BT = QT->getAs<BuiltinType>();
-  FunctionDecl *element_function = getAllocationFunction(BT, isVec, mem_acc);
-
-  //const BuiltinType *BT = LHS->getType()->getPointeeType()->getAs<BuiltinType>();
-  //FunctionDecl *get_element_function = getAllocationFunction(BT, false, mem_acc);
 
   // parameters for rsGetElementAt_<type>
   SmallVector<Expr *, 16> args;
@@ -769,7 +759,7 @@ Expr *ASTTranslate::accessMemAllocAt(DeclRefExpr *LHS, MemoryAccess mem_acc,
   args.push_back(idx_x);
   args.push_back(idx_y);
 
-  return createFunctionCall(Ctx, element_function, args);
+  return createFunctionCall(Ctx, getAllocationFunction(QT, mem_acc), args);
 }
 
 
@@ -880,7 +870,7 @@ void ASTTranslate::stageLineToSharedMemory(ParmVarDecl *PVD,
 // stage iteration p to shared memory
 void ASTTranslate::stageIterationToSharedMemory(SmallVector<Stmt *, 16>
     &stageBody, int p) {
-  for (auto param : kernelDecl->params()) {
+  for (auto param : kernelDecl->parameters()) {
     if (KernelDeclMapShared[param]) {
       HipaccAccessor *Acc = KernelDeclMapAcc[param];
 
@@ -943,7 +933,7 @@ void ASTTranslate::stageIterationToSharedMemory(SmallVector<Stmt *, 16>
 // stage data to shared memory for exploration
 void ASTTranslate::stageIterationToSharedMemoryExploration(SmallVector<Stmt *,
     16> &stageBody) {
-  for (auto param : kernelDecl->params()) {
+  for (auto param : kernelDecl->parameters()) {
     if (KernelDeclMapShared[param]) {
       HipaccAccessor *Acc = KernelDeclMapAcc[param];
 

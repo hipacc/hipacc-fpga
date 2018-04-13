@@ -134,8 +134,8 @@ class TransferFunctions : public StmtVisitor<TransferFunctions> {
     void VisitBinaryOperator(BinaryOperator *E);
     void VisitUnaryOperator(UnaryOperator *E);
     void VisitCallExpr(CallExpr *E);
-    void VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {}
-    void VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {}
+    void VisitCXXMemberCallExpr(CXXMemberCallExpr *) {}
+    void VisitCXXOperatorCallExpr(CXXOperatorCallExpr *) {}
     void VisitCStyleCastExpr(CStyleCastExpr *E);
     void VisitDeclStmt(DeclStmt *S);
     void VisitDeclRefExpr(DeclRefExpr *E);
@@ -187,10 +187,8 @@ void KernelStatsImpl::runOnBlock(const CFGBlock *block) {
   if (const Stmt *term = block->getTerminator()) {
     llvm::errs() << "Successors: \n";
 
-    for (auto it=block->succ_begin(), ei=block->succ_end(); it!=ei; ++it) {
-      const CFGBlock *block = *it;
-      llvm::errs() << block->getBlockID() << "\n";
-    }
+    for (auto succ : block->succs())
+      llvm::errs() << suck->getBlockID() << "\n";
 
     switch (term->getStmtClass()) {
       case Stmt::BinaryOperatorClass:
@@ -485,6 +483,7 @@ void TransferFunctions::VisitBinaryOperator(BinaryOperator *E) {
           E->getOpcodeStr();
         exit(EXIT_FAILURE);
       }
+      break;
     case BO_Mul:
     case BO_Div:
     case BO_Rem:
@@ -616,6 +615,7 @@ void TransferFunctions::VisitUnaryOperator(UnaryOperator *E) {
           E->getOpcodeStr(E->getOpcode());
         exit(EXIT_FAILURE);
       }
+      break;
     case UO_PostInc:
     case UO_PostDec:
     case UO_PreInc:

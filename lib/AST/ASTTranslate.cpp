@@ -80,7 +80,7 @@ FunctionDecl *ASTTranslate::cloneFunction(FunctionDecl *FD) {
     SmallVector<QualType, 16> argTypes;
     SmallVector<std::string, 16> argNames;
 
-    for (auto param : FD->params()) {
+    for (auto param : FD->parameters()) {
       QualType QT = param->getType();
 
       // allow reference types for CUDA only
@@ -129,28 +129,35 @@ FunctionDecl *ASTTranslate::cloneFunction(FunctionDecl *FD) {
 
 template <typename T>
 T *ASTTranslate::lookup(std::string name, QualType QT, NamespaceDecl *NS) {
-  DeclContext *DC = Ctx.getTranslationUnitDecl();
-  if (NS) DC = Decl::castToDeclContext(NS);
+  QT = QT.getDesugaredType(Ctx);
 
-  for (auto *decl : DC->lookup(&Ctx.Idents.get(name))) {
-    if (auto result = cast_or_null<T>(decl)) {
-      if (auto fun = dyn_cast<FunctionDecl>(result)) {
-        if (fun->getReturnType().getDesugaredType(Ctx) ==
-            QT.getDesugaredType(Ctx)) return result;
-        continue;
-      }
-      if (auto var = dyn_cast<VarDecl>(result)) {
-        if (var->getType().getDesugaredType(Ctx) == QT.getDesugaredType(Ctx))
-          return result;
-        continue;
-      }
+  auto lookup_dc = [&] (DeclContext *DC) -> T * {
+    for (auto *decl : DC->lookup(&Ctx.Idents.get(name))) {
+      if (auto result = cast_or_null<T>(decl)) {
+        if (auto fun = dyn_cast<FunctionDecl>(result)) {
+          if (fun->getReturnType().getDesugaredType(Ctx) == QT)
+            return result;
+          continue;
+        }
+        if (auto var = dyn_cast<VarDecl>(result)) {
+          if (var->getType().getDesugaredType(Ctx) == QT)
+            return result;
+          continue;
+        }
 
-      // default case
-      return result;
+        // default case
+        return result;
+      }
     }
-  }
 
-  return nullptr;
+    return nullptr;
+  };
+
+  if (NS)
+    for (auto ns_decl : NS->redecls())
+      if (auto result = lookup_dc(Decl::castToDeclContext(ns_decl)))
+        return result;
+  return lookup_dc(Ctx.getTranslationUnitDecl());
 }
 
 
@@ -203,12 +210,12 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
       // check if we need border handling
       if (Acc->getBoundaryMode() != Boundary::UNDEFINED) {
         if (Acc->getSizeX() > 1) {
-            bh_variant.borders.left = 1;
-            bh_variant.borders.right = 1;
+          bh_variant.borders.left = 1;
+          bh_variant.borders.right = 1;
         }
         if (Acc->getSizeY() > 1) {
-            bh_variant.borders.top = 1;
-            bh_variant.borders.bottom = 1;
+          bh_variant.borders.top = 1;
+          bh_variant.borders.bottom = 1;
         }
       }
     }
@@ -221,11 +228,11 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
     retValRef = createDeclRefExpr(Ctx, output);
   }
   // convert the function body to kernel syntax
-  Stmt *clonedStmt = Clone(S);
-  assert(isa<CompoundStmt>(clonedStmt) && "CompoundStmt for kernel function body expected!");
+  Stmt *new_body = Clone(S);
+  assert(isa<CompoundStmt>(new_body) && "CompoundStmt for kernel function body expected!");
 
   if (compilerOptions.emitVivado()) {
-    kernelBody.push_back(clonedStmt);
+    kernelBody.push_back(new_body);
   } else {
     //
     // for (int gid_y=offset_y; gid_y<is_height+offset_y; gid_y++) {
@@ -244,16 +251,16 @@ void ASTTranslate::initCPU(SmallVector<Stmt *, 16> &kernelBody, Stmt *S) {
       upper_y = createBinaryOperator(Ctx, upper_y,
           getOffsetYDecl(Kernel->getIterationSpace()), BO_Add, Ctx.IntTy);
     }
-    ForStmt *innerLoop = createForStmt(Ctx, gid_x_stmt, createBinaryOperator(Ctx,
+    ForStmt *inner_loop = createForStmt(Ctx, gid_x_stmt, createBinaryOperator(Ctx,
           tileVars.global_id_x, upper_x, BO_LT, Ctx.BoolTy),
         createUnaryOperator(Ctx, tileVars.global_id_x, UO_PostInc,
-          tileVars.global_id_x->getType()), clonedStmt);
-    ForStmt *outerLoop = createForStmt(Ctx, gid_y_stmt, createBinaryOperator(Ctx,
+          tileVars.global_id_x->getType()), new_body);
+    ForStmt *outer_loop = createForStmt(Ctx, gid_y_stmt, createBinaryOperator(Ctx,
           tileVars.global_id_y, upper_y, BO_LT, Ctx.BoolTy),
         createUnaryOperator(Ctx, tileVars.global_id_y, UO_PostInc,
-          tileVars.global_id_y->getType()), innerLoop);
+          tileVars.global_id_y->getType()), inner_loop);
 
-    kernelBody.push_back(outerLoop);
+    kernelBody.push_back(outer_loop);
   }
 }
 
@@ -551,9 +558,8 @@ void ASTTranslate::updateTileVars() {
       tileVars.block_id_y = addCastToInt(tileVars.block_id_y);
       // select fastest method for accessing blockDim.[x|y]
       // TODO: define this in HipaccDeviceOptions
-      if (compilerOptions.getTargetDevice()>=Device::Fermi_20 &&
-          compilerOptions.getTargetDevice()<=Device::Kepler_30 &&
-          compilerOptions.getTargetLang()==Language::CUDA) {
+      if (compilerOptions.getTargetLang()==Language::CUDA &&
+          compilerOptions.getTargetDevice()<=Device::Kepler_30) {
         if (compilerOptions.exploreConfig() && !emitEstimation) {
           tileVars.local_size_x = createDeclRefExpr(Ctx, createVarDecl(Ctx,
                 kernelDecl, "BSX_EXPLORE", Ctx.IntTy, nullptr));
@@ -580,7 +586,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   if (S==nullptr) return nullptr;
 
   // search for image width and height parameters
-  for (auto param : kernelDecl->params()) {
+  for (auto param : kernelDecl->parameters()) {
     auto parm_ref = createDeclRefExpr(Ctx, param);
     // the first parameter is the output image; create association between them.
     if (param == *kernelDecl->param_begin()) {
@@ -734,7 +740,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
   // add vector pointer declarations for images
   if (Kernel->vectorize() && !compilerOptions.emitC99()) {
     // search for member name in kernel parameter list
-    for (auto param : kernelDecl->params()) {
+    for (auto param : kernelDecl->parameters()) {
       // output image - iteration space
       if (param->getName().equals((*kernelDecl->param_begin())->getName())) {
         // <type>4 *Output4 = (<type>4 *) Output;
@@ -755,7 +761,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       StringRef name = img->getName();
 
       // search for member name in kernel parameter list
-      for (auto param : kernelDecl->params()) {
+      for (auto param : kernelDecl->parameters()) {
         // parameter name matches
         if (param->getName().equals(name)) {
           // <type>4 *Input4 = (<type>4 *) Input;
@@ -877,7 +883,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       }
 
       // search for member name in kernel parameter list
-      for (auto param : kernelDecl->params()) {
+      for (auto param : kernelDecl->parameters()) {
         // parameter name matches
         if (param->getName().equals(img->getName())) {
           // store mapping between ParmVarDecl and shared memory VarDecl
@@ -1025,15 +1031,6 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
         break;
       case 9:
         LD = createLabelDecl(Ctx, kernelDecl, "BH_NO");
-
-        if (compilerOptions.getTargetDevice()<=Device::Tesla_13 &&
-            compilerOptions.getTargetLang()==Language::CUDA) {
-          // TODO: remove this once CUDA 7 is widespread and Tesla architecture
-          // is discontinued
-          // CUDA: if (blockDim.x >= 16) goto BH_NO;
-          if_goto = createBinaryOperator(Ctx, tileVars.local_size_x,
-              createIntegerLiteral(Ctx, 16), BO_GE, Ctx.BoolTy);
-        }
         break;
     }
     LDS.push_back(LD);
@@ -1304,8 +1301,8 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       }
 
       // convert kernel function body to CUDA/OpenCL kernel syntax
-      Stmt *clonedStmt = Clone(S);
-      assert(isa<CompoundStmt>(clonedStmt) && "CompoundStmt for kernel function body expected!");
+      Stmt *new_body = Clone(S);
+      assert(isa<CompoundStmt>(new_body) && "CompoundStmt for kernel function body expected!");
 
       // add iteration space check when calculating multiple pixels per thread,
       // having a tiling with multiple threads in the y-dimension, or in case
@@ -1333,10 +1330,10 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
         BinaryOperator *inner_check_bop = createBinaryOperator(Ctx, gidYRef,
             getHeightDecl(Kernel->getIterationSpace()), BO_LT, Ctx.BoolTy);
         IfStmt *inner_ispace_check = createIfStmt(Ctx, inner_check_bop,
-            clonedStmt);
+            new_body);
         pptBody.push_back(inner_ispace_check);
       } else {
-        pptBody.push_back(clonedStmt);
+        pptBody.push_back(new_body);
       }
 
 
@@ -1381,9 +1378,7 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
     kernelBody.push_back(createReturnStmt(Ctx, result));
   }
 
-  CompoundStmt *CS = createCompoundStmt(Ctx, kernelBody);
-
-  return CS;
+  return createCompoundStmt(Ctx, kernelBody);
 }
 
 
@@ -1553,7 +1548,7 @@ Stmt *ASTTranslate::VisitCompoundStmtTranslate(CompoundStmt *S) {
     }
   }
 
-  result->setStmts(Ctx, body.data(), body.size());
+  result->setStmts(Ctx, body);
 
   return result;
 }
@@ -1607,13 +1602,13 @@ Expr *ASTTranslate::VisitCallExprTranslate(CallExpr *E) {
               // require convert function ulong -> long
               convert = lookup<FunctionDecl>(std::string("convert_long4"),
                   simdTypes.getSIMDType(Ctx.LongTy, std::string("long"), SIMD4),
-                  hipaccNS);
+                  hipacc_ns);
               assert(convert && "could not lookup 'convert_long4'");
             } else if (name=="abs") {
               // require convert function uint -> int
               convert = lookup<FunctionDecl>(std::string("convert_int4"),
                   simdTypes.getSIMDType(Ctx.IntTy, std::string("int"), SIMD4),
-                  hipaccNS);
+                  hipacc_ns);
               assert(convert && "could not lookup 'convert_int4'");
             }
 
@@ -1621,7 +1616,7 @@ Expr *ASTTranslate::VisitCallExprTranslate(CallExpr *E) {
               SmallVector<QualType, 16> argTypes;
               SmallVector<std::string, 16> argNames;
 
-              for (auto param : targetFD->params()) {
+              for (auto param : targetFD->parameters()) {
                 argTypes.push_back(param->getType());
                 argNames.push_back(param->getName());
               }
@@ -1635,7 +1630,7 @@ Expr *ASTTranslate::VisitCallExprTranslate(CallExpr *E) {
 
       // check if we have an intrinsic (math) function
       if (!targetFD) {
-        QualType QT = E->getCallReturnType();
+        QualType QT = E->getCallReturnType(Ctx);
         if (Kernel->vectorize() && !compilerOptions.emitC99()) {
           QT = simdTypes.getSIMDType(QT, QT.getAsString(), SIMD4);
           assert(false && "widening of intrinsic functions not supported currently");
@@ -1722,7 +1717,7 @@ Expr *ASTTranslate::VisitMemberExprTranslate(MemberExpr *E) {
   ValueDecl *paramDecl = nullptr;
 
   // search for member name in kernel parameter list
-  for (auto param : kernelDecl->params()) {
+  for (auto param : kernelDecl->parameters()) {
     // parameter name matches
     if (param->getName().equals(VD->getName())) {
       paramDecl = param;
@@ -1752,9 +1747,7 @@ Expr *ASTTranslate::VisitMemberExprTranslate(MemberExpr *E) {
   bool isMask = false;
   for (auto mask : KernelClass->getMaskFields()) {
     if (paramDecl->getName().equals(mask->getName())) {
-      HipaccMask *Mask = Kernel->getMaskFromMapping(mask);
-
-      if (Mask) {
+      if (auto Mask = Kernel->getMaskFromMapping(mask)) {
         isMask = true;
         if (Mask->isConstant() || compilerOptions.emitC99() ||
             compilerOptions.emitCUDA()) {
@@ -1845,7 +1838,7 @@ Expr *ASTTranslate::VisitCompoundAssignOperatorTranslate(CompoundAssignOperator 
       Clone(E->getRHS()), E->getOpcode(), E->getType(), E->getValueKind(),
       E->getObjectKind(), E->getComputationLHSType(),
       E->getComputationResultType(), E->getOperatorLoc(),
-      E->isFPContractable());
+      E->getFPFeatures());
 
   setExprPropsClone(E, result);
 
@@ -1932,8 +1925,6 @@ Expr *ASTTranslate::VisitCompoundAssignOperatorTranslate(CompoundAssignOperator 
 
 
 Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
-  Expr *result;
-
   // remember the current CompoundStmt, which has to be the same for the LHS and
   // the RHS (the current CompoundStmt might change during cloning LHS or RHS)
   CompoundStmt *CStmt = curCStmt;
@@ -1949,12 +1940,13 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
 
   QualType QT;
   // use the type of LHS in case of vectorization
-  if (!E->getType()->isExtVectorType() && LHS->getType()->isVectorType()) {
+  if (!E->getType()->isVectorType() && LHS->getType()->isVectorType()) {
     QT = LHS->getType();
   } else {
     QT = E->getType();
   }
 
+  Expr *result;
   // writeImageRHS has changed, use LHS
   if (E->getOpcode() == BO_Assign && writeImageRHS && writeImageRHS!=RHS) {
     // TODO: insert checks +=, -=, /=, and *= are not supported on Image objects
@@ -1963,7 +1955,7 @@ Expr *ASTTranslate::VisitBinaryOperatorTranslate(BinaryOperator *E) {
     // normal case: clone binary operator
     result = new (Ctx) BinaryOperator(LHS, RHS, E->getOpcode(), QT,
         E->getValueKind(), E->getObjectKind(), E->getOperatorLoc(),
-        E->isFPContractable());
+        E->getFPFeatures());
   }
   if (E->getOpcode() == BO_Assign) writeImageRHS = nullptr;
 
@@ -2268,7 +2260,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
   // look for Mask user class member variable
   if (auto mask = Kernel->getMaskFromMapping(FD)) {
     MemoryAccess mem_acc = KernelClass->getMemAccess(FD);
-    assert(mem_acc==READ_ONLY &&
+    assert(mem_acc == READ_ONLY &&
         "only read-only memory access to Mask supported");
 
     switch (E->getNumArgs()) {
@@ -2276,7 +2268,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
         assert(0 && "0, 1, or 2 arguments for Mask operator() expected!");
         break;
       case 1:
-        assert(convMask && convMask==mask &&
+        assert(convMask && convMask == mask &&
             "0 arguments for Mask operator() only allowed within"
             "convolution lambda-function.");
         // within convolute lambda-function
@@ -2507,7 +2499,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
         Mask = Kernel->getMaskFromMapping(FD);
         }
         if (convMask) {
-          assert(convMask==Mask &&
+          assert(convMask == Mask &&
               "the Mask parameter for Accessor operator(Mask) has to be"
               "the Mask parameter of the convolve method.");
           mask_idx_x = convIdxX;
@@ -2515,7 +2507,7 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
         } else {
           bool found = false;
           for (unsigned int i = 0; i < redDomains.size(); ++i) {
-            if (redDomains[i]==Mask) {
+            if (redDomains[i] == Mask) {
               mask_idx_x = redIdxX[i];
               mask_idx_y = redIdxY[i];
               found = true;
@@ -2569,6 +2561,16 @@ Expr *ASTTranslate::VisitCXXOperatorCallExprTranslate(CXXOperatorCallExpr *E) {
 }
 
 
+Expr *ASTTranslate::VisitExprWithCleanupsTranslate(ExprWithCleanups *E) {
+  if (E->getNumObjects() == 0)
+      return Clone(E->getSubExpr());
+
+  llvm::errs() << "Hipacc: Stumbled upon unsupported expression:\n";
+  E->dump();
+  std::abort();
+}
+
+
 Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
   assert(isa<MemberExpr>(E->getCallee()) &&
       "Hipacc: Stumbled upon unsupported expression or statement: CXXMemberCallExpr");
@@ -2588,7 +2590,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
         result = accessMem2DAt(LHS, idx_x, idx_y);
         break;
       case Language::CUDA:
-        if (Kernel->useTextureMemory(acc)!=Texture::None) {
+        if (Kernel->useTextureMemory(acc) != Texture::None) {
           result = accessMemTexAt(LHS, acc, mem_acc, idx_x, idx_y);
         } else {
           result = accessMemArrAt(LHS, getStrideDecl(acc), idx_x, idx_y);
@@ -2598,7 +2600,7 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
       case Language::OpenCLCPU:
       case Language::OpenCLFPGA:
       case Language::OpenCLGPU:
-        if (Kernel->useTextureMemory(acc)!=Texture::None) {
+        if (Kernel->useTextureMemory(acc) != Texture::None) {
           result = accessMemImgAt(LHS, acc, mem_acc, idx_x, idx_y);
         } else {
           result = accessMemArrAt(LHS, getStrideDecl(acc), idx_x, idx_y);
@@ -2757,8 +2759,8 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
               static_cast<int>(redDomains[redDepth]->getSizeY()/2));
         }
       } else {
-        assert(mask==convMask && "Getting Mask convolution IDs is only allowed "
-                                 "allowed within convolution lambda-function.");
+        assert(mask == convMask && "Getting Mask convolution IDs is only allowed "
+                                   "allowed within convolution lambda-function.");
         // within convolute lambda-function
         if (ME->getMemberNameInfo().getAsString() == "x") {
           return createIntegerLiteral(Ctx, convIdxX -
@@ -2777,14 +2779,15 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
     CompoundStmt *CS = new (Ctx) CompoundStmt(Stmt::EmptyShell());
     StmtExpr *SE = new (Ctx) StmtExpr(Stmt::EmptyShell());
     Stmt *S = createGotoStmt(Ctx, breakLabels.back());
-    CS->setStmts(Ctx, &S, 1);
+    CS->setLastStmt(S);
     SE->setSubStmt(CS);
 
     return SE;
   }
 
-  assert(0 && "Hipacc: Stumbled upon unsupported expression: CXXMemberCallExpr");
-  return nullptr;
+  llvm::errs() << "Hipacc: Stumbled upon unsupported expression:\n";
+  E->dump();
+  std::abort();
 }
 
 

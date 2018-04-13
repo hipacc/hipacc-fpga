@@ -1,25 +1,25 @@
 # Configuration
 HIPACC_DIR     ?= @CMAKE_INSTALL_PREFIX@
 COMPILER       ?= $(HIPACC_DIR)/bin/hipacc
-COMMON_INC     ?= -I@OPENCV_INCLUDE_DIRS@ \
+COMMON_INC     ?= -I@OpenCV_INCLUDE_DIRS@ \
                   -I$(TEST_CASE)
-COMPILER_INC   ?= -std=c++11 $(COMMON_INC) \
-                  -I`@CLANG_EXECUTABLE@ -print-file-name=include` \
-                  -I`@LLVM_CONFIG_EXECUTABLE@ --includedir` \
-                  -I`@LLVM_CONFIG_EXECUTABLE@ --includedir`/c++/v1 \
-                  -I$(HIPACC_DIR)/include/dsl
+COMPILER_INC   ?= -std=c++11 -stdlib=libc++ \
+                  -I`@llvm-config@ --includedir` \
+                  -I`@llvm-config@ --includedir`/c++/v1 \
+                  -I`@clang@ -print-file-name=include` \
+                  -I$(HIPACC_DIR)/include/dsl \
+                  $(COMMON_INC)
 TEST_CASE      ?= ./tests/opencv_blur_8uc1
 MYFLAGS        ?= -DWIDTH=2048 -DHEIGHT=2048 -DSIZE_X=5 -DSIZE_Y=5
-NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" \
-                  -Xptxas -v #-keep
+NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" -res-usage #-keep
 OFLAGS          = -O3
 
 CC_CC           = @CMAKE_CXX_COMPILER@ -std=c++11 @THREADS_ARG@ -Wall -Wunused
-CL_CC           = $(CC_CC) @OPENCL_CFLAGS@
-CU_CC           = @NVCC@ @NVCC_COMP@ -Xcompiler -Wall -Xcompiler -Wunused $(NVCC_FLAGS)
-CC_LINK         = -lm -ldl -lstdc++ @THREADS_LINK@ @RT_LIBRARIES@ @OPENCV_LIBRARIES@
-CL_LINK         = $(CC_LINK) @OPENCL_LFLAGS@
-CU_LINK         = $(CC_LINK) @CUDA_LINK@
+CL_CC           = $(CC_CC) -I@OpenCL_INCLUDE_DIRS@
+CU_CC           = @NVCC@ -std=c++11 @NVCC_COMP@ -Xcompiler -Wall -Xcompiler -Wunused -I@CUDA_INCLUDE_DIRS@ $(NVCC_FLAGS)
+CC_LINK         = -lm -ldl -lstdc++ @THREADS_LINK@ @RT_LIBRARIES@ @OpenCV_LIBRARIES@
+CL_LINK         = $(CC_LINK) @OpenCL_LIBRARIES@
+CU_LINK         = $(CC_LINK) @NVCC_LINK@
 ALTERA_RUN      = LD_LIBRARY_PATH=$$LD_LIBRARAY_PATH$$(aocl link-config | sed 's/\ /\n/g' | grep "^\-L" | sed 's/-L/:/g' | tr -d '\n')
 ALTERA_CXX     := arm-linux-gnueabihf-g++
 
@@ -40,7 +40,7 @@ HIPACC_PPT?=1
 HIPACC_CONFIG?=128x1
 HIPACC_EXPLORE?=off
 HIPACC_TIMING?=off
-HIPACC_TARGET?=Fermi-20
+HIPACC_TARGET?=Kepler-30
 
 
 HIPACC_OPTS=-target $(HIPACC_TARGET)
@@ -132,8 +132,8 @@ filterscript renderscript:
 	@echo 'Compiling $@ file using ndk-build:'
 	export CASE_FLAGS="$(MYFLAGS)"; \
 	export HIPACC_INCLUDE=$(HIPACC_DIR)/include; \
-	cd build_$@; @NDK_BUILD_EXECUTABLE@ -B
-	cp build_$@/libs/armeabi/main_renderscript ./main_$@
+	cd build_$@; @Renderscript_ndk_build_EXECUTABLE@ -B
+	cp build_$@/libs/armeabi-v7a/main_renderscript ./main_$@
 	adb shell mkdir -p /data/local/tmp
 	adb push main_$@ /data/local/tmp
 	adb shell /data/local/tmp/main_$@

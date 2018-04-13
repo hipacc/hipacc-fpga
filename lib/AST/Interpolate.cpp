@@ -40,9 +40,8 @@ using namespace hipacc::Builtin;
 
 
 // create interpolation function name
-std::string ASTTranslate::getInterpolationName(ASTContext &Ctx,
-    hipacc::Builtin::Context &builtins, CompilerOptions &compilerOptions,
-    HipaccKernel *Kernel, HipaccAccessor *Acc, border_variant bh_variant) {
+std::string ASTTranslate::getInterpolationName(CompilerOptions &compilerOptions,
+    HipaccKernel *Kernel, HipaccAccessor *Acc) {
   std::string name = "interpolate_";
 
   switch (Acc->getInterpolationMode()) {
@@ -57,22 +56,14 @@ std::string ASTTranslate::getInterpolationName(ASTContext &Ctx,
     case Language::Vivado:
     case Language::C99:
     case Language::Renderscript:
-    case Language::Filterscript:
-      name += "gmem";
-      break;
+    case Language::Filterscript: name += "gmem";  break;
     case Language::CUDA:
       switch (Kernel->useTextureMemory(Acc)) {
         case Texture::None:
-        case Texture::Ldg:
-          name += "gmem";
-          break;
-        case Texture::Linear1D:
-          name+= "tex1D";
-          break;
+        case Texture::Ldg:       name += "gmem";  break;
+        case Texture::Linear1D:  name += "tex1D"; break;
         case Texture::Linear2D:
-        case Texture::Array2D:
-          name+= "tex2D";
-          break;
+        case Texture::Array2D:   name += "tex2D"; break;
       }
       break;
     case Language::OpenCLACC:
@@ -83,12 +74,8 @@ std::string ASTTranslate::getInterpolationName(ASTContext &Ctx,
         case Texture::None:
         case Texture::Linear1D:
         case Texture::Linear2D:
-        case Texture::Ldg:
-          name += "gmem";
-          break;
-        case Texture::Array2D:
-          name+= "img";
-          break;
+        case Texture::Ldg:       name += "gmem";  break;
+        case Texture::Array2D:   name += "img";   break;
       }
       break;
   }
@@ -123,13 +110,12 @@ FunctionDecl *ASTTranslate::getInterpolationFunction(HipaccAccessor *Acc) {
   QualType QT = Acc->getImage()->getType();
   std::string typeSpecifier = builtins.EncodeTypeIntoStr(QT, Ctx);
 
-  std::string name = getInterpolationName(Ctx, builtins, compilerOptions,
-      Kernel, Acc, bh_variant);
+  std::string name = getInterpolationName(compilerOptions, Kernel, Acc);
 
   // only add boundary handling mode string if required
   // for local operators only add support if the code variant requires this
   // for point, global, and user operators add boundary handling for all borders
-  if (KernelClass->getKernelType()!=LocalOperator || bh_variant.borderVal) {
+  if (KernelClass->getKernelType() != LocalOperator || bh_variant.borderVal) {
     switch (Acc->getBoundaryMode()) {
       case Boundary::UNDEFINED:                      break;
       case Boundary::CLAMP:    name += "_clamp_";    break;
@@ -139,13 +125,13 @@ FunctionDecl *ASTTranslate::getInterpolationFunction(HipaccAccessor *Acc) {
     }
 
     if (Acc->getBoundaryMode() != Boundary::UNDEFINED) {
-      if (KernelClass->getKernelType()!=LocalOperator) {
-        name+= "tblr";
+      if (KernelClass->getKernelType() != LocalOperator) {
+        name += "tblr";
       } else {
-        if (bh_variant.borders.top) name += "t";
+        if (bh_variant.borders.top)    name += "t";
         if (bh_variant.borders.bottom) name += "b";
-        if (bh_variant.borders.left) name += "l";
-        if (bh_variant.borders.right) name += "r";
+        if (bh_variant.borders.left)   name += "l";
+        if (bh_variant.borders.right)  name += "r";
       }
     }
   }
@@ -194,9 +180,8 @@ Expr *ASTTranslate::addInterpolationCall(DeclRefExpr *LHS, HipaccAccessor
 
   // parameters for interpolate function call
   SmallVector<Expr *, 16> args;
-  if (compilerOptions.emitCUDA() && Kernel->useTextureMemory(Acc)!=Texture::None
-      // no texture declaration for __ldg() intrinsic
-      && !(Kernel->useTextureMemory(Acc) == Texture::Ldg)) {
+  if (compilerOptions.emitCUDA() &&
+      Kernel->useTextureMemory(Acc) != Texture::None) {
     assert(isa<ParmVarDecl>(LHS->getDecl()) && "texture variable must be a ParmVarDecl!");
     ParmVarDecl *PVD = dyn_cast<ParmVarDecl>(LHS->getDecl());
     args.push_back(createDeclRefExpr(Ctx, CloneDeclTex(PVD, "_tex")));

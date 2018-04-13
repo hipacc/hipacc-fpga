@@ -1,10 +1,9 @@
-SET(KernelStatistics_SOURCES KernelStatistics.cpp)
-SET(Polly_SOURCES Polly.cpp)
-SET(HostDataDeps_SOURCES HostDataDeps.cpp)
+set(KernelStatistics_SOURCES KernelStatistics.cpp)
+set(Polly_SOURCES Polly.cpp)
+set(HostDataDeps_SOURCES HostDataDeps.cpp)
 
-ADD_LIBRARY(hipaccKernelStatistics ${KernelStatistics_SOURCES})
-IF(USE_POLLY)
-    ADD_LIBRARY(hipaccPolly ${Polly_SOURCES})
-ENDIF(USE_POLLY)
-ADD_LIBRARY(hipaccHostDataDeps ${HostDataDeps_SOURCES})
-
+add_library(hipaccKernelStatistics ${KernelStatistics_SOURCES})
+if(USE_POLLY)
+    add_library(hipaccPolly ${Polly_SOURCES})
+endif()
+add_library(hipaccHostDataDeps ${HostDataDeps_SOURCES})

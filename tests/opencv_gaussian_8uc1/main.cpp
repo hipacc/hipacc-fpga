@@ -573,34 +573,7 @@ int main(int argc, const char **argv) {
     std::vector<float> timings_ocl;
     std::vector<float> timings_cuda;
 
-    // OpenCV - CPU
-    cv::ocl::setUseOpenCL(false);
-    std::cerr << std::endl
-              << "Calculating OpenCV-CPU Gaussian filter" << std::endl;
-
-    cv::UMat dev_src, dev_dst;
-    opencv_bench(
-        [&] (int brd_type) {
-            cv_data_src.copyTo(dev_src);
-        },
-        [&] (int brd_type) {
-            cv::GaussianBlur(dev_src, dev_dst, ksize, sigma1, sigma2, brd_type);
-        },
-        [&] (float timing) {
-            timings_cpu.push_back(timing);
-            dev_dst.copyTo(cv_data_dst);
-        }
-    );
-
-    // OpenCV - OpenCL
-    if (cv::ocl::haveOpenCL()) {
-        cv::ocl::setUseOpenCL(true);
-        std::cerr << std::endl
-                  << "Calculating OpenCV-OCL Gaussian filter on "
-                  << cv::ocl::Device::getDefault().vendorName().c_str()
-                  << " "  << cv::ocl::Device::getDefault().name().c_str()
-                  << std::endl;
-
+    auto compute_tapi = [&] (std::vector<float> &timings) {
         cv::UMat dev_src, dev_dst;
         opencv_bench(
             [&] (int) {
@@ -608,13 +581,29 @@ int main(int argc, const char **argv) {
             },
             [&] (int brd_type) {
                 cv::GaussianBlur(dev_src, dev_dst, ksize, sigma1, sigma2, brd_type);
-                cv::ocl::finish();
+                if (cv::ocl::useOpenCL())
+                    cv::ocl::finish();
             },
             [&] (float timing) {
-                timings_ocl.push_back(timing);
+                timings.push_back(timing);
                 dev_dst.copyTo(cv_data_dst);
             }
         );
+    };
+
+    // OpenCV - CPU
+    cv::ocl::setUseOpenCL(false);
+    std::cerr << std::endl
+              << "Calculating OpenCV-CPU Gaussian filter on CPU" << std::endl;
+    compute_tapi(timings_cpu);
+
+    // OpenCV - OpenCL
+    if (cv::ocl::haveOpenCL()) {
+        cv::ocl::setUseOpenCL(true);
+        std::cerr << std::endl
+                  << "Calculating OpenCV-OCL Gaussian filter on "
+                  << cv::ocl::Device::getDefault().name() << std::endl;
+        compute_tapi(timings_ocl);
     }
 
     // OpenCV - CUDA
@@ -687,9 +676,11 @@ int main(int argc, const char **argv) {
     std::cerr << "Reference: " << time << " ms, " << (width*height/time)/1000 << " Mpixel/s" << std::endl;
 
 
-    std::cerr << "Comparing results ..." << std::endl
-              << "Warning: The CPU, OCL, and CUDA modules in OpenCV use different implementations and yield inconsistent results." << std::endl
+    std::cerr << "Comparing results ..." << std::endl;
+    #ifdef OPENCV
+    std::cerr << "Warning: The CPU, OCL, and CUDA modules in OpenCV use different implementations and yield inconsistent results." << std::endl
               << "         This is the case even for different filter sizes within the same module!" << std::endl;
+    #endif
     for (int y=offset_y; y<height-offset_y; ++y) {
         for (int x=offset_x; x<width-offset_x; ++x) {
             if (reference_out[y*width + x] != output[y*width + x]) {

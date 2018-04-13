@@ -36,9 +36,14 @@
 #include "hipacc/Config/config.h"
 #include "hipacc/Device/TargetDevices.h"
 
+#include <clang/Basic/Version.h>
 #include <llvm/Support/raw_ostream.h>
 
 #include <string>
+
+#if CLANG_VERSION_MAJOR != 5
+#error "Clang Version 5.x required!"
+#endif
 
 namespace clang {
 namespace hipacc {
@@ -112,7 +117,7 @@ class CompilerOptions {
   public:
     CompilerOptions() :
       target_lang(Language::OpenCLGPU),
-      target_device(Device::Fermi_20),
+      target_device(Device::Kepler_30),
       explore_config(OFF),
       time_kernels(OFF),
       kernel_config(AUTO),

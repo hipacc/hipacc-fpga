@@ -1,46 +1,45 @@
 # Find the OpenCV includes and library
 #
 # To set manually the paths, define these environment variables:
-#  OPENCV_DIR           - OpenCV installation path (e.g. OPENCV_DIR=/opt/local)
+#  OpenCV_DIR           - OpenCV installation path (e.g. OpenCV_DIR=/opt/local)
 #
 # Once done this will define
-#  OPENCV_INCLUDE_DIRS      - the OpenCV include directories
-#  OPENCV_LIBRARIES         - the OpenCV libraries
-#  OPENCV_DEFINITIONS       - the OpenCV definitions
-#  OPENCV_FOUND             - True if OpenCV is found
+#  OpenCV_INCLUDE_DIRS  - the OpenCV include directories
+#  OpenCV_LIBRARIES     - the OpenCV libraries
+#  OpenCV_DEFINITIONS   - the OpenCV definitions
+#  OpenCV_FOUND         - True if OpenCV is found
 
-SET(OPENCV_DIR $ENV{OPENCV_DIR} CACHE PATH "OpenCV installation path.")
+set(OpenCV_DIR $ENV{OpenCV_DIR} CACHE PATH "OpenCV installation path.")
 
-FIND_PATH(OPENCV_INCLUDE_DIR opencv/cv.h                   HINTS ${OPENCV_DIR}/include)
-FIND_LIBRARY(OPENCV_CORE_LIBRARY opencv_core               HINTS ${OPENCV_DIR}/lib ${OPENCV_DIR}/lib64)
-FIND_LIBRARY(OPENCV_IMGPROC_LIBRARY opencv_imgproc         HINTS ${OPENCV_DIR}/lib ${OPENCV_DIR}/lib64)
-FIND_LIBRARY(OPENCV_HIGHGUI_LIBRARY opencv_highgui         HINTS ${OPENCV_DIR}/lib ${OPENCV_DIR}/lib64)
-FIND_LIBRARY(OPENCV_VIDEOIO_LIBRARY opencv_videoio         HINTS ${OPENCV_DIR}/lib ${OPENCV_DIR}/lib64)
-FIND_LIBRARY(OPENCV_CUDAFILTERS_LIBRARY opencv_cudafilters HINTS ${OPENCV_DIR}/lib ${OPENCV_DIR}/lib64)
-SET(OPENCV_DEFINITIONS "-D OPENCV")
-IF(OPENCV_CUDAFILTERS_LIBRARY)
-    SET(OPENCV_DEFINITIONS "${OPENCV_DEFINITIONS} -D OPENCV_CUDA_FOUND")
-ELSE()
-    SET(OPENCV_CUDAFILTERS_LIBRARY "")
-ENDIF()
-IF(NOT OPENCV_VIDEOIO_LIBRARY)
-    SET(OPENCV_VIDEOIO_LIBRARY "")
-ENDIF()
-IF(NOT OPENCV_HIGHGUI_LIBRARY)
-    SET(OPENCV_HIGHGUI_LIBRARY "")
-ENDIF()
-IF(NOT OPENCV_IMGPROC_LIBRARY)
-    SET(OPENCV_IMGPROC_LIBRARY "")
-ENDIF()
-IF(NOT OPENCV_CORE_LIBRARY)
-    SET(OPENCV_CORE_LIBRARY "")
-ENDIF()
+find_path(OpenCV_INCLUDE_DIR opencv/cv.h                   HINTS ${OpenCV_DIR}/include)
+find_library(OpenCV_CORE_LIBRARY opencv_core               HINTS ${OpenCV_DIR}/lib ${OpenCV_DIR}/lib64)
+find_library(OpenCV_IMGPROC_LIBRARY opencv_imgproc         HINTS ${OpenCV_DIR}/lib ${OpenCV_DIR}/lib64)
+find_library(OpenCV_HIGHGUI_LIBRARY opencv_highgui         HINTS ${OpenCV_DIR}/lib ${OpenCV_DIR}/lib64)
+find_library(OpenCV_VIDEOIO_LIBRARY opencv_videoio         HINTS ${OpenCV_DIR}/lib ${OpenCV_DIR}/lib64)
+find_library(OpenCV_CUDAFILTERS_LIBRARY opencv_cudafilters HINTS ${OpenCV_DIR}/lib ${OpenCV_DIR}/lib64)
+set(OpenCV_DEFINITIONS "-D OPENCV")
+if(OpenCV_CUDAFILTERS_LIBRARY)
+    set(OpenCV_DEFINITIONS "${OpenCV_DEFINITIONS} -D OPENCV_CUDA_FOUND")
+else()
+    set(OpenCV_CUDAFILTERS_LIBRARY "")
+endif()
+if(NOT OpenCV_VIDEOIO_LIBRARY)
+    set(OpenCV_VIDEOIO_LIBRARY "")
+endif()
+if(NOT OpenCV_HIGHGUI_LIBRARY)
+    set(OpenCV_HIGHGUI_LIBRARY "")
+endif()
+if(NOT OpenCV_IMGPROC_LIBRARY)
+    set(OpenCV_IMGPROC_LIBRARY "")
+endif()
+if(NOT OpenCV_CORE_LIBRARY)
+    set(OpenCV_CORE_LIBRARY "")
+endif()
 
-SET(OPENCV_INCLUDE_DIRS ${OPENCV_INCLUDE_DIR})
-SET(OPENCV_LIBRARIES "${OPENCV_CORE_LIBRARY} ${OPENCV_IMGPROC_LIBRARY} ${OPENCV_HIGHGUI_LIBRARY} ${OPENCV_VIDEOIO_LIBRARY} ${OPENCV_CUDAFILTERS_LIBRARY}")
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(OpenCV DEFAULT_MSG OpenCV_INCLUDE_DIR OpenCV_CORE_LIBRARY)
 
-INCLUDE(FindPackageHandleStandardArgs)
-FIND_PACKAGE_HANDLE_STANDARD_ARGS(OpenCV DEFAULT_MSG OPENCV_INCLUDE_DIR OPENCV_CORE_LIBRARY)
+set(OpenCV_INCLUDE_DIRS ${OpenCV_INCLUDE_DIR})
+set(OpenCV_LIBRARIES "${OpenCV_CORE_LIBRARY} ${OpenCV_IMGPROC_LIBRARY} ${OpenCV_HIGHGUI_LIBRARY} ${OpenCV_VIDEOIO_LIBRARY} ${OpenCV_CUDAFILTERS_LIBRARY}")
 
-MARK_AS_ADVANCED(OPENCV_INCLUDE_DIR OPENCV_CORE_LIBRARY OPENCV_IMGPROC_LIBRARY OPENCV_HIGHGUI_LIBRARY OPENCV_VIDEOIO_LIBRARY OPENCV_CUDAFILTERS_LIBRARY)
-
+mark_as_advanced(OpenCV_INCLUDE_DIR OpenCV_CORE_LIBRARY OpenCV_IMGPROC_LIBRARY OpenCV_HIGHGUI_LIBRARY OpenCV_VIDEOIO_LIBRARY OpenCV_CUDAFILTERS_LIBRARY)

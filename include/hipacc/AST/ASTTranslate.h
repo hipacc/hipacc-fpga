@@ -112,7 +112,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     DeclRefExpr *outputImage;
     DeclRefExpr *retValRef;
     Expr *writeImageRHS;
-    NamespaceDecl *hipaccNS, *hipaccMathNS;
+    NamespaceDecl *hipacc_ns, *hipacc_math_ns;
     TypedefDecl *samplerTy;
     DeclRefExpr *kernelSamplerRef;
 
@@ -136,12 +136,14 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
 
 
     template<class T> T *Clone(T *S) {
-      if (S==nullptr) return nullptr;
+      if (S==nullptr)
+        return nullptr;
 
       return static_cast<T *>(Visit(S));
     }
     template<class T> T *CloneDecl(T *D) {
-      if (D==nullptr) return nullptr;
+      if (D==nullptr)
+        return nullptr;
 
       switch (D->getKind()) {
         default:
@@ -252,9 +254,8 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     FunctionDecl *getInterpolationFunction(HipaccAccessor *Acc);
     FunctionDecl *getTextureFunction(HipaccAccessor *Acc, MemoryAccess mem_acc);
     FunctionDecl *getImageFunction(HipaccAccessor *Acc, MemoryAccess mem_acc);
-    FunctionDecl *getAllocationFunction(const BuiltinType *BT, bool isVecType,
-                                        MemoryAccess mem_acc);
-    FunctionDecl *getConvertFunction(QualType QT, bool isVecType);
+    FunctionDecl *getAllocationFunction(QualType QT, MemoryAccess mem_acc);
+    FunctionDecl *getConvertFunction(QualType QT);
     FunctionDecl *getVivadoReturnConvertFunction(std::string name);
     FunctionDecl *getWindowFunction(MemoryAccess memAcc);
     Expr *addInterpolationCall(DeclRefExpr *LHS, HipaccAccessor *Acc, Expr
@@ -294,20 +295,26 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
 
     // default error message for unsupported expressions and statements.
     #define HIPACC_UNSUPPORTED_EXPR(EXPR) \
-    Expr *Visit##EXPR(EXPR *) { \
-      assert(0 && "Hipacc: Stumbled upon unsupported expression: " #EXPR); \
+    Expr *Visit##EXPR(EXPR *E) { \
+      llvm::errs() << "Hipacc: Stumbled upon unsupported expression: " #EXPR "\n"; \
+      E->dump(); \
+      std::abort(); \
     }
     #define HIPACC_UNSUPPORTED_STMT(STMT) \
-    Stmt *Visit##STMT(STMT *) { \
-      assert(0 && "Hipacc: Stumbled upon unsupported statement: " #STMT); \
+    Stmt *Visit##STMT(STMT *S) { \
+      llvm::errs() << "Hipacc: Stumbled upon unsupported statement: " #STMT "\n"; \
+      S->dump(); \
+      std::abort(); \
     }
     #define HIPACC_UNSUPPORTED_EXPR_BASE_CLASS(EXPR) \
     Expr *Visit##EXPR(EXPR *) { \
-      assert(0 && "Hipacc: Stumbled upon expression base class, implementation of any derived class missing? Base class was: " #EXPR); \
+      llvm::errs() << "Hipacc: Stumbled upon expression base class, implementation of any derived class missing? Base class was: " #EXPR "\n"; \
+      std::abort(); \
     }
     #define HIPACC_UNSUPPORTED_STMT_BASE_CLASS(STMT) \
     Stmt *Visit##STMT(STMT *) { \
-      assert(0 && "Hipacc: Stumbled upon statement base class, implementation of any derived class missing? Base class was: " #STMT); \
+      llvm::errs() << "Hipacc: Stumbled upon statement base class, implementation of any derived class missing? Base class was: " #STMT "\n"; \
+      std::abort(); \
     }
 
     // OpenCLFPGA bit width reduction
@@ -353,17 +360,17 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
       gidYRef(nullptr) {
         // get 'hipacc' namespace context for lookups
         auto hipacc_ident = &Ctx.Idents.get("hipacc");
-        for (auto *decl : Ctx.getTranslationUnitDecl()->lookup(hipacc_ident)) {
-          if ((hipaccNS = cast_or_null<NamespaceDecl>(decl))) break;
-        }
-        assert(hipaccNS && "could not lookup 'hipacc' namespace");
+        for (auto *decl : Ctx.getTranslationUnitDecl()->lookup(hipacc_ident))
+          if ((hipacc_ns = cast_or_null<NamespaceDecl>(decl)))
+            break;
+        assert(hipacc_ns && "could not lookup 'hipacc' namespace");
 
         // get 'hipacc::math' namespace context for lookups
         auto math_ident = &Ctx.Idents.get("math");
-        for (auto *decl : hipaccNS->lookup(math_ident)) {
-          if ((hipaccMathNS = cast_or_null<NamespaceDecl>(decl))) break;
-        }
-        assert(hipaccMathNS && "could not lookup 'hipacc::math' namespace");
+        for (auto *decl : hipacc_ns->lookup(math_ident))
+          if ((hipacc_math_ns = cast_or_null<NamespaceDecl>(decl)))
+            break;
+        assert(hipacc_math_ns && "could not lookup 'hipacc::math' namespace");
 
         // typedef unsigned sampler_t;
         TypeSourceInfo *TInfosampler =
@@ -402,11 +409,10 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     }
     // Interpolation.cpp
     // create interpolation function name
-    static std::string getInterpolationName(ASTContext &Ctx,
-        hipacc::Builtin::Context &builtins, CompilerOptions &compilerOptions,
-        HipaccKernel *Kernel, HipaccAccessor *Acc, border_variant bh_variant);
+    static std::string getInterpolationName(CompilerOptions &compilerOptions,
+        HipaccKernel *Kernel, HipaccAccessor *Acc);
 
-    // the following list ist ordered according to
+    // the following list is ordered according to
     // include/clang/Basic/StmtNodes.td
 
     // implementation of Visitors is split into two files:
@@ -462,6 +468,10 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Stmt *VisitCXXTryStmt(CXXTryStmt *S);
     HIPACC_UNSUPPORTED_STMT( CXXForRangeStmt )
 
+    // C++ Coroutines TS statements
+    HIPACC_UNSUPPORTED_STMT( CoroutineBodyStmt )
+    HIPACC_UNSUPPORTED_STMT( CoreturnStmt )
+
     // Expressions
     HIPACC_UNSUPPORTED_EXPR_BASE_CLASS( Expr )
     Expr *VisitPredefinedExpr(PredefinedExpr *E);
@@ -476,12 +486,13 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *VisitOffsetOfExpr(OffsetOfExpr *E);
     Expr *VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E);
     Expr *VisitArraySubscriptExpr(ArraySubscriptExpr *E);
+    HIPACC_UNSUPPORTED_EXPR( OMPArraySectionExpr )
     VISIT_MODE(Expr, CallExpr)
     VISIT_MODE(Expr, MemberExpr)
     HIPACC_UNSUPPORTED_EXPR_BASE_CLASS( CastExpr )
     VISIT_MODE(Expr, BinaryOperator)
     VISIT_MODE(Expr, CompoundAssignOperator)
-    HIPACC_UNSUPPORTED_EXPR( AbstractConditionalOperator )
+    HIPACC_UNSUPPORTED_EXPR_BASE_CLASS( AbstractConditionalOperator )
     Expr *VisitConditionalOperator(ConditionalOperator *E);
     Expr *VisitBinaryConditionalOperator(BinaryConditionalOperator *E);
     VISIT_MODE(Expr, ImplicitCastExpr)
@@ -491,7 +502,11 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *VisitExtVectorElementExpr(ExtVectorElementExpr *E);
     Expr *VisitInitListExpr(InitListExpr *E);
     Expr *VisitDesignatedInitExpr(DesignatedInitExpr *E);
+    Expr *VisitDesignatedInitUpdateExpr(DesignatedInitUpdateExpr *E);
     Expr *VisitImplicitValueInitExpr(ImplicitValueInitExpr *E);
+    Expr *VisitNoInitExpr(NoInitExpr *E);
+    Expr *VisitArrayInitLoopExpr(ArrayInitLoopExpr *E);
+    Expr *VisitArrayInitIndexExpr(ArrayInitIndexExpr *E);
     Expr *VisitParenListExpr(ParenListExpr *E);
     Expr *VisitVAArgExpr(VAArgExpr *E);
     HIPACC_UNSUPPORTED_EXPR( GenericSelectionExpr )
@@ -532,9 +547,10 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     HIPACC_UNSUPPORTED_EXPR( ArrayTypeTraitExpr )
     HIPACC_UNSUPPORTED_EXPR( ExpressionTraitExpr )
     HIPACC_UNSUPPORTED_EXPR( DependentScopeDeclRefExpr )
-    HIPACC_UNSUPPORTED_EXPR( CXXConstructExpr )
+    Expr *VisitCXXConstructExpr(CXXConstructExpr *E);
+    HIPACC_UNSUPPORTED_EXPR( CXXInheritedCtorInitExpr )
     HIPACC_UNSUPPORTED_EXPR( CXXBindTemporaryExpr )
-    HIPACC_UNSUPPORTED_EXPR( ExprWithCleanups )
+    VISIT_MODE(Expr, ExprWithCleanups)
     HIPACC_UNSUPPORTED_EXPR( CXXTemporaryObjectExpr )
     HIPACC_UNSUPPORTED_EXPR( CXXUnresolvedConstructExpr )
     HIPACC_UNSUPPORTED_EXPR( CXXDependentScopeMemberExpr )
@@ -551,6 +567,12 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     Expr *VisitLambdaExpr(LambdaExpr *E);
     HIPACC_UNSUPPORTED_EXPR( CXXFoldExpr )
 
+    // C++ Coroutines TS expressions
+    HIPACC_UNSUPPORTED_EXPR( CoroutineSuspendExpr )
+    HIPACC_UNSUPPORTED_EXPR( CoawaitExpr )
+    HIPACC_UNSUPPORTED_EXPR( DependentCoawaitExpr )
+    HIPACC_UNSUPPORTED_EXPR( CoyieldExpr )
+
     // Obj-C Expressions
     HIPACC_UNSUPPORTED_EXPR( ObjCStringLiteral )
     HIPACC_UNSUPPORTED_EXPR( ObjCBoxedExpr )
@@ -566,6 +588,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     HIPACC_UNSUPPORTED_EXPR( ObjCIndirectCopyRestoreExpr )
     HIPACC_UNSUPPORTED_EXPR( ObjCBoolLiteralExpr )
     HIPACC_UNSUPPORTED_EXPR( ObjCSubscriptRefExpr )
+    HIPACC_UNSUPPORTED_EXPR( ObjCAvailabilityCheckExpr )
 
     // Obj-C ARC Expressions
     HIPACC_UNSUPPORTED_EXPR( ObjCBridgedCastExpr )
@@ -582,6 +605,7 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
 
     // Microsoft Extensions
     HIPACC_UNSUPPORTED_EXPR( MSPropertyRefExpr )
+    HIPACC_UNSUPPORTED_EXPR( MSPropertySubscriptExpr )
     HIPACC_UNSUPPORTED_EXPR( CXXUuidofExpr )
     HIPACC_UNSUPPORTED_STMT( SEHTryStmt )
     HIPACC_UNSUPPORTED_STMT( SEHExceptStmt )
@@ -611,11 +635,37 @@ class ASTTranslate : public StmtVisitor<ASTTranslate, Stmt *> {
     HIPACC_UNSUPPORTED_STMT( OMPTaskyieldDirective )
     HIPACC_UNSUPPORTED_STMT( OMPBarrierDirective )
     HIPACC_UNSUPPORTED_STMT( OMPTaskwaitDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTaskgroupDirective )
     HIPACC_UNSUPPORTED_STMT( OMPFlushDirective )
     HIPACC_UNSUPPORTED_STMT( OMPOrderedDirective )
     HIPACC_UNSUPPORTED_STMT( OMPAtomicDirective )
     HIPACC_UNSUPPORTED_STMT( OMPTargetDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetDataDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetEnterDataDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetExitDataDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetParallelDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetParallelForDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetUpdateDirective )
     HIPACC_UNSUPPORTED_STMT( OMPTeamsDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPCancellationPointDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPCancelDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTaskLoopDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTaskLoopSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPDistributeDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPDistributeParallelForDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPDistributeParallelForSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPDistributeSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetParallelForSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTeamsDistributeDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTeamsDistributeSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTeamsDistributeParallelForSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTeamsDistributeParallelForDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetTeamsDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetTeamsDistributeDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetTeamsDistributeParallelForDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetTeamsDistributeParallelForSimdDirective )
+    HIPACC_UNSUPPORTED_STMT( OMPTargetTeamsDistributeSimdDirective )
 };
 } // namespace hipacc
 } // namespace clang
