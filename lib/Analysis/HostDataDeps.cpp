@@ -83,14 +83,15 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
                   << VD->getNameAsString() << std::endl;
 
         CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(VD->getInit());
+        Expr *Arg0 = CCE->getArg(0)->IgnoreImpCasts();
 
         HipaccBoundaryCondition *BC = nullptr;
         HipaccImage *Img = nullptr;
         //HipaccPyramid *Pyr = nullptr;
 
         // check if the first argument is an Image
-        if (isa<DeclRefExpr>(CCE->getArg(0))) {
-          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(CCE->getArg(0));
+        if (isa<DeclRefExpr>(Arg0)) {
+          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg0);
 
           // get the Image from the DRE if we have one
           if (imgDeclMap_.count(DRE->getDecl())) {
@@ -103,11 +104,11 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
 
         // TODO: Not yet supported
         // check if the first argument is a Pyramid call
-        //if (isa<CXXOperatorCallExpr>(CCE->getArg(0)) &&
+        //if (isa<CXXOperatorCallExpr>(Arg0) &&
         //    isa<DeclRefExpr>(dyn_cast<CXXOperatorCallExpr>(
-        //        CCE->getArg(0))->getArg(0))) {
+        //        Arg0)->getArg(0))) {
         //  CXXOperatorCallExpr *COCE =
-        //    dyn_cast<CXXOperatorCallExpr>(CCE->getArg(0));
+        //    dyn_cast<CXXOperatorCallExpr>(Arg0);
         //  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(COCE->getArg(0));
 
         //  // get the Pyramid from the DRE if we have one
@@ -128,6 +129,7 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
                 << VD->getNameAsString() << std::endl;
 
         CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(VD->getInit());
+        Expr *Arg0 = CCE->getArg(0)->IgnoreImpCasts();
 
         HipaccAccessor *Acc = nullptr;
         HipaccBoundaryCondition *BC = nullptr;
@@ -136,8 +138,8 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
 
         // check if the first argument is an Image
         DeclRefExpr *DRE = nullptr;
-        if (isa<DeclRefExpr>(CCE->getArg(0))) {
-          DRE = dyn_cast<DeclRefExpr>(CCE->getArg(0));
+        if (isa<DeclRefExpr>(Arg0)) {
+          DRE = dyn_cast<DeclRefExpr>(Arg0);
 
           // get the BoundaryCondition from the DRE if we have one
           if (bcDeclMap_.count(DRE->getDecl())) {
@@ -162,11 +164,11 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
 
         // TODO: Not yet supported
         // check if the first argument is a Pyramid call
-        //if (isa<CXXOperatorCallExpr>(CCE->getArg(0)) &&
+        //if (isa<CXXOperatorCallExpr>(Arg0) &&
         //    isa<DeclRefExpr>(dyn_cast<CXXOperatorCallExpr>(
-        //        CCE->getArg(0))->getArg(0))) {
+        //        Arg0)->getArg(0))) {
         //  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(
-        //      dyn_cast<CXXOperatorCallExpr>(CCE->getArg(0))->getArg(0));
+        //      dyn_cast<CXXOperatorCallExpr>(Arg0)->getArg(0));
 
         //  // get the Pyramid from the DRE if we have one
         //  if (pyrDeclMap_.count(DRE->getDecl())) {
@@ -198,14 +200,15 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
                 << VD->getNameAsString() << std::endl;
 
         CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(VD->getInit());
+        Expr *Arg0 = CCE->getArg(0)->IgnoreImpCasts();
 
         HipaccIterationSpace *IS = nullptr;
         HipaccImage *Img = nullptr;
         //HipaccPyramid *Pyr = nullptr;
 
         // check if the first argument is an Image
-        if (isa<DeclRefExpr>(CCE->getArg(0))) {
-          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(CCE->getArg(0));
+        if (isa<DeclRefExpr>(Arg0)) {
+          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg0);
 
           // get the Image from the DRE if we have one
           if (imgDeclMap_.count(DRE->getDecl())) {
@@ -221,11 +224,11 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
 
         // TODO: Not yet supported
         // check if the first argument is a Pyramid call
-        //if (isa<CXXOperatorCallExpr>(CCE->getArg(0)) &&
+        //if (isa<CXXOperatorCallExpr>(Arg0) &&
         //    isa<DeclRefExpr>(dyn_cast<CXXOperatorCallExpr>(
-        //        CCE->getArg(0))->getArg(0))) {
+        //        Arg0)->getArg(0))) {
         //  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(
-        //      dyn_cast<CXXOperatorCallExpr>(CCE->getArg(0))->getArg(0));
+        //      dyn_cast<CXXOperatorCallExpr>(Arg0)->getArg(0));
 
         //  // get the Pyramid from the DRE if we have one
         //  if (pyrDeclMap_.count(DRE->getDecl())) {
@@ -262,9 +265,10 @@ void DependencyTracker::VisitDeclStmt(DeclStmt *S) {
                 << std::endl;
 
         CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(VD->getInit());
+        Expr *Arg0 = CCE->getArg(0)->IgnoreImpCasts();
 
-        if (isa<DeclRefExpr>(CCE->getArg(0))) {
-          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(CCE->getArg(0));
+        if (isa<DeclRefExpr>(Arg0)) {
+          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg0);
           if (iterDeclMap_.count(DRE->getDecl())) {
             if (DEBUG) std::cout << "    -> Based on IterationSpace: "
                     << DRE->getNameInfo().getAsString() << std::endl;
