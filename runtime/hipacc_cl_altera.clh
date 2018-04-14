@@ -540,7 +540,7 @@ typedef struct{double16 s[16];}double256;
 
 
 #define readPixelfCHNNL(DCVECT_SIZE, DCINTYPE, outPIXEL, inCHANNEL, DCindex)\
-            outPIXEL = read_channel_altera(inCHANNEL); \
+            outPIXEL = read_channel_intel(inCHANNEL); \
             mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
 
 
@@ -549,7 +549,7 @@ typedef struct{double16 s[16];}double256;
 
 
 #define write2CHNNL(DCVECT_SIZE, DCOUTTYPE, outCHANNEL, outPIXEL, DCindex) \
-            write_channel_altera(outCHANNEL, outPIXEL); \
+            write_channel_intel(outCHANNEL, outPIXEL); \
             mem_fence(CLK_CHANNEL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); \
 
 
