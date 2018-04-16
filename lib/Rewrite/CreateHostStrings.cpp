@@ -432,7 +432,9 @@ void CreateHostStrings::writeMemoryTransferDomainFromMask(
 void CreateHostStrings::writeMemoryRelease(HipaccMemory *mem, std::string
     &resultStr, bool is_pyramid) {
   resultStr += is_pyramid ? "hipaccReleasePyramid" : "hipaccReleaseMemory";
-  resultStr += "<" + mem->getTypeStr() + ">";
+  if (!options.emitVivado()) {
+    resultStr += "<" + mem->getTypeStr() + ">";
+  }
   resultStr += "(" + mem->getName() + ");\n";
   resultStr += indent;
 }
