@@ -1914,18 +1914,18 @@ bool Rewrite::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
 bool Rewrite::VisitBinaryOperator(BinaryOperator *E) {
   if (!compilerClasses.HipaccEoP || !compilerOptions.emitVivado()) return true;
 
-  // This function is Vivado only, because we need the right-hand-side.
-  // convert Image assignments to a variable into memory transfer,
-  // e.g. in_ptr = IN.data();
+  // This function is Vivado only, because we need the right-hand side.
+  // Convert Image assignments to a variable into a memory transfer,
+  // e.g. in_ptr = OUT.data();
   if (E->getOpcode() == BO_Assign && isa<CXXMemberCallExpr>(E->getRHS())) {
     CXXMemberCallExpr *MCE = dyn_cast<CXXMemberCallExpr>(E->getRHS());
 
     // match only .data() calls to Image instances
     if (MCE->getDirectCallee()->getNameAsString() != "data") return true;
 
-    if (isa<DeclRefExpr>(MCE->getImplicitObjectArgument())) {
+    if (isa<DeclRefExpr>(MCE->getImplicitObjectArgument()->IgnoreImpCasts())) {
       DeclRefExpr *DRE =
-        dyn_cast<DeclRefExpr>(MCE->getImplicitObjectArgument());
+        dyn_cast<DeclRefExpr>(MCE->getImplicitObjectArgument()->IgnoreImpCasts());
 
       // check if we have an Image
       if (ImgDeclMap.count(DRE->getDecl())) {
