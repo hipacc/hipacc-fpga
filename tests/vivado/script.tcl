@@ -11,7 +11,7 @@ open_solution "solution1"
 set_part {xc7z100ffg900-2}
 create_clock -period 3.0 -name default
 source "./directives.tcl"
-csim_design -ldflags {-lrt} -clean
+csim_design -ldflags {-lrt} -clean -compiler clang
 config_bind -effort high
 config_schedule -effort high
 #config_compile -unsafe_math_optimizations
