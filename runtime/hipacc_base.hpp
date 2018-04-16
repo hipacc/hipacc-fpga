@@ -51,7 +51,14 @@ float hipacc_last_kernel_timing() {
 }
 
 int64_t hipacc_time_micro() {
+#ifdef VIVADO_SYNTHESIS
+    // Vivado HLS does not support chrono
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec*1000000LL + ts.tv_nsec / 1000LL;
+#else // VIVADO_SYNTHESIS
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#endif // VIVADO_SYNTHESIS
 }
 #endif // EXCLUDE_IMPL
 
@@ -309,6 +316,7 @@ void hipaccReleasePyramid(HipaccPyramid &pyr) {
 
 
 #ifndef EXCLUDE_IMPL
+#ifndef VIVADO_SYNTHESIS
 
 std::vector<const std::function<void()>*> hipaccTraverseFunc;
 std::vector<std::vector<HipaccPyramid*> > hipaccPyramids;
@@ -501,6 +509,7 @@ void hipaccTraverse(unsigned int loop=1,
     }
 }
 
+#endif // VIVADO_SYNTHESIS
 #endif // EXCLUDE_IMPL
 
 #endif // __HIPACC_BASE_HPP__

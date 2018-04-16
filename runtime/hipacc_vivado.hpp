@@ -23,8 +23,8 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-#ifndef __HIPACC_CPU_HPP__
-#define __HIPACC_CPU_HPP__
+#ifndef __HIPACC_VIVADO_HPP__
+#define __HIPACC_VIVADO_HPP__
 
 #include <string.h>
 #include <iostream>
@@ -32,6 +32,7 @@
 #include <hls_stream.h>
 #include <ap_int.h>
 
+#define VIVADO_SYNTHESIS
 #include "hipacc_base.hpp"
 
 class HipaccContext : public HipaccContextBase {
@@ -47,11 +48,11 @@ long start_time = 0L;
 long end_time = 0L;
 
 void hipaccStartTiming() {
-    start_time = getMicroTime();
+    start_time = hipacc_time_micro();
 }
 
 void hipaccStopTiming() {
-    end_time = getMicroTime();
+    end_time = hipacc_time_micro();
     last_gpu_timing = (end_time - start_time) * 1.0e-3f;
 
     std::cerr << "<HIPACC:> Kernel timing: "
@@ -196,5 +197,5 @@ void hipaccWriteDomainFromMask(HipaccImage &dom, T* host_mem) {
 }
 
 
-#endif  // __HIPACC_CPU_HPP__
+#endif  // __HIPACC_VIVADO_HPP__
 
