@@ -109,8 +109,8 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
       Diags(CI.getASTContext().getDiagnostics()),
       SM(CI.getASTContext().getSourceManager()),
       Out(std::move(Out)),
-      Policy(PrintingPolicy(getLangOpts(options))),
       dump(dump),
+      Policy(PrintingPolicy(getLangOpts(options))),
       compilerOptions(options),
       targetDevice(options),
       builtins(CI.getASTContext()),
@@ -858,8 +858,8 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
           int64_t img_stride = CCE->getArg(0)->EvaluateKnownConstInt(Context).getSExtValue();
           int64_t img_height = CCE->getArg(1)->EvaluateKnownConstInt(Context).getSExtValue();
 
-          if (maxImageWidth < img_stride) maxImageWidth = img_stride;
-          if (maxImageHeight < img_height) maxImageHeight = img_height;
+          if ((int)maxImageWidth < img_stride) maxImageWidth = img_stride;
+          if ((int)maxImageHeight < img_height) maxImageHeight = img_height;
 
           if (compilerOptions.emitPadding()) {
             // respect alignment/padding for constantly sized CPU images

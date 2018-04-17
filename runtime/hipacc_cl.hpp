@@ -381,7 +381,6 @@ void hipaccCreateCommandQueue(cl_context context, cl_device_id device, int num_k
 void hipaccCreateContextsAndCommandQueues(bool all_devices=false, int num_kernel=0) {
     cl_int err = CL_SUCCESS;
     cl_context context;
-    cl_command_queue command_queue;
     HipaccContext &Ctx = HipaccContext::getInstance();
 
     std::vector<cl_platform_id> platforms = Ctx.get_platforms();
@@ -533,6 +532,10 @@ cl_kernel hipaccBuildProgramAndKernel(std::string file_name, std::string kernel_
                 case INTEL:
                 case ALL:
                     build_options = "-cl-single-precision-constant -cl-denorms-are-zero";
+                    break;
+                case ALTERA:
+                    std::cerr << "ERROR: Altera must be compiled offline" << std::endl;
+                    exit(EXIT_FAILURE);
                     break;
             }
         }
