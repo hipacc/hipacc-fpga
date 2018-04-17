@@ -1,43 +1,30 @@
-SIZE_X       ?= 3
-SIZE_Y       ?= 3
+SIZE_X ?= 3
+SIZE_Y ?= 3
 
 # Configuration
 HIPACC_DIR     ?= @CMAKE_INSTALL_PREFIX@
 COMPILER       ?= $(HIPACC_DIR)/bin/hipacc
-COMMON_INC     ?= -I@OPENCV_INCLUDE_DIR@ \
-                  -I$(TEST_CASE) \
-                  -I/usr/include
+COMMON_INC     ?= -I@OpenCV_INCLUDE_DIRS@ \
+                  -I$(TEST_CASE)
 COMPILER_INC   ?= -std=c++11 \
-                  -resource-dir `@CLANG_EXECUTABLE@ -print-file-name=` \
-                  -I`@CLANG_EXECUTABLE@ -print-file-name=include` \
-                  -I`@LLVM_CONFIG_EXECUTABLE@ --includedir` \
-                  -I`@LLVM_CONFIG_EXECUTABLE@ --includedir`/c++/v1 \
+                  -I`@llvm-config@ --includedir` \
+                  -I`@llvm-config@ --includedir`/c++/v1 \
+                  -I`@clang@ -print-file-name=include` \
                   -I$(HIPACC_DIR)/include/dsl \
                   $(COMMON_INC)
 TEST_CASE      ?= ./tests/laplace_rgba
 MYFLAGS        ?= -DWIDTH=1024 -DHEIGHT=1024 -DSIZE_X=$(SIZE_X) -DSIZE_Y=$(SIZE_Y)
-NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" \
-                  -Xptxas -v @NVCC_COMP@ #-keep
+NVCC_FLAGS      = -gencode=arch=compute_$(GPU_ARCH),code=\"sm_$(GPU_ARCH),compute_$(GPU_ARCH)\" -res-usage #-keep
 OFLAGS          = -O3
 
-CC_CC           = @CMAKE_CXX_COMPILER@ -std=c++11 -Wall -Wunused
-CU_CC           = @NVCC@ $(NVCC_FLAGS) -Xcompiler -Wall -Xcompiler -Wunused
-CC_LINK         = -lm -ldl -lstdc++ @TIME_LINK@
-CU_LINK         = $(CC_LINK) @CUDA_LINK@
-# OpenCL specific configuration
-ifeq ($(HIPACC_TARGET),Midgard)
-    CL_CC       = @NDK_CXX_COMPILER@ @NDK_CXX_FLAGS@ @NDK_INCLUDE_DIRS_STR@ -std=c++0x -Wall -Wunused
-    CL_LINK     = $(CC_LINK) @NDK_LINK_LIBRARIES_STR@ @EMBEDDED_OPENCL_LFLAGS@
-    COMMON_INC += @EMBEDDED_OPENCL_CFLAGS@
-else
-    CL_CC       = $(CC_CC)
-    CL_LINK     = $(CC_LINK) @OPENCL_LFLAGS@
-    COMMON_INC += @OPENCL_CFLAGS@
-endif
-
-# Renderscript specific configuration
-RS_TARGET_API = @RS_TARGET_API@
-ifge = $(shell if [ $(1) -ge $(2) ]; then echo true; else echo false; fi)
+CC_CC           = @CMAKE_CXX_COMPILER@ -std=c++11 @THREADS_ARG@ -Wall -Wunused
+CL_CC           = $(CC_CC) -I@OpenCL_INCLUDE_DIRS@
+CU_CC           = @NVCC@ -std=c++11 @NVCC_COMP@ -Xcompiler -Wall -Xcompiler -Wunused -I@CUDA_INCLUDE_DIRS@ $(NVCC_FLAGS)
+CC_LINK         = -lm -ldl -lstdc++ @THREADS_LINK@ @RT_LIBRARIES@ @OpenCV_LIBRARIES@
+CL_LINK         = $(CC_LINK) @OpenCL_LIBRARIES@
+CU_LINK         = $(CC_LINK) @NVCC_LINK@
+ALTERA_RUN      = LD_LIBRARY_PATH=$$LD_LIBRARAY_PATH$$(aocl link-config | sed 's/\ /\n/g' | grep "^\-L" | sed 's/-L/:/g' | tr -d '\n')
+ALTERA_CXX     := arm-linux-gnueabihf-g++
 
 
 # Source-to-source compiler configuration
@@ -56,7 +43,7 @@ HIPACC_PPT?=1
 HIPACC_CONFIG?=128x1
 HIPACC_EXPLORE?=off
 HIPACC_TIMING?=off
-HIPACC_TARGET?=Fermi-20
+HIPACC_TARGET?=Kepler-30
 
 
 HIPACC_OPTS=-target $(HIPACC_TARGET)
@@ -97,15 +84,15 @@ run:
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC)
 
 cpu:
-	@echo 'Executing HIPAcc Compiler for C++:'
+	@echo 'Executing Hipacc Compiler for C++:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-cpu $(HIPACC_OPTS) -o main.cc
-	@echo 'Compiling C++ file using g++:'
+	@echo 'Compiling C++ file using c++:'
 	$(CC_CC) -I$(HIPACC_DIR)/include $(COMMON_INC) $(MYFLAGS) $(OFLAGS) -o main_cpu main.cc $(CC_LINK)
 	@echo 'Executing C++ binary'
 	./main_cpu
 
 cuda:
-	@echo 'Executing HIPAcc Compiler for CUDA:'
+	@echo 'Executing Hipacc Compiler for CUDA:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-cuda $(HIPACC_OPTS) -o main.cu
 	@echo 'Compiling CUDA file using nvcc:'
 	$(CU_CC) -I$(HIPACC_DIR)/include $(COMMON_INC) $(MYFLAGS) $(OFLAGS) -o main_cuda main.cu $(CU_LINK)
@@ -113,48 +100,58 @@ cuda:
 	./main_cuda
 
 opencl-acc opencl-cpu opencl-gpu:
-	@echo 'Executing HIPAcc Compiler for OpenCL:'
+	@echo 'Executing Hipacc Compiler for OpenCL:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-$@ $(HIPACC_OPTS) -o main.cc
-	@echo 'Compiling OpenCL file using g++:'
+	@echo 'Compiling OpenCL file using c++:'
 	$(CL_CC) -I$(HIPACC_DIR)/include $(COMMON_INC) $(MYFLAGS) $(OFLAGS) -o main_opencl main.cc $(CL_LINK)
-ifneq ($(HIPACC_TARGET),Midgard)
 	@echo 'Executing OpenCL binary'
 	./main_opencl
-endif
+
+opencl-fpga:
+	@echo 'Executing Hipacc Compiler for OpenCL:'
+	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-$@ $(HIPACC_OPTS) -o main.cc
+
+altera-emulate: opencl-fpga
+	@echo 'Compiling Host Code for Altera Emulation'
+	g++ -DALTERACL $(MYFLAGS) -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) -Wl,--no-as-needed $(shell aocl link-config) -lstdc++ -static-libstdc++ -o main_altera_em main.cc
+	echo 'Generate aocx for Altera Emulation'
+	aoc $(MYFLAGS) -I$(HIPACC_DIR)/include -v -march=emulator hipacc_run.cl
+	@echo 'Emulate Generated Binaries'
+	CL_CONTEXT_EMULATOR_DEVICE_ALTERA=s5_ref $(ALTERA_RUN) ./main_altera_em
+
+altera-compile: opencl-fpga
+	@echo 'Compiling Host Code for Target Architecture'
+	$(ECHO)$(ALTERA_CXX) -DALTERACL $(MYFLAGS) -std=c++11 -fPIC -I$(HIPACC_DIR)/include $(shell aocl compile-config) main.cc $(shell aocl link-config) -static-libstdc++ -o ./main_altera_syn
+	@echo 'Generate aocx for Target Altera Device'
+	aoc $(MYFLAGS) -I$(HIPACC_DIR)/include -v --report hipacc_run.cl
 
 filterscript renderscript:
 	rm -f *.rs *.fs
-	@echo 'Executing HIPAcc Compiler for $@:'
+	@echo 'Executing Hipacc Compiler for $@:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-$@ $(HIPACC_OPTS) -o main.cc
-	mkdir -p build_$@
-ifeq ($(call ifge, $(RS_TARGET_API), 19), true) # build using ndk-build
 	rm -rf build_$@/*
+	mkdir -p build_$@
 	mkdir -p build_$@/jni
-	cp @CMAKE_CURRENT_SOURCE_DIR@/tests/Android.mk.cmake build_$@/jni/Android.mk
-	cp main.cc *.$(subst renderscript,rs,$(subst filterscript,fs,$@)) build_$@
-	@echo 'Compiling $@ file using llvm-rs-cc and g++:'
+	cp Android.mk build_$@/jni/Android.mk
+	cp Application.mk build_$@/jni/Application.mk
+	cp main.cc *.$(subst renderscript,rs,$(subst filterscript,fs,$@)) build_$@ || true
+	@echo 'Compiling $@ file using ndk-build:'
 	export CASE_FLAGS="$(MYFLAGS)"; \
-	export RS_TARGET_API=$(RS_TARGET_API); \
 	export HIPACC_INCLUDE=$(HIPACC_DIR)/include; \
-	cd build_$@; ndk-build -B APP_PLATFORM=android-$(RS_TARGET_API) APP_STL=stlport_static
-	cp build_$@/libs/armeabi/main_renderscript ./main_$@
-else
-	@echo 'Generating build system current test case:'
-	cd build_$@; cmake .. -DANDROID_SOURCE_DIR=@ANDROID_SOURCE_DIR@ -DTARGET_NAME=@TARGET_NAME@ -DHOST_TYPE=@HOST_TYPE@ -DNDK_TOOLCHAIN_DIR=@NDK_TOOLCHAIN_DIR@ -DRS_TARGET_API=$(RS_TARGET_API) $(MYFLAGS)
-	@echo 'Compiling $@ file using llvm-rs-cc and g++:'
-	cd build_$@; make
-	cp build_$@/main_renderscript ./main_$@
-endif
-
-export CPLUS_INCLUDE_PATH := $(CPLUS_INCLUDE_PATH):@CMAKE_INSTALL_PREFIX@/include
+	cd build_$@; @Renderscript_ndk_build_EXECUTABLE@ -B
+	cp build_$@/libs/armeabi-v7a/main_renderscript ./main_$@
+	adb shell mkdir -p /data/local/tmp
+	adb push main_$@ /data/local/tmp
+	adb shell /data/local/tmp/main_$@
 
 vivado:
 	@echo 'Executing HIPAcc Compiler for Vivado HLS:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-vivado $(HIPACC_OPTS) -o main.cc
-	vivado_hls -f script.tcl
+	export CPLUS_INCLUDE_PATH=$(CPLUS_INCLUDE_PATH):/scratch-local/usr/include; \
+	  vivado_hls -f script.tcl
 
 clean:
-	rm -f main_* *.cu *.cc *.cubin *.cl *.isa *.rs *.fs *.log
+	rm -f main_* *.cu *.cc *.cubin *.cl *.isa *.rs *.fs *.aoco *.aocx *.log
 	rm -rf hipacc_project
-	rm -rf build_*
+	rm -rf build_* bin_*
 

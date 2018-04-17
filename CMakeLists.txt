@@ -151,7 +151,7 @@ configure_file(tests/Makefile.cmake                 ${CMAKE_BINARY_DIR}/tests/Ma
 configure_file(tests/Makefile_test.cmake            ${CMAKE_BINARY_DIR}/tests/Makefile_test)
 configure_file(tests/Makefile_test_opencv.cmake     ${CMAKE_BINARY_DIR}/tests/Makefile_test_opencv)
 configure_file(tests/CMakeLists.txt.cmake           ${CMAKE_BINARY_DIR}/tests/CMakeLists.txt @ONLY)
-configure_file(tests/vivado/Makefile.cmake          ${CMAKE_BINARY_DIR}/tests/vivado/Makefile)
+configure_file(tests/fpga/Makefile.cmake          ${CMAKE_BINARY_DIR}/tests/fpga/Makefile)
 
 
 # install dsl and runtime header files
@@ -166,11 +166,14 @@ install(DIRECTORY tests
     PATTERN "*.cmake" EXCLUDE)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/tests/
     DESTINATION ${CMAKE_INSTALL_PREFIX}
-    PATTERN "*Makefile_test*" EXCLUDE)
+    PATTERN "*Makefile_test*" EXCLUDE
+    PATTERN "fpga" EXCLUDE)
+  install(FILES ${CMAKE_BINARY_DIR}/tests/fpga/Makefile
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/tests/fpga)
 
 # install Makefiles for test cases
 file(GLOB TEST_DIRS RELATIVE ${CMAKE_SOURCE_DIR}/tests ${CMAKE_SOURCE_DIR}/tests/*)
-list(REMOVE_ITEM TEST_DIRS "vivado")
+list(REMOVE_ITEM TEST_DIRS "fpga")
 foreach(DIR IN LISTS TEST_DIRS)
     if(IS_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/${DIR})
         if(${DIR} MATCHES "opencv_*")
