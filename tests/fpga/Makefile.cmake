@@ -147,7 +147,7 @@ filterscript renderscript:
 vivado:
 	@echo 'Executing HIPAcc Compiler for Vivado HLS:'
 	$(COMPILER) $(TEST_CASE)/main.cpp $(MYFLAGS) $(COMPILER_INC) -emit-vivado $(HIPACC_OPTS) -o main.cc
-	export CPLUS_INCLUDE_PATH=$(CPLUS_INCLUDE_PATH):/scratch-local/usr/include; \
+	export CPLUS_INCLUDE_PATH=$(CPLUS_INCLUDE_PATH):$(HIPACC_DIR)/include; \
 	  vivado_hls -f script.tcl
 
 clean:
