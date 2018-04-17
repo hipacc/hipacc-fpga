@@ -319,7 +319,7 @@ void hipaccReleasePyramid(HipaccPyramid &pyr) {
 #ifndef VIVADO_SYNTHESIS
 
 std::vector<const std::function<void()>*> hipaccTraverseFunc;
-std::vector<std::vector<HipaccPyramid*> > hipaccPyramids;
+std::vector<std::vector<HipaccPyramid*>>  hipaccPyramids;
 
 
 void hipaccTraverse(HipaccPyramid &p0, const std::function<void()> func) {
