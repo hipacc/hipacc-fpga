@@ -33,7 +33,7 @@
 #include <ap_int.h>
 
 #define VIVADO_SYNTHESIS
-#include "hipacc_base.hpp"
+#include "hipacc_base_standalone.hpp"
 
 class HipaccContext : public HipaccContextBase {
     public:
@@ -43,6 +43,20 @@ class HipaccContext : public HipaccContextBase {
             return instance;
         }
 };
+
+class HipaccImageVivado : public HipaccImageBase {
+    public:
+        HipaccImageVivado(size_t width, size_t height, size_t stride,
+                          size_t alignment, size_t pixel_size, void* mem,
+                          hipaccMemoryType mem_type=Global)
+          : HipaccImageBase(width, height, stride, alignment, pixel_size, mem,
+                            mem_type) {
+        }
+
+        ~HipaccImageVivado() {
+        }
+};
+
 
 long start_time = 0L;
 long end_time = 0L;
@@ -65,17 +79,9 @@ template<typename T>
 HipaccImage hipaccCreateMemory(T *host_mem, int width, int height) {
     HipaccContext &Ctx = HipaccContext::getInstance();
 
-    HipaccImage img = HipaccImage(width, height, width, 0, sizeof(T), (void *)NULL);
-    Ctx.add_image(img);
+    HipaccImage img = std::make_shared<HipaccImageVivado>(width, height, width, 0, sizeof(T), (void *)NULL);
 
     return img;
-}
-
-
-// Release image
-void hipaccReleaseMemory(HipaccImage &img) {
-    HipaccContext &Ctx = HipaccContext::getInstance();
-    Ctx.del_image(img);
 }
 
 
@@ -98,8 +104,8 @@ T hipaccReverseBits(T in) {
 // Write to stream
 template<typename T1, typename T2>
 void hipaccWriteMemory(HipaccImage &img, hls::stream<T1> &s, T2 *host_mem) {
-    int width = img.width;
-    int height = img.height;
+    int width = img->width;
+    int height = img->height;
 
     for (size_t i=0; i<width*height; ++i) {
         T1 data = host_mem[i];
@@ -111,8 +117,8 @@ void hipaccWriteMemory(HipaccImage &img, hls::stream<T1> &s, T2 *host_mem) {
 // Read from stream
 template<typename T1, typename T2>
 void hipaccReadMemory(hls::stream<T1> &s, T2 *host_mem, HipaccImage &img) {
-    int width = img.width;
-    int height = img.height;
+    int width = img->width;
+    int height = img->height;
 
     for (size_t i=0; i<width*height; ++i) {
         T1 data;
@@ -127,8 +133,8 @@ void hipaccReadMemory(hls::stream<T1> &s, T2 *host_mem, HipaccImage &img) {
 // T2 is uint (representing uchar4)
 template<int BW, typename T2>
 void hipaccWriteMemory(HipaccImage &img, hls::stream<ap_uint<BW> > &s, T2 *host_mem) {
-    int width = img.width;
-    int height = img.height;
+    int width = img->width;
+    int height = img->height;
     int vect = BW/8/sizeof(T2);
 
     for (size_t y=0; y<height; ++y) {
@@ -159,8 +165,8 @@ void hipaccWriteMemory(HipaccImage &img, hls::stream<ap_uint<BW> > &s, T2 *host_
 // T2 is uint (representing uchar4)
 template<int BW, typename T2>
 void hipaccReadMemory(hls::stream<ap_uint<BW> > &s, T2 *host_mem, HipaccImage &img) {
-    int width = img.width;
-    int height = img.height;
+    int width = img->width;
+    int height = img->height;
     int vect = BW/8/sizeof(T2);
 
     for (size_t y=0; y<height; ++y) {

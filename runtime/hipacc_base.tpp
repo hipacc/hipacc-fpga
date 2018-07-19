@@ -1,6 +1,5 @@
 //
-// Copyright (c) 2012, University of Erlangen-Nuremberg
-// Copyright (c) 2012, Siemens AG
+// Copyright (c) 2013, University of Erlangen-Nuremberg
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -24,18 +23,26 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-// undef macros defined for reductions
-#undef REDUCTION_CUDA_2D_THREAD_FENCE
-#undef REDUCTION_CUDA_2D
-#undef REDUCTION_CUDA_1D
-#undef REDUCTION_CL_2D
-#undef REDUCTION_CL_1D
-#undef OFFSETS
-#undef IS_HEIGHT
-#undef OFFSET_BLOCK
-#undef OFFSET_X
-#undef OFFSET_Y
-#undef OFFSET_CHECK_X
-#undef OFFSET_CHECK_X_STRIDE
-#undef USE_OFFSETS
-#undef USE_ARRAY_2D
+#ifndef __HIPACC_BASE_TPP__
+#define __HIPACC_BASE_TPP__
+
+
+template<typename data_t>
+HipaccPyramid hipaccCreatePyramid(const HipaccImage &img, size_t depth) {
+    HipaccPyramid p(depth);
+    p.add(img);
+
+    size_t width  = img->width  / 2;
+    size_t height = img->height / 2;
+    for (size_t i=1; i<depth; ++i) {
+        assert(width * height > 0 && "Pyramid stages too deep for image size");
+        p.add(hipaccCreatePyramidImage<data_t>(img, width, height));
+        width  /= 2;
+        height /= 2;
+    }
+    return p;
+}
+
+
+#endif // __HIPACC_BASE_TPP__
+

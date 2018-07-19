@@ -36,7 +36,7 @@
 
 #include <unistd.h>
 
-#include "hipacc_cl.hpp"
+#include "hipacc_cl_standalone.hpp"
 
 
 void usage(char **argv) {
@@ -127,10 +127,6 @@ int main(int argc, char *argv[]) {
 
     // clean up memory on host
     delete[] host_idata;
-
-    // clean up memory on device
-    hipaccReleaseMemory<uchar>(dev_idata);
-    hipaccReleaseMemory<uchar>(dev_odata);
 
     return EXIT_SUCCESS;
 }

@@ -390,7 +390,8 @@ class HipaccKernelClass {
     };
 
     std::string name;
-    CXXMethodDecl *kernelFunction, *reduceFunction;
+    CXXMethodDecl *kernelFunction, *reduceFunction, *binningFunction;
+    QualType pixelType, binType;
     KernelStatistics *kernelStatistics;
     // kernel member information
     SmallVector<KernelMemberInfo, 16> members;
@@ -404,6 +405,7 @@ class HipaccKernelClass {
       name(name),
       kernelFunction(nullptr),
       reduceFunction(nullptr),
+      binningFunction(nullptr),
       kernelStatistics(nullptr),
       members(0),
       imgFields(0),
@@ -421,8 +423,15 @@ class HipaccKernelClass {
     }
 
     void setReduceFunction(CXXMethodDecl *fun) { reduceFunction = fun; }
+    void setBinningFunction(CXXMethodDecl *fun) { binningFunction = fun; }
     CXXMethodDecl *getKernelFunction() { return kernelFunction; }
     CXXMethodDecl *getReduceFunction() { return reduceFunction; }
+    CXXMethodDecl *getBinningFunction() { return binningFunction; }
+
+    void setPixelType(QualType type) { pixelType = type; }
+    void setBinType(QualType type) { binType = type; }
+    QualType getPixelType() { return pixelType; }
+    QualType getBinType() { return binType; }
 
     KernelStatistics &getKernelStatistics(void) {
       return *kernelStatistics;
@@ -570,10 +579,10 @@ class HipaccKernel : public HipaccKernelFeatures {
     ASTContext &Ctx;
     VarDecl *VD;
     std::string name;
-    std::string kernelName, reduceName;
+    std::string kernelName, reduceName, binningName;
     std::string fileName;
-    std::string reduceStr, infoStr;
-    unsigned infoStrCnt;
+    std::string reduceStr, binningStr, infoStr, numBinsStr;
+    unsigned infoStrCnt, binningStrCnt;
     HipaccIterationSpace *iterationSpace;
     std::map<FieldDecl *, HipaccAccessor *> imgMap;
     std::map<FieldDecl *, HipaccMask *> maskMap;
@@ -610,9 +619,10 @@ class HipaccKernel : public HipaccKernelFeatures {
       name(VD->getNameAsString()),
       kernelName(options.getTargetPrefix() + KC->getName() + name + "Kernel"),
       reduceName(options.getTargetPrefix() + KC->getName() + name + "Reduce"),
+      binningName(options.getTargetPrefix() + KC->getName() + name + "Binning"),
       fileName(options.getTargetPrefix() + KC->getName() + VD->getNameAsString()),
-      reduceStr(), infoStr(),
-      infoStrCnt(0),
+      reduceStr(), binningStr(), infoStr(), numBinsStr(),
+      infoStrCnt(0), binningStrCnt(0),
       iterationSpace(nullptr),
       imgMap(),
       maskMap(),
@@ -648,9 +658,13 @@ class HipaccKernel : public HipaccKernelFeatures {
     const std::string &getName() const { return name; }
     const std::string &getKernelName() const { return kernelName; }
     const std::string &getReduceName() const { return reduceName; }
+    const std::string &getBinningName() const { return binningName; }
     const std::string &getFileName() const { return fileName; }
     const std::string &getInfoStr() const { return infoStr; }
     const std::string &getReduceStr() const { return reduceStr; }
+    const std::string getBinningStr() const {
+      return binningStr + "_" + std::to_string(binningStrCnt);
+    }
 
     // keep track of variables used within kernel
     void setUsed(std::string name) { usedVars.insert(name); }
@@ -715,6 +729,7 @@ class HipaccKernel : public HipaccKernelFeatures {
       std::string cnt(std::to_string(infoStrCnt++));
       infoStr = name + "_info" + cnt;
       reduceStr = name + "_red" + cnt;
+      binningStr = name + "_bin" + cnt;
       createArgInfo();
       createHostArgInfo(hostArgs, hostLiterals, literalCount);
     }
@@ -771,6 +786,11 @@ class HipaccKernel : public HipaccKernelFeatures {
       }
     }
 
+    void setNumBinsStr(std::string numBins) {
+      binningStrCnt++;
+      numBinsStr = numBins;
+    }
+    std::string getNumBinsStr() { return numBinsStr; }
     unsigned getMaxThreadsForKernel() { return max_threads_for_kernel; }
     unsigned getMaxThreadsPerBlock() { return max_threads_per_block; }
     unsigned getMaxTotalSharedMemory() { return max_total_shared_memory; }
