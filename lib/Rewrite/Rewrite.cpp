@@ -914,6 +914,25 @@ bool Rewrite::VisitDeclStmt(DeclStmt *D) {
             }
 
             newStr += "> " + stream + ";";
+
+            if (CCE->getNumArgs() == 3) {
+              std::string stream = dataDeps->getInputStream(Img->getDecl());
+              if (!stream.empty()) {
+                // TODO: find better solution than embedding stream in mem string
+                std::string typeCast;
+                if (isa<VectorType>(Img->getType()
+                      .getCanonicalType().getTypePtr())) {
+                  const VectorType *VT = dyn_cast<VectorType>(Img->getType()
+                      .getCanonicalType().getTypePtr());
+                  VectorTypeInfo info = createVectorTypeInfo(VT);
+                  typeCast = "(" + getStdIntFromBitWidth(
+                      info.elementCount * info.elementWidth) + "*)";
+                }
+
+                stringCreator.writeMemoryTransfer(Img,
+                    stream + ", " + typeCast + init_str, HOST_TO_DEVICE, newStr);
+              }
+            }
           }
         }
 
