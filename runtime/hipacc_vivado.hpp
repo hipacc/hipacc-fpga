@@ -116,15 +116,18 @@ void hipaccWriteMemory(HipaccImage &img, hls::stream<T1> &s, T2 *host_mem) {
 
 // Read from stream
 template<typename T1, typename T2>
-void hipaccReadMemory(hls::stream<T1> &s, T2 *host_mem, HipaccImage &img) {
+T1 *hipaccReadMemory(hls::stream<T2> &s, HipaccImage &img) {
     int width = img->width;
     int height = img->height;
+    T1 *host_mem = (T1*)img->host;
 
     for (size_t i=0; i<width*height; ++i) {
-        T1 data;
+        T2 data;
         s >> data;
-        host_mem[i] = data;
+        host_mem[i] = (T1)data;
     }
+
+    return host_mem;
 }
 
 
@@ -161,13 +164,14 @@ void hipaccWriteMemory(HipaccImage &img, hls::stream<ap_uint<BW> > &s, T2 *host_
 
 
 // Read from stream
-// T1 is ap_uint<32>
-// T2 is uint (representing uchar4)
-template<int BW, typename T2>
-void hipaccReadMemory(hls::stream<ap_uint<BW> > &s, T2 *host_mem, HipaccImage &img) {
+// T1 is uint (representing uchar4)
+// T2 is ap_uint<32>
+template<typename T1, int BW>
+T1 *hipaccReadMemory(hls::stream<ap_uint<BW> > &s, HipaccImage &img) {
     int width = img->width;
     int height = img->height;
-    int vect = BW/8/sizeof(T2);
+    int vect = BW/8/sizeof(T1);
+    T1 *host_mem = (T1*)img->host;
 
     for (size_t y=0; y<height; ++y) {
         for (size_t x=0; x<width; x+=vect) {
@@ -183,10 +187,12 @@ void hipaccReadMemory(hls::stream<ap_uint<BW> > &s, T2 *host_mem, HipaccImage &i
                 }
             } else {
                 ap_uint<BW> temp = hipaccReverseBits<ap_uint<BW> >(data);
-                host_mem[i] = *(T2*)&temp;
+                host_mem[i] = *(T1*)&temp;
             }
         }
     }
+
+    return host_mem;
 }
 
 
