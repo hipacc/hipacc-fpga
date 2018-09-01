@@ -870,8 +870,16 @@ Stmt *ASTTranslate::Hipacc(Stmt *S) {
       switch (compilerOptions.getTargetLang()) {
         default: break;
         case Language::CUDA:
+#ifndef WIN32
+          // generates GNU style attributes, which are not supported by MSVC
           VD = createVarDecl(Ctx, DC, sharedName, QT, nullptr);
           VD->addAttr(CUDASharedAttr::CreateImplicit(Ctx));
+#else // WIN32
+          // needs patching clang (line 1685 in 'lib\AST\TypePrinter.cpp')
+          // because of missing trailing underscores
+          VD = createVarDecl(Ctx, DC, sharedName, Ctx.getAddrSpaceQualType(QT,
+                LangAS::cuda_shared), nullptr);
+#endif // WIN32
           break;
         case Language::OpenCLACC:
         case Language::OpenCLCPU:
@@ -1508,10 +1516,8 @@ VarDecl *ASTTranslate::CloneDeclTex(ParmVarDecl *PVD, std::string prefix) {
 
 
 Stmt *ASTTranslate::VisitCompoundStmtTranslate(CompoundStmt *S) {
-  CompoundStmt *result = new (Ctx) CompoundStmt(Ctx, MultiStmtArg(),
-      S->getLBracLoc(), S->getLBracLoc());
-
   SmallVector<Stmt *, 16> body;
+
   for (auto stmt : S->body()) {
     curCStmt = S;
     Stmt *newS = Clone(stmt);
@@ -1548,9 +1554,7 @@ Stmt *ASTTranslate::VisitCompoundStmtTranslate(CompoundStmt *S) {
     }
   }
 
-  result->setStmts(Ctx, body);
-
-  return result;
+  return CompoundStmt::Create(Ctx, body, S->getLBracLoc(), S->getLBracLoc());
 }
 
 
@@ -2805,10 +2809,10 @@ Expr *ASTTranslate::VisitCXXMemberCallExprTranslate(CXXMemberCallExpr *E) {
 
   // break_iterate() method -> goto current break label
   if (ME->getMemberNameInfo().getAsString() == "break_iterate") {
-    CompoundStmt *CS = new (Ctx) CompoundStmt(Stmt::EmptyShell());
+    ArrayRef<Stmt *> stmts(createGotoStmt(Ctx, breakLabels.back()));
+    CompoundStmt *CS = createCompoundStmt(Ctx, stmts);
+
     StmtExpr *SE = new (Ctx) StmtExpr(Stmt::EmptyShell());
-    Stmt *S = createGotoStmt(Ctx, breakLabels.back());
-    CS->setLastStmt(S);
     SE->setSubStmt(CS);
 
     return SE;
@@ -2848,21 +2852,22 @@ Expr *ASTTranslate::maskBitwidth(Expr* E, int mask) {
 
 
 Stmt *ASTTranslate::BinningTranslator::traverseStmt(Stmt *S) {
-  for (auto stmt = S->child_begin(); stmt != S->child_end(); ++stmt) {
-    if (*stmt != nullptr) {
+  for (auto& stmt : S->children()) {
+    if (stmt != nullptr) {
       // traverse recursively from bottom up
-      traverseStmt(*stmt);
+      traverseStmt(stmt);
 
       // translate statements
-      if (isa<BinaryOperator>(*stmt)) {
+      if (isa<BinaryOperator>(stmt)) {
         // look for "bin(idx) = val"
-        *stmt = translateBinaryOperator(dyn_cast<BinaryOperator>(*stmt));
-      } else if (isa<CXXMemberCallExpr>(*stmt)) {
+        stmt = translateBinaryOperator(dyn_cast<BinaryOperator>(stmt));
+      } else if (isa<CXXMemberCallExpr>(stmt)) {
         // look for "num_hist()"
-        *stmt = translateCXXMemberCallExpr(dyn_cast<CXXMemberCallExpr>(*stmt));
+        stmt = translateCXXMemberCallExpr(dyn_cast<CXXMemberCallExpr>(stmt));
       }
     }
   }
+
   return S;
 }
 

@@ -5,10 +5,10 @@ Hipacc allows to design image processing kernels and algorithms in a domain-spec
 From this high-level description, low-level target code for GPU accelerators is generated using source-to-source translation.
 As back ends, the framework supports C/C++, CUDA, OpenCL, and Renderscript.
 
-## Install ##
-See [Hipacc documentation](http://hipacc-lang.org/install.html) and [Install notes](INSTALL) for detailed information.
+# Install
+See [Hipacc documentation](http://hipacc-lang.org/install.html) and [Install notes](INSTALL.md) for detailed information.
 
-## Run Vivado HLS ##
+# Run Vivado HLS
 
 Make sure that the binary `vivado_hls` can be found in your `PATH` and run the
 following commands in order to build provided test cases:

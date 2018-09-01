@@ -51,7 +51,14 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <unistd.h>
+
+#ifdef WIN32
+# include <io.h>
+# define popen(x,y)    _popen(x,y)
+# define pclose(x)     _pclose(x)
+#else
+# include <unistd.h>
+#endif
 
 using namespace clang;
 using namespace hipacc;
@@ -3097,9 +3104,8 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
   OS << "\n";
 
-  if (KC->getReduceFunction()) {
+  if (KC->getReduceFunction())
     printReductionFunction(KC, K, OS);
-  }
 
   // ensure emitHints, otherwise binning will interfere with analytics
   if (emitHints && KC->getBinningFunction())
@@ -3108,10 +3114,10 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
   OS << "#endif //" + ifdef + "\n";
   OS << "\n";
   OS.flush();
-  if (!dump) {
-    fsync(fd);
-    close(fd);
-  }
+#ifndef WIN32
+  fsync(fd);
+#endif
+  close(fd);
 
   if (compilerOptions.emitVivado() || compilerOptions.emitOpenCLFPGA()) {
     createFPGAEntry();
