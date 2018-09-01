@@ -188,10 +188,13 @@ void compare_results(const T* output, const T* reference,
 
             if (std::is_same<T,float>::value) {
                 float ref = reference[y*width + x];
-                failed = abs(ref-output[y*width + x]) > (0.001f*ref);
+                float abs = ref-output[y*width + x];
+                if (abs < 0.0f) abs *= -1.0f;
+                failed = abs > (0.001f*ref);
             } else {
                 int diff = (int)reference[y*width + x]-(int)output[y*width + x];
-                failed = abs((float)diff) > 1.0f;
+                if (diff < 0.0f) diff *= -1.0f;
+                failed = diff > 1.0f;
             }
 
             if (failed) {

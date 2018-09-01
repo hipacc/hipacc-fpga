@@ -101,6 +101,12 @@ else
 	@exit 1
 endif
 
+vivado: main_$$@.cc
+	cp ../../common/script.tcl .
+	cp ../../common/directives.tcl .
+	export CPLUS_INCLUDE_PATH=$(CPLUS_INCLUDE_PATH):$(CURDIR)/../../common:$(HIPACC_PATH)/include; \
+	vivado_hls -f script.tcl
+
 # Run Hipacc
 main_%.cc: src/main.cpp
 	$(HIPACC) -emit-$* $(HIPACC_FLAGS) $(HIPACC_INCLUDE) $(CURDIR)/$< -o $@
@@ -138,8 +144,8 @@ else
 endif
 
 clean:
-	rm -rf jni libs obj
-	rm -f *cc *.cu *.cubin *.rs *.fs *.jpg
+	rm -rf jni libs obj hipacc_project
+	rm -f *cc *.cu *.cubin *.rs *.fs *.jpg *.tcl *.log
 
 distclean: clean
 	rm -f main_* *.cl
