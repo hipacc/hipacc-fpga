@@ -2444,6 +2444,8 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
   }
   switch (compilerOptions.getTargetLang()) {
     case Language::Vivado:
+      OS << "#include \"hipacc_vivado_red.hpp\"\n\n";
+      break;
     case Language::C99:
       OS << "#include \"hipacc_cpu_red.hpp\"\n\n";
       break;
@@ -2503,8 +2505,16 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
       OS << "static ";
       break;
   }
-  OS << "inline " << fun->getReturnType().getAsString() << " "
-     << K->getReduceName() << "(";
+  if (compilerOptions.emitVivado()) {
+    OS << "struct " << K->getKernelName() << "Reduce {\n";
+    OS << "\n";
+    OS << "  " << K->getKernelName() << "Reduce(";
+    OS << ") {}\n\n";
+    OS << "  " << fun->getReturnType().getAsString() << " operator()(";
+  } else {
+    OS << "inline " << fun->getReturnType().getAsString() << " "
+       << K->getReduceName() << "(";
+  }
   // write kernel parameters
   size_t comma = 0;
   for (auto param : fun->parameters()) {
@@ -2521,11 +2531,18 @@ void Rewrite::printReductionFunction(HipaccKernelClass *KC, HipaccKernel *K,
   OS << ") ";
 
   // print kernel body
-  fun->getBody()->printPretty(OS, 0, Policy, 0);
+  if (compilerOptions.emitVivado()) {
+    OS << "\n";
+    fun->getBody()->printPretty(OS, 0, Policy, 1);
+    OS << "};\n\n";
+  } else {
+    fun->getBody()->printPretty(OS, 0, Policy, 0);
+  }
 
   // instantiate reduction
   switch (compilerOptions.getTargetLang()) {
     case Language::Vivado:
+      break;
     case Language::C99:
       // 2D reduction
       OS << "REDUCTION_CPU_2D(" << K->getReduceName() << "2D, "
@@ -2940,10 +2957,25 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
   // print vivado entry function
   if (compilerOptions.emitVivado()) {
     OS << "};\n\n";
+
+    // write data struct for reduction
+    if (KC->getReduceFunction())
+      printReductionFunction(KC, K, OS);
+
     OS << "void " << K->getKernelName() << "(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::Entry);
-    OS << ", int IS_width, int IS_height) {\n"
-       << "    struct " << K->getKernelName() << "Kernel kernel";
+    OS << ", int IS_width, int IS_height) {\n";
+
+    if (KC->getReduceFunction()) {
+      // print a local stream between kernel and reduction
+      std::string typeStr =
+        createVivadoTypeStr(K->getIterationSpace()->getImage(),
+            compilerOptions.getPixelsPerThread());
+      OS << "#pragma HLS dataflow\n";
+      OS << "    hls::stream<" << typeStr << " > _str4red;\n";
+    }
+
+    OS << "    struct " << K->getKernelName() << "Kernel kernel";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelInit);
     OS << ";\n";
 
@@ -2974,8 +3006,12 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
     }
     OS << ">(";
     printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelCall);
-    OS << ", Output"
-       << ", IS_width"
+    if (KC->getReduceFunction()) {
+      OS << ", _str4red";
+    } else {
+      OS << ", Output";
+    }
+    OS << ", IS_width"
        << ", IS_height"
        << ", kernel";
     if (KC->getMaskFields().size() > 0) {
@@ -2994,7 +3030,25 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
           break;
       }
     }
-    OS << ");\n}\n";
+    OS << ");\n";
+
+    // write call to reduction
+    if (KC->getReduceFunction()) {
+      OS << "    struct " << K->getKernelName() << "Reduce kernel_reduce";
+      printKernelArguments(D, KC, K, Policy, OS, Rewrite::KernelInit);
+      OS << ";\n";
+      OS << "    processReduce2D";
+      if (compilerOptions.getPixelsPerThread() > 1) {
+        OS << "VECT";
+      }
+      OS << "<HIPACC_II_TARGET,HIPACC_MAX_WIDTH,HIPACC_MAX_HEIGHT>("
+         << "_str4red"
+         << ", Output"
+         << ", IS_width"
+         << ", IS_height"
+         << ", kernel_reduce);\n";
+    }
+    OS << "}\n";
   }
 
   // print Altera OpenCL kernel
@@ -3082,8 +3136,9 @@ void Rewrite::printKernelFunction(FunctionDecl *D, HipaccKernelClass *KC,
 
   OS << "\n";
 
-  if (KC->getReduceFunction())
-    printReductionFunction(KC, K, OS);
+  if(!compilerOptions.emitVivado())
+    if (KC->getReduceFunction())
+      printReductionFunction(KC, K, OS);
 
   // ensure emitHints, otherwise binning will interfere with analytics
   if (emitHints && KC->getBinningFunction())
@@ -3125,7 +3180,11 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
     std::string typeStr =
       createVivadoTypeStr(K->getIterationSpace()->getImage(),
           compilerOptions.getPixelsPerThread());
-    OS << "hls::stream<" << typeStr << " > &Output";
+    if (KC->getReduceFunction()) {
+      OS << typeStr << " &Output";
+    } else {
+      OS << "hls::stream<" << typeStr << " > &Output";
+    }
     comma++;
   }
 
