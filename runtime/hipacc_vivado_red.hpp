@@ -251,7 +251,7 @@ void processHistogramBinningPutVECTF(
 template<int II_TARGET, int MAX_WIDTH, int MAX_HEIGHT, typename DTYPE, class ReduceKernel>
 void processReduce2D(
     hls::stream<DTYPE> &in_s,
-    DTYPE &out,
+    hls::stream<DTYPE> &out,
     const int &width,
     const int &height,
     ReduceKernel &kernel
@@ -265,7 +265,7 @@ void processReduce2D(
     const DTYPE pixel = in_s.read();
     result = kernel(result, pixel);
   }
-  out = result;
+  out << result;
 }
 
 
@@ -341,7 +341,7 @@ DTYPE prefix_reduce(
 template<int II_TARGET, int MAX_WIDTH, int MAX_HEIGHT, int VECT, typename DTYPE, int BW_IN, class ReduceKernel>
 void processReduce2DVECT(
     hls::stream<ap_uint<BW_IN> > &in_s,
-    DTYPE &out,
+    hls::stream<DTYPE> &out,
     const int &width,
     const int &height,
     ReduceKernel &kernel
@@ -367,7 +367,7 @@ void processReduce2DVECT(
     //result = prefix_reduce<VECT, DTYPE>(result, pixel_temp, kernel);
     result = prefix_reduce_balanced<VECT, 4, DTYPE>(result, pixel_temp, kernel);
   }
-  out = result;
+  out << result;
 }
 
 #endif

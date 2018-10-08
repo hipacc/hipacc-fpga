@@ -3180,11 +3180,7 @@ void Rewrite::printKernelArguments(FunctionDecl *D, HipaccKernelClass *KC,
     std::string typeStr =
       createVivadoTypeStr(K->getIterationSpace()->getImage(),
           compilerOptions.getPixelsPerThread());
-    if (KC->getReduceFunction()) {
-      OS << typeStr << " &Output";
-    } else {
       OS << "hls::stream<" << typeStr << " > &Output";
-    }
     comma++;
   }
 
