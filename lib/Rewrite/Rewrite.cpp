@@ -301,8 +301,8 @@ class Rewrite : public ASTConsumer,  public RecursiveASTVisitor<Rewrite> {
         HipaccKernel *K, PrintingPolicy &Policy, llvm::raw_ostream &OS,
         PrintParam=None);
     std::map<std::string,std::vector<std::pair<std::string, std::string>>> entryArguments;
-    std::string vivadoSizeX;
-    std::string vivadoSizeY;
+    std::string vivadoSizeX = "1";
+    std::string vivadoSizeY = "1";
 
     std::map<size_t, std::pair< std::string, int > > bwMap;
 };
